@@ -60,6 +60,10 @@ export default defineConfig({
     host: true,        // expose on LAN so you can open it from your phone/tablet too
     port: 5173,
     strictPort: false,
+    // Vite blocks any host it doesn't recognise. ngrok's public URL is served
+    // to the browser as its own random host, so without this the app answers
+    // "Blocked request. This host is not allowed" on every tunnel.
+    allowedHosts: true,
   },
   build: {
     // The launcher used to write its dev-server log INTO dist/. Vite empties

@@ -163,36 +163,41 @@ export default function App() {
             title="Show AI chat panel"
             onClick={() => setAiOpen((v) => !v)}
           >
-            ✦ AI
+            <span className="ctl-ico" aria-hidden="true">✦</span>
+            <span className="ctl-text">AI</span>
           </button>
           <button
             className={"series-select" + (pineOpen ? " on" : "")}
             title="Open the Pine Script editor"
             onClick={() => setPineOpen((v) => !v)}
           >
-            {/* The real Pine Script mark, matching the Pine branding. */}
-            <img
-              src="/pine-logo.svg"
-              alt=""
-              width={15}
-              height={15}
-              style={{ verticalAlign: "-2px", marginRight: 4, borderRadius: 3 }}
-            />
-            Pine
+            <span className="ctl-ico" aria-hidden="true">
+              {/* The real Pine Script mark, matching the Pine branding. */}
+              <img
+                src="/pine-logo.svg"
+                alt=""
+                width={15}
+                height={15}
+                style={{ verticalAlign: "-2px", borderRadius: 3 }}
+              />
+            </span>
+            <span className="ctl-text">Pine</span>
           </button>
           <button
             className={"series-select" + (luxOpen ? " on" : "")}
             title="Browse the LuxAlgo indicator library and add one to the chart"
             onClick={() => setLuxOpen((v) => !v)}
           >
-            ✥ LuxAlgo
+            <span className="ctl-ico" aria-hidden="true">✥</span>
+            <span className="ctl-text">LuxAlgo</span>
           </button>
           <button
             className={"series-select" + (panelOpen ? " on" : "")}
             title="Toggle market panel"
             onClick={() => setPanelOpen((v) => !v)}
           >
-            {panelOpen ? "◧ Hide panel" : "▦ Show panel"}
+            <span className="ctl-ico" aria-hidden="true">{panelOpen ? "◧" : "▦"}</span>
+            <span className="ctl-text">{panelOpen ? "Hide panel" : "Show panel"}</span>
           </button>
 
           {/* The full Update flow: a changelog pop-up (grouped "what's new",
@@ -200,11 +205,12 @@ export default function App() {
               checklist and progress bar that animates each step as it lands,
               then a reload with the refreshed modules. */}
           <button
-            className="series-select"
+            className={"series-select" + (updateOpen ? " on" : "")}
             title="See what's new and update all modules"
             onClick={() => setUpdateOpen(true)}
           >
-            ⟳ Update
+            <span className="ctl-ico" aria-hidden="true">⟳</span>
+            <span className="ctl-text">Update</span>
           </button>
         </div>
       </header>
