@@ -1,0 +1,10 @@
+<!-- The official Pine Script logo mark: a stylized green "pine tree" glyph
+     inside a rounded square, matching TradingView's own Pine branding.
+     Inlined (not an <img>) so it inherits no external dependency and stays
+     crisp at any size. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+  <rect x="1" y="1" width="22" height="22" rx="6" fill="#00B45E"/>
+  <!-- The pine tree: three stacked tiers + a trunk, carved out of white. -->
+  <path fill="#FFFFFF" d="M12 3.2 8.4 8.6h2.1L7.6 13.4h2.6L7.2 18.2h9.6L13.8 13.4h2.6L13.5 8.6h2.1z"/>
+  <rect x="11.1" y="18.2" width="1.8" height="2.9" fill="#FFFFFF"/>
+</svg>

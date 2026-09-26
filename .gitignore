@@ -1,0 +1,39 @@
+# Build output (Vite) and per-install state
+dist/
+node_modules/
+*.local
+
+# The desktop launcher's helper build dir
+build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Vite + editor state
+.vite/
+.DS_Store
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# The AI relay's persisted config — this is where the user's API KEY lives.
+# NEVER commit it. It must stay local to the machine that runs the dev server.
+src/server/ai.config.json
+
+# The launcher build artifacts (contains a baked-in project path)
+trade-pro.sed
+TradePro.bat
+TradePro.cmd
+
+# OS junk
+Thumbs.db
+ehthumbs.db
+server.log
+dist/
+relay.log
