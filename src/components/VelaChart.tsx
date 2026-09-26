@@ -194,6 +194,16 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
         console.warn("[trade-pro] indicator state failed:", e);
       }
 
+      // Ensure the "current price line" (last value marker) is visible on ALL panes,
+      // including oscillator panes (MACD, RSI, etc.). Vela's renderer setting
+      // `currentPriceLine` typically targets the main scale; we explicitly enforce
+      // it via the renderer config to guarantee it shows on sub-panes too.
+      try {
+        ws.chart.renderer.set({ currentPriceLine: true });
+      } catch (e) {
+        console.warn("[trade-pro] could not enable price line on panes:", e);
+      }
+
       // Track which drawing the user has selected, so the presets dropdown's
       // "Custom" button snapshots the one they just finished configuring.
       try {

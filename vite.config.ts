@@ -2,6 +2,7 @@ import { defineConfig, type PluginOption } from "vite";
 import react from "@vitejs/plugin-react";
 import { handleRelay } from "./src/server/relayHandler.mjs";
 import { handleUpdate } from "./src/server/updateHandler.mjs";
+import { handleLuxAlgo } from "./src/server/luxAlgoProxy.mjs";
 
 // Vite config for trade-pro.
 // No proxy needed for market data: Hyperliquid's REST (/info) and WS
@@ -30,6 +31,10 @@ function aiRelayPlugin(): PluginOption {
           // The Update button's server-side npm run. Checked first because it
           // owns /update exclusively; the AI relay owns /ai, /config, /models.
           if (await handleUpdate(req, res)) return;
+          // The LuxAlgo MCP proxy: /luxalgo/indicators and /luxalgo/source.
+          // Same reason as the relay — LuxAlgo's MCP sends no CORS header, so
+          // the browser cannot POST to it directly.
+          if (await handleLuxAlgo(req, res)) return;
           const handled = await handleRelay(req, res);
           // handleRelay returns false for anything it doesn't own → let
           // Vite's static/SPA middleware take it (that's how / and

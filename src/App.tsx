@@ -24,6 +24,7 @@ import { FavoritesBar } from "./components/FavoritesBar";
 import { PineEditor } from "./components/PineEditor";
 import { IndicatorToggles } from "./components/IndicatorToggles";
 import { UpdateModal } from "./components/UpdateModal";
+import { LuxAlgoPanel } from "./components/LuxAlgoPanel";
 import { HyperliquidSocket } from "./lib/hyperliquid";
 import { useLiveData } from "./lib/useLiveData";
 import "./styles/app.css";
@@ -47,6 +48,7 @@ export default function App() {
   const [pineOpen, setPineOpen] = useState(false);
   const [indOpen, setIndOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
+  const [luxOpen, setLuxOpen] = useState(false);
 
   // One shared socket for the market panel (the chart uses Vela's own
   // Hyperliquid provider). Open it once and keep it for the session.
@@ -179,6 +181,13 @@ export default function App() {
             Pine
           </button>
           <button
+            className={"series-select" + (luxOpen ? " on" : "")}
+            title="Browse the LuxAlgo indicator library and add one to the chart"
+            onClick={() => setLuxOpen((v) => !v)}
+          >
+            ✥ LuxAlgo
+          </button>
+          <button
             className={"series-select" + (panelOpen ? " on" : "")}
             title="Toggle market panel"
             onClick={() => setPanelOpen((v) => !v)}
@@ -218,6 +227,9 @@ export default function App() {
           />
           {/* Pine Script editor (PineTS engine registered in VelaChart). */}
           <PineEditor ws={ws} open={pineOpen} onOpenChange={setPineOpen} />
+          {/* The official LuxAlgo indicator library: fetch a list, click a row,
+              its Pine source is pulled and compiled onto the chart. */}
+          <LuxAlgoPanel ws={ws} open={luxOpen} onOpenChange={setLuxOpen} />
           {/* Re-factors Vela's indicator dialog rows into front-of-row toggles
               while that dialog is open. */}
           <IndicatorToggles ws={ws} open={indOpen} />
