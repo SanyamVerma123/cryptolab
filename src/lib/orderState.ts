@@ -43,6 +43,7 @@ export interface Order {
   status: OrderStatus;
   leverage?: number;
   isAlpaca?: boolean;
+  placedAtPrice?: number;
 }
 
 export interface TradePosition {
@@ -498,6 +499,7 @@ export function placeOrder(order: {
       stopLoss,
       status: "Open",
       leverage,
+      placedAtPrice: currentPrice && currentPrice > 0 ? currentPrice : effectivePrice,
     };
     gOrders = [newOrder, ...gOrders];
 
@@ -508,7 +510,8 @@ export function placeOrder(order: {
 
 /**
  * Move / Drag a Limit Order on the chart:
- * Updates the order's limit price. If dragged to cut currentPrice, immediately fills into an Open Trade!
+ * Updates the order's limit price. Moving an order NEVER auto-executes it into a trade;
+ * it smoothly moves the order line and waits for live market price to reach/cut it!
  */
 export function updateOrderPrice(
   orderId: string,
@@ -545,54 +548,13 @@ export function updateOrderPrice(
   ord.price = parseFloat(newPrice.toFixed(2));
   ord.total = parseFloat(newTotal.toFixed(2));
 
-  // If new price now crosses current price, fill it into an Open Trade!
-  let shouldFill = false;
+  // Update placedAtPrice reference so the matching engine knows which direction price must travel to cut it
   if (currentPrice && currentPrice > 0) {
-    if (ord.side === "BUY" && currentPrice <= ord.price) {
-      shouldFill = true;
-    } else if (ord.side === "SELL" && currentPrice >= ord.price) {
-      shouldFill = true;
-    }
+    ord.placedAtPrice = currentPrice;
   }
 
-  if (shouldFill) {
-    gOrders.splice(ordIndex, 1);
-
-    const liqPrice =
-      ord.side === "BUY"
-        ? ord.price * (1 - 1 / lev + 0.005)
-        : ord.price * (1 + 1 / lev - 0.005);
-
-    const newPos: TradePosition = {
-      id: "pos_" + Math.random().toString(36).substring(2, 9),
-      date: new Date().toLocaleString([], {
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      }),
-      pair: ord.pair,
-      coin: ord.coin,
-      side: ord.side,
-      entryPrice: ord.price,
-      amount: ord.amount,
-      total: ord.total,
-      takeProfit: ord.takeProfit,
-      stopLoss: ord.stopLoss,
-      leverage: lev,
-      margin: newMargin,
-      liquidationPrice: Math.max(0, parseFloat(liqPrice.toFixed(2))),
-    };
-    gPositions = [newPos, ...gPositions];
-    gHistory = [{ ...ord, status: "Filled", filled: 100 }, ...gHistory];
-
-    notify();
-    return { ok: true, position: newPos };
-  } else {
-    notify();
-    return { ok: true, order: ord };
-  }
+  notify();
+  return { ok: true, order: ord };
 }
 
 /** Update Take Profit (TP) target for an order or position */
@@ -752,13 +714,26 @@ export function checkPriceTriggers(
     }
 
     let shouldFill = false;
-    // BUY Limit: fills when currentPrice <= ord.price (market reaches/cuts down to limit)
-    if (ord.side === "BUY" && currentPrice <= ord.price) {
-      shouldFill = true;
-    }
-    // SELL Limit: fills when currentPrice >= ord.price (market reaches/cuts up to limit)
-    else if (ord.side === "SELL" && currentPrice >= ord.price) {
-      shouldFill = true;
+    const refPrice = ord.placedAtPrice ?? ord.price;
+
+    // A pending limit order only triggers when live market price actually reaches or cuts into the limit price level:
+    if (ord.price < refPrice) {
+      // Order was placed or moved BELOW market price:
+      // Fills only when market drops to or cuts down through the limit price!
+      if (currentPrice <= ord.price) {
+        shouldFill = true;
+      }
+    } else if (ord.price > refPrice) {
+      // Order was placed or moved ABOVE market price:
+      // Fills only when market rises to or cuts up through the limit price!
+      if (currentPrice >= ord.price) {
+        shouldFill = true;
+      }
+    } else {
+      // Placed directly at market price: fills when market touches it within 0.05%
+      if (Math.abs(currentPrice - ord.price) / ord.price < 0.0005) {
+        shouldFill = true;
+      }
     }
 
     if (shouldFill) {

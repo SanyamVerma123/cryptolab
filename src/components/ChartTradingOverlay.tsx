@@ -531,11 +531,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
           const newPx = parseFloat(finalPx.toFixed(2));
           const res = updateOrderPrice(ord.id, newPx, currentPrice);
           if (res.ok) {
-            if (res.position) {
-              setAlertFeedback(`⚡ Order executed into Open Position @ $${newPx.toLocaleString()}!`);
-            } else {
-              setAlertFeedback(`Moved limit price to $${newPx.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
-            }
+            setAlertFeedback(`Moved limit price to $${newPx.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
             setTimeout(() => setAlertFeedback(null), 3500);
           }
         }
