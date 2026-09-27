@@ -1,17 +1,33 @@
 /**
- * ChartTradingOverlay — TradingView-style Chart Trading Lines & Context Menu
+ * ChartTradingOverlay — Exact TradingView Replica Chart Trading Overlay
  *
- * Features:
- * 1. Open Trades (Positions) & Open Orders (Limit Orders) marked at precise chart price points:
- *    - Open Trades: Marked with solid line, concise "BUY" / "SELL" tag, entry price, live PnL, and close button.
- *    - Open Orders: Marked with dashed line, limit price, drag handle ("⠿"), and cancel button.
- * 2. Movable / Draggable Limit Orders:
- *    - Drag the limit order handle up or down directly on the chart to adjust price in real-time.
- *    - If dragged past current market price, it automatically executes into an Open Trade!
- * 3. Double-Click Context Menu (Desktop) & Long-Press (Mobile Touch):
- *    - Double click with mouse (or long-press on touch) opens the context menu at that exact chart price.
- *    - Quick options: "Buy @ $price", "Short @ $price", "Set Alert @ $price".
- * 4. Real-time limit order matching engine & TP/SL auto-execution.
+ * Implements pixel-perfect TradingView visuals matching user-provided screenshots:
+ * 1. Limit Order Lines (Image 1, 2, 3, 4):
+ *    - Thin colored line (blue #2962ff for Buy Limit, red #f23645 for Sell/Stop Limit)
+ *    - Attached components:
+ *      • [ TP ] dashed box (green text, drag to add/adjust take profit)
+ *      • [ SL ] dashed box (orange text, drag to add/adjust stop loss)
+ *      • Dashed link connector
+ *      • Segmented pill: [ {qty} | {Buy limit / Sell limit} | ✕ ]
+ *      • Draggable to adjust price
+ *      • Price axis label with exact price in colored chip
+ * 2. Open Trade / Position Lines (Image 5):
+ *    - Solid colored line (green #089981 for long, red #f23645 for short)
+ *    - Attached components:
+ *      • [ ⇅ ] Reverse position button
+ *      • [ TP ] dashed box (green)
+ *      • [ SL ] dashed box (orange)
+ *      • [ {+qty / -qty} ] colored quantity badge
+ *      • [ {+$0.85 USD} ] real-time unrealized PnL pill
+ *      • [ ✕ ] close position button
+ *      • Price axis label with exact entry price
+ * 3. Price Scale [ ⊕ price ] Button (Image 1, 2, 3, 4, 5):
+ *    - Follows cursor Y coordinate on the right price scale
+ *    - Black/dark pill: [ ⊕ 84,524.09 ]
+ *    - Left-click on desktop or touch long-press opens instant order/alert menu:
+ *      • Buy at price
+ *      • Sell at price
+ *      • Set alert at price
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
@@ -20,6 +36,7 @@ import {
   checkPriceTriggers,
   type Order,
   type TradePosition,
+  type OrderSide,
 } from "../lib/orderState";
 import type { LiveData } from "../lib/useLiveData";
 
@@ -29,56 +46,80 @@ interface Props {
   data: LiveData;
 }
 
-interface ProjectedLine {
+interface ProjectedOrderLine {
   id: string;
-  type: "position" | "tp" | "sl" | "limit" | "alert";
-  side: "BUY" | "SELL" | "ALERT";
-  price: number;
-  amount?: number;
-  coin?: string;
-  y: number;
-  badgeText: string;
-  pnl?: string;
-  pnlTone?: "up" | "down";
-  orderRef?: Order;
-  positionRef?: TradePosition;
-  onCancel?: () => void;
-  onClose?: () => void;
-}
-
-interface MenuState {
-  visible: boolean;
-  x: number;
-  y: number;
-  price: number;
-}
-
-interface DraggingOrderState {
-  id: string;
+  type: "limit" | "stop";
   side: "BUY" | "SELL";
+  price: number;
   amount: number;
   coin: string;
   y: number;
+  order: Order;
+  tp?: number;
+  sl?: number;
+}
+
+interface ProjectedPositionLine {
+  id: string;
+  side: "BUY" | "SELL";
+  entryPrice: number;
+  amount: number;
+  coin: string;
+  y: number;
+  position: TradePosition;
+  pnlStr: string;
+  pnlTone: "up" | "down";
+  tp?: number;
+  sl?: number;
+}
+
+interface ProjectedAlertLine {
+  id: string;
   price: number;
+  y: number;
+}
+
+interface CursorScaleState {
+  visible: boolean;
+  y: number;
+  price: number;
+}
+
+interface DragTargetState {
+  type: "order" | "tp" | "sl";
+  id: string;
+  initialY: number;
+  currentY: number;
+  price: number;
+  side: "BUY" | "SELL";
+  amount?: number;
+  coin: string;
 }
 
 export function ChartTradingOverlay({ ws, coin, data }: Props) {
   const {
+    tradingMode,
     orders,
     positions,
     alerts,
     cancelOrder,
     placeOrder,
     updateOrderPrice,
+    setOrderTP,
+    setOrderSL,
+    reversePosition,
     closePosition,
     addAlert,
     removeAlert,
   } = useOrders();
 
-  const [lines, setLines] = useState<ProjectedLine[]>([]);
-  const [menu, setMenu] = useState<MenuState | null>(null);
+  const [orderLines, setOrderLines] = useState<ProjectedOrderLine[]>([]);
+  const [positionLines, setPositionLines] = useState<ProjectedPositionLine[]>([]);
+  const [alertLines, setAlertLines] = useState<ProjectedAlertLine[]>([]);
+  const [cursorScale, setCursorScale] = useState<CursorScaleState | null>(null);
+  const [menu, setMenu] = useState<{ visible: boolean; x: number; y: number; price: number } | null>(null);
   const [alertFeedback, setAlertFeedback] = useState<string | null>(null);
-  const [draggingOrder, setDraggingOrder] = useState<DraggingOrderState | null>(null);
+  const [dragTarget, setDragTarget] = useState<DragTargetState | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const touchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -86,16 +127,16 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
 
   const currentPrice = data.ctx?.markPx || data.ctx?.midPx || 0;
 
-  // Run limit order matching engine and TP/SL checks whenever current price updates
+  // Run limit order matching engine and TP/SL execution
   useEffect(() => {
-    if (currentPrice > 0) {
+    if (currentPrice > 0 && tradingMode === "in_app") {
       const { filledOrders, closedPositions, triggeredAlerts } = checkPriceTriggers(coin, currentPrice);
 
       if (filledOrders.length > 0) {
         setAlertFeedback(
-          `Filled: ${filledOrders[0].side} ${filledOrders[0].amount} ${coin} @ $${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })} (Now Open Trade)`
+          `Filled: ${filledOrders[0].side} ${filledOrders[0].amount} ${coin} @ $${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })} (Now Open Position)`
         );
-        setTimeout(() => setAlertFeedback(null), 4500);
+        setTimeout(() => setAlertFeedback(null), 4000);
       }
 
       if (closedPositions.length > 0) {
@@ -103,7 +144,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
         setAlertFeedback(
           `${cp.reason} Executed: Closed ${cp.position.side} ${cp.position.amount} ${coin} [PnL: ${cp.pnl >= 0 ? "+" : ""}$${cp.pnl.toFixed(2)}]`
         );
-        setTimeout(() => setAlertFeedback(null), 5000);
+        setTimeout(() => setAlertFeedback(null), 4500);
       }
 
       if (triggeredAlerts.length > 0) {
@@ -113,12 +154,14 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
         setTimeout(() => setAlertFeedback(null), 5000);
       }
     }
-  }, [currentPrice, coin]);
+  }, [currentPrice, coin, tradingMode]);
 
-  // Project price coordinates to pixel Y inside the chart container
+  // Project prices to exact pixel Y on chart
   useEffect(() => {
     if (!ws) {
-      setLines([]);
+      setOrderLines([]);
+      setPositionLines([]);
+      setAlertLines([]);
       return;
     }
 
@@ -129,158 +172,86 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
         const r = (ws.chart?.renderer as any)?.renderer;
         if (!r?.coords || !r?.scene?.panes) return;
 
-        let pane = r.scene.panes.get("price");
-        if (!pane) pane = [...r.scene.panes.values()][0];
+        let pane = r.scene.panes.get("price") || [...r.scene.panes.values()][0];
         if (!pane?.scale || !pane?.bounds) return;
 
         const dataH = r.coords.height || 400;
         const currentPair = `${coin}/USD`;
 
+        // 1. Open Positions (Active Trades)
         const activePositions = positions.filter(
           (p) => p.pair === currentPair || p.coin === coin
         );
-        const activeOrders = orders.filter(
-          (o) => o.status === "Open" && (o.pair === currentPair || o.coin === coin)
-        );
-        const activeAlerts = alerts.filter(
-          (a) => a.pair === currentPair || a.coin === coin
-        );
+        const nextPositions: ProjectedPositionLine[] = [];
 
-        const nextLines: ProjectedLine[] = [];
-
-        // 1. Open Trades (Positions) at precise entry price point
         for (const pos of activePositions) {
           const y = r.coords.priceToY(pos.entryPrice, pane.scale, pane.bounds);
           if (y >= 0 && y <= dataH) {
-            let pnlStr = "";
+            let pnlStr = "--";
             let tone: "up" | "down" = "up";
             if (currentPrice > 0) {
               const diff = pos.side === "BUY" ? currentPrice - pos.entryPrice : pos.entryPrice - currentPrice;
               const pnlVal = diff * pos.amount;
-              const pnlPct = (diff / pos.entryPrice) * 100;
               tone = pnlVal >= 0 ? "up" : "down";
-              pnlStr = `${pnlVal >= 0 ? "+" : ""}$${pnlVal.toFixed(2)} (${pnlVal >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%)`;
+              pnlStr = `${pnlVal >= 0 ? "+" : ""}${pnlVal.toFixed(2)} USD`;
             }
 
-            nextLines.push({
+            nextPositions.push({
               id: pos.id,
-              type: "position",
               side: pos.side,
-              price: pos.entryPrice,
+              entryPrice: pos.entryPrice,
               amount: pos.amount,
               coin: pos.coin,
               y,
-              badgeText: pos.side, // strictly "BUY" or "SELL" per user request
-              pnl: pnlStr || undefined,
+              position: pos,
+              pnlStr,
               pnlTone: tone,
-              positionRef: pos,
-              onClose: () => {
-                const res = closePosition(pos.id, currentPrice);
-                if (res.ok) {
-                  setAlertFeedback(
-                    `Closed ${pos.side} ${pos.amount} ${pos.coin} @ $${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })} [PnL: ${(res.pnl ?? 0) >= 0 ? "+" : ""}$${(res.pnl ?? 0).toFixed(2)}]`
-                  );
-                  setTimeout(() => setAlertFeedback(null), 4000);
-                }
-              },
+              tp: pos.takeProfit,
+              sl: pos.stopLoss,
             });
           }
-
-          // Take Profit Line
-          if (pos.takeProfit && pos.takeProfit > 0) {
-            const tpy = r.coords.priceToY(pos.takeProfit, pane.scale, pane.bounds);
-            if (tpy >= 0 && tpy <= dataH) {
-              nextLines.push({
-                id: pos.id + "_tp",
-                type: "tp",
-                side: pos.side,
-                price: pos.takeProfit,
-                y: tpy,
-                badgeText: "TP",
-                positionRef: pos,
-              });
-            }
-          }
-
-          // Stop Loss Line
-          if (pos.stopLoss && pos.stopLoss > 0) {
-            const sly = r.coords.priceToY(pos.stopLoss, pane.scale, pane.bounds);
-            if (sly >= 0 && sly <= dataH) {
-              nextLines.push({
-                id: pos.id + "_sl",
-                type: "sl",
-                side: pos.side,
-                price: pos.stopLoss,
-                y: sly,
-                badgeText: "SL",
-                positionRef: pos,
-              });
-            }
-          }
         }
+        setPositionLines(nextPositions);
 
-        // 2. Open Orders (Pending Limit Orders) at precise limit price point (Movable)
+        // 2. Open Orders (Pending Limit Orders)
+        const activeOrders = orders.filter(
+          (o) => o.status === "Open" && (o.pair === currentPair || o.coin === coin)
+        );
+        const nextOrders: ProjectedOrderLine[] = [];
+
         for (const ord of activeOrders) {
-          // If this order is currently being dragged, don't project static line
-          if (draggingOrder && draggingOrder.id === ord.id) continue;
+          if (dragTarget && dragTarget.id === ord.id && dragTarget.type === "order") continue;
 
           const y = r.coords.priceToY(ord.price, pane.scale, pane.bounds);
           if (y >= 0 && y <= dataH) {
-            nextLines.push({
+            nextOrders.push({
               id: ord.id,
-              type: "limit",
+              type: ord.type === "Stop-Limit" ? "stop" : "limit",
               side: ord.side,
               price: ord.price,
               amount: ord.amount,
               coin: ord.coin,
               y,
-              badgeText: ord.side, // "BUY" or "SELL"
-              orderRef: ord,
-              onCancel: () => {
-                cancelOrder(ord.id);
-                setAlertFeedback(`Canceled ${ord.side} Limit Order @ $${ord.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
-                setTimeout(() => setAlertFeedback(null), 3000);
-              },
+              order: ord,
+              tp: ord.takeProfit,
+              sl: ord.stopLoss,
             });
           }
-
-          // If Stop-Limit trigger is present
-          if (ord.type === "Stop-Limit" && ord.trigger && ord.trigger !== "-") {
-            const trigPx = parseFloat(ord.trigger.replace(/[^\d.]/g, ""));
-            if (trigPx > 0) {
-              const ty = r.coords.priceToY(trigPx, pane.scale, pane.bounds);
-              if (ty >= 0 && ty <= dataH) {
-                nextLines.push({
-                  id: ord.id + "_trig",
-                  type: "sl",
-                  side: ord.side,
-                  price: trigPx,
-                  y: ty,
-                  badgeText: "SL",
-                  onCancel: () => cancelOrder(ord.id),
-                });
-              }
-            }
-          }
         }
+        setOrderLines(nextOrders);
 
-        // 3. Price Alerts
+        // 3. Alerts
+        const activeAlerts = alerts.filter(
+          (a) => a.pair === currentPair || a.coin === coin
+        );
+        const nextAlerts: ProjectedAlertLine[] = [];
         for (const alt of activeAlerts) {
           const y = r.coords.priceToY(alt.price, pane.scale, pane.bounds);
           if (y >= 0 && y <= dataH) {
-            nextLines.push({
-              id: alt.id,
-              type: "alert",
-              side: "ALERT",
-              price: alt.price,
-              y,
-              badgeText: `🔔 ALERT`,
-              onCancel: () => removeAlert(alt.id),
-            });
+            nextAlerts.push({ id: alt.id, price: alt.price, y });
           }
         }
-
-        setLines(nextLines);
+        setAlertLines(nextAlerts);
       } catch {}
     };
 
@@ -293,7 +264,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
     return () => {
       cancelAnimationFrame(rafId);
     };
-  }, [ws, coin, orders, positions, alerts, currentPrice, draggingOrder, cancelOrder, closePosition, removeAlert]);
+  }, [ws, coin, orders, positions, alerts, currentPrice, dragTarget]);
 
   // Convert pixel Y inside container to Chart Price
   const getPriceAtY = useCallback(
@@ -318,7 +289,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
     [ws]
   );
 
-  // Open context menu at client coordinates
+  // Trigger quick context menu at client coordinates
   const triggerMenuAt = useCallback(
     (clientX: number, clientY: number) => {
       const host = containerRef.current?.closest(".chart-host") as HTMLElement | null;
@@ -328,7 +299,6 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
       const price = getPriceAtY(clientY);
       if (!price || price <= 0) return;
 
-      // Constrain popup inside chart bounds
       const posX = Math.min(clientX - rect.left, rect.width - 220);
       const posY = Math.min(clientY - rect.top, rect.height - 180);
 
@@ -342,89 +312,46 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
     [getPriceAtY]
   );
 
-  // Drag-and-drop limit order adjustment on chart
-  const handleLimitDragStart = (e: React.PointerEvent, ord: Order) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const host = containerRef.current?.closest(".chart-host") as HTMLElement | null;
-    if (!host) return;
-    const rect = host.getBoundingClientRect();
-    const handleEl = e.currentTarget;
-
-    try {
-      handleEl.setPointerCapture(e.pointerId);
-    } catch {}
-
-    const initialPx = getPriceAtY(e.clientY) ?? ord.price;
-
-    setDraggingOrder({
-      id: ord.id,
-      side: ord.side,
-      amount: ord.amount,
-      coin: ord.coin,
-      y: e.clientY - rect.top,
-      price: parseFloat(initialPx.toFixed(2)),
-    });
-
-    const onPointerMove = (ev: PointerEvent) => {
-      ev.preventDefault();
-      const curY = ev.clientY - rect.top;
-      const px = getPriceAtY(ev.clientY);
-      setDraggingOrder((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          y: curY,
-          price: px && px > 0 ? parseFloat(px.toFixed(2)) : prev.price,
-        };
-      });
-    };
-
-    const onPointerUp = (ev: PointerEvent) => {
-      try {
-        handleEl.releasePointerCapture(ev.pointerId);
-      } catch {}
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("pointercancel", onPointerUp);
-
-      const finalPx = getPriceAtY(ev.clientY);
-      if (finalPx && finalPx > 0) {
-        const newPrice = parseFloat(finalPx.toFixed(2));
-        const res = updateOrderPrice(ord.id, newPrice, currentPrice);
-        if (res.ok) {
-          if (res.position) {
-            setAlertFeedback(
-              `⚡ Limit order crossed market price and executed into an Open Trade (${ord.side} ${ord.amount} ${ord.coin} @ $${newPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })})!`
-            );
-          } else {
-            setAlertFeedback(
-              `Limit order moved to $${newPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
-            );
-          }
-          setTimeout(() => setAlertFeedback(null), 4000);
-        }
-      }
-      setDraggingOrder(null);
-    };
-
-    window.addEventListener("pointermove", onPointerMove, { passive: false });
-    window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("pointercancel", onPointerUp);
-  };
-
-  // Event listeners:
-  // 1. Double click on desktop opens context menu (single click does not)
-  // 2. Long press on mobile touch (420ms) opens context menu
-  // 3. Right-click contextmenu also opens it
+  // Mouse move on chart: updates cursor [ ⊕ price ] button on price scale
   useEffect(() => {
     const host = containerRef.current?.closest(".chart-host") as HTMLElement | null;
     if (!host) return;
 
-    // Mobile touch long-press detection
+    const handlePointerMove = (e: PointerEvent) => {
+      if ((e.target as HTMLElement).closest(".tv-trade-line, .tv-scale-plus-btn, .chart-ctx-menu, button")) return;
+      const rect = host.getBoundingClientRect();
+      const relY = e.clientY - rect.top;
+      const price = getPriceAtY(e.clientY);
+
+      if (price && price > 0 && relY >= 0 && relY <= rect.height) {
+        setCursorScale({
+          visible: true,
+          y: relY,
+          price: parseFloat(price.toFixed(2)),
+        });
+      }
+    };
+
+    const handlePointerLeave = () => {
+      setCursorScale(null);
+    };
+
+    host.addEventListener("pointermove", handlePointerMove);
+    host.addEventListener("pointerleave", handlePointerLeave);
+
+    return () => {
+      host.removeEventListener("pointermove", handlePointerMove);
+      host.removeEventListener("pointerleave", handlePointerLeave);
+    };
+  }, [getPriceAtY]);
+
+  // Double-click on chart or Long-press on mobile touch
+  useEffect(() => {
+    const host = containerRef.current?.closest(".chart-host") as HTMLElement | null;
+    if (!host) return;
+
     const onPointerDown = (e: PointerEvent) => {
-      if ((e.target as HTMLElement).closest(".ctl-badge, .chart-ctx-menu, button, .mobile-draw-hud, .mobile-draw-cancel-btn")) return;
+      if ((e.target as HTMLElement).closest(".tv-trade-line, .tv-scale-plus-btn, .chart-ctx-menu, button, .mobile-draw-hud, .mobile-draw-cancel-btn")) return;
       const startX = e.clientX;
       const startY = e.clientY;
       touchStartPos.current = { x: startX, y: startY, time: performance.now() };
@@ -460,15 +387,13 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
       touchStartPos.current = null;
     };
 
-    // User requested: Double Click triggers context menu on desktop
     const onDblClick = (e: MouseEvent) => {
-      if ((e.target as HTMLElement).closest(".ctl-badge, .chart-ctx-menu, button, .mobile-draw-hud, .mobile-draw-cancel-btn")) return;
+      if ((e.target as HTMLElement).closest(".tv-trade-line, .tv-scale-plus-btn, .chart-ctx-menu, button, .mobile-draw-hud, .mobile-draw-cancel-btn")) return;
       triggerMenuAt(e.clientX, e.clientY);
     };
 
-    // Right-click context menu
     const onContextMenu = (e: MouseEvent) => {
-      if ((e.target as HTMLElement).closest(".ctl-badge, .chart-ctx-menu, button")) return;
+      if ((e.target as HTMLElement).closest(".tv-trade-line, .tv-scale-plus-btn, .chart-ctx-menu, button")) return;
       e.preventDefault();
       triggerMenuAt(e.clientX, e.clientY);
     };
@@ -488,11 +413,143 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
     };
   }, [triggerMenuAt]);
 
-  // Context Menu Actions
+  // Dragging Limit Order Pill
+  const startDragOrder = (e: React.PointerEvent, ord: Order) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const host = containerRef.current?.closest(".chart-host") as HTMLElement | null;
+    if (!host) return;
+    const rect = host.getBoundingClientRect();
+    const handleEl = e.currentTarget;
+    try {
+      handleEl.setPointerCapture(e.pointerId);
+    } catch {}
+
+    const initY = e.clientY - rect.top;
+    const initPrice = getPriceAtY(e.clientY) ?? ord.price;
+
+    setDragTarget({
+      type: "order",
+      id: ord.id,
+      initialY: initY,
+      currentY: initY,
+      price: parseFloat(initPrice.toFixed(2)),
+      side: ord.side,
+      amount: ord.amount,
+      coin: ord.coin,
+    });
+
+    const onMove = (ev: PointerEvent) => {
+      ev.preventDefault();
+      const cy = ev.clientY - rect.top;
+      const px = getPriceAtY(ev.clientY);
+      setDragTarget((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          currentY: cy,
+          price: px && px > 0 ? parseFloat(px.toFixed(2)) : prev.price,
+        };
+      });
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      try {
+        handleEl.releasePointerCapture(ev.pointerId);
+      } catch {}
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+
+      const finalPx = getPriceAtY(ev.clientY);
+      if (finalPx && finalPx > 0) {
+        const newPx = parseFloat(finalPx.toFixed(2));
+        const res = updateOrderPrice(ord.id, newPx, currentPrice);
+        if (res.ok) {
+          if (res.position) {
+            setAlertFeedback(`⚡ Order executed into Open Position @ $${newPx.toLocaleString()}!`);
+          } else {
+            setAlertFeedback(`Moved limit price to $${newPx.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
+          }
+          setTimeout(() => setAlertFeedback(null), 3500);
+        }
+      }
+      setDragTarget(null);
+    };
+
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+  };
+
+  // Dragging TP or SL Badge to set target
+  const startDragBracket = (e: React.PointerEvent, targetId: string, bracketType: "tp" | "sl", side: OrderSide, currentVal?: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const host = containerRef.current?.closest(".chart-host") as HTMLElement | null;
+    if (!host) return;
+    const rect = host.getBoundingClientRect();
+    const handleEl = e.currentTarget;
+    try {
+      handleEl.setPointerCapture(e.pointerId);
+    } catch {}
+
+    const initY = e.clientY - rect.top;
+    const initPrice = getPriceAtY(e.clientY) ?? currentPrice;
+
+    setDragTarget({
+      type: bracketType,
+      id: targetId,
+      initialY: initY,
+      currentY: initY,
+      price: parseFloat(initPrice.toFixed(2)),
+      side,
+      coin,
+    });
+
+    const onMove = (ev: PointerEvent) => {
+      ev.preventDefault();
+      const cy = ev.clientY - rect.top;
+      const px = getPriceAtY(ev.clientY);
+      setDragTarget((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          currentY: cy,
+          price: px && px > 0 ? parseFloat(px.toFixed(2)) : prev.price,
+        };
+      });
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      try {
+        handleEl.releasePointerCapture(ev.pointerId);
+      } catch {}
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+
+      const finalPx = getPriceAtY(ev.clientY);
+      if (finalPx && finalPx > 0) {
+        const targetPrice = parseFloat(finalPx.toFixed(2));
+        if (bracketType === "tp") {
+          setOrderTP(targetId, targetPrice);
+          setAlertFeedback(`Take Profit set to $${targetPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
+        } else {
+          setOrderSL(targetId, targetPrice);
+          setAlertFeedback(`Stop Loss set to $${targetPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
+        }
+        setTimeout(() => setAlertFeedback(null), 3500);
+      }
+      setDragTarget(null);
+    };
+
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+  };
+
+  // Context Menu Execution
   const handleMenuBuy = () => {
     if (!menu) return;
     const defaultAmount = currentPrice > 10000 ? 0.05 : currentPrice > 100 ? 1 : 10;
-    const res = placeOrder({
+    placeOrder({
       coin,
       pair: `${coin}/USD`,
       type: "Limit",
@@ -501,21 +558,15 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
       amount: defaultAmount,
       currentPrice,
     });
-    if (res.ok) {
-      if (res.position) {
-        setAlertFeedback(`Executed BUY @ $${menu.price.toLocaleString(undefined, { minimumFractionDigits: 2 })} (Open Trade)`);
-      } else {
-        setAlertFeedback(`Limit BUY @ $${menu.price.toLocaleString(undefined, { minimumFractionDigits: 2 })} placed`);
-      }
-      setTimeout(() => setAlertFeedback(null), 3500);
-    }
+    setAlertFeedback(`Limit BUY @ $${menu.price.toLocaleString(undefined, { minimumFractionDigits: 2 })} placed`);
+    setTimeout(() => setAlertFeedback(null), 3500);
     setMenu(null);
   };
 
   const handleMenuSell = () => {
     if (!menu) return;
     const defaultAmount = currentPrice > 10000 ? 0.05 : currentPrice > 100 ? 1 : 10;
-    const res = placeOrder({
+    placeOrder({
       coin,
       pair: `${coin}/USD`,
       type: "Limit",
@@ -524,14 +575,8 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
       amount: defaultAmount,
       currentPrice,
     });
-    if (res.ok) {
-      if (res.position) {
-        setAlertFeedback(`Executed SHORT @ $${menu.price.toLocaleString(undefined, { minimumFractionDigits: 2 })} (Open Trade)`);
-      } else {
-        setAlertFeedback(`Limit SHORT @ $${menu.price.toLocaleString(undefined, { minimumFractionDigits: 2 })} placed`);
-      }
-      setTimeout(() => setAlertFeedback(null), 3500);
-    }
+    setAlertFeedback(`Limit SHORT @ $${menu.price.toLocaleString(undefined, { minimumFractionDigits: 2 })} placed`);
+    setTimeout(() => setAlertFeedback(null), 3500);
     setMenu(null);
   };
 
@@ -549,113 +594,272 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
 
   return (
     <div ref={containerRef} className="chart-trading-overlay">
-      {/* 1. Visual Position, Limit Order & Alert Lines */}
-      {lines.map((l) => {
-        const isLimit = l.type === "limit";
-        const isPos = l.type === "position";
+      {/* ====================================================================
+          1. OPEN TRADES (POSITIONS) — EXACT TRADINGVIEW REPLICA (IMAGE 5)
+          ==================================================================== */}
+      {positionLines.map((pos) => {
+        const isLong = pos.side === "BUY";
+        const toneClass = isLong ? "long" : "short";
 
         return (
           <div
-            key={l.id}
-            className={"chart-trade-line " + l.type + " " + l.side.toLowerCase()}
-            style={{ top: `${l.y}px` }}
+            key={pos.id}
+            className={`tv-trade-line position ${toneClass}`}
+            style={{ top: `${pos.y}px` }}
           >
-            <div className="ctl-dash" />
-            <div className="ctl-badge">
-              {/* Movable Drag Handle for Limit Orders */}
-              {isLimit && l.orderRef && (
-                <span
-                  className="ctl-drag-handle"
-                  title="Drag up or down to adjust limit price"
-                  onPointerDown={(e) => handleLimitDragStart(e, l.orderRef!)}
-                >
-                  ⠿
-                </span>
-              )}
+            {/* Solid colored horizontal line across chart */}
+            <div className="tv-line-solid" />
 
-              {/* Show only BUY (or SELL, TP, SL, ALERT) without long verbose sentences */}
-              <span className="ctl-side-tag">{l.badgeText}</span>
+            {/* TradingView Position Control Badges */}
+            <div className="tv-line-badge-group">
+              {/* [ ⇅ ] Reverse Position button */}
+              <button
+                type="button"
+                className="tv-btn-reverse"
+                title="Reverse Position"
+                onClick={() => {
+                  const res = reversePosition(pos.id, currentPrice);
+                  if (res.ok) {
+                    setAlertFeedback(`Reversed position to ${isLong ? "SHORT" : "LONG"}`);
+                    setTimeout(() => setAlertFeedback(null), 3500);
+                  }
+                }}
+              >
+                ⇅
+              </button>
 
-              {/* Precise Price Tag */}
-              <span className="ctl-price-tag">
-                ${l.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              {/* [ TP ] Take Profit Badge (Dashed green border, drag to set) */}
+              <span
+                className={`tv-bracket-badge tp ${pos.tp ? "active" : ""}`}
+                title="Drag to add / adjust take profit"
+                onPointerDown={(e) => startDragBracket(e, pos.id, "tp", pos.side, pos.tp)}
+              >
+                TP{pos.tp ? ` $${pos.tp.toLocaleString()}` : ""}
               </span>
 
-              {/* Amount Tag */}
-              {l.amount && (
-                <span className="ctl-amount-tag">
-                  {l.amount.toFixed(4)} {l.coin}
-                </span>
-              )}
+              {/* [ SL ] Stop Loss Badge (Dashed orange border, drag to set) */}
+              <span
+                className={`tv-bracket-badge sl ${pos.sl ? "active" : ""}`}
+                title="Drag to add / adjust stop loss"
+                onPointerDown={(e) => startDragBracket(e, pos.id, "sl", pos.side, pos.sl)}
+              >
+                SL{pos.sl ? ` $${pos.sl.toLocaleString()}` : ""}
+              </span>
 
-              {/* Real-time PnL chip for Open Trades (Positions) */}
-              {l.pnl && <span className={"ctl-pnl " + l.pnlTone}>{l.pnl}</span>}
+              {/* [ -1 ] or [ +1 ] Position Size colored pill */}
+              <span className={`tv-pos-qty-pill ${toneClass}`}>
+                {isLong ? `+${pos.amount}` : `-${pos.amount}`}
+              </span>
 
-              {/* Close Position Button */}
-              {isPos && l.onClose && (
-                <button
-                  type="button"
-                  className="ctl-close-pos-btn"
-                  title="Close Position @ Market Price"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    l.onClose?.();
-                  }}
-                >
-                  ✕ Close
-                </button>
-              )}
+              {/* [ +0.85 USD ] Real-time Unrealized PnL badge */}
+              <span className={`tv-pnl-pill ${pos.pnlTone}`}>
+                {pos.pnlStr}
+              </span>
 
-              {/* Cancel Limit Order / Alert Button */}
-              {!isPos && l.onCancel && (
-                <button
-                  type="button"
-                  className="ctl-cancel-btn"
-                  title="Cancel / Remove"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    l.onCancel?.();
-                  }}
-                >
-                  ✕
-                </button>
-              )}
+              {/* [ ✕ ] Close position button */}
+              <button
+                type="button"
+                className="tv-btn-close"
+                title="Close position at market price"
+                onClick={() => {
+                  const res = closePosition(pos.id, currentPrice);
+                  if (res.ok) {
+                    setAlertFeedback(
+                      `Closed ${pos.side} ${pos.amount} ${pos.coin} @ $${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })} [PnL: ${(res.pnl ?? 0) >= 0 ? "+" : ""}$${(res.pnl ?? 0).toFixed(2)}]`
+                    );
+                    setTimeout(() => setAlertFeedback(null), 4000);
+                  }
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Right Price Scale Entry Price Box (Image 5) */}
+            <div className={`tv-scale-price-chip ${toneClass}`}>
+              {pos.entryPrice.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
             </div>
           </div>
         );
       })}
 
-      {/* 2. Draggable Ghost Preview Line while user is moving a Limit Order */}
-      {draggingOrder && (
+      {/* ====================================================================
+          2. OPEN ORDERS (PENDING LIMIT ORDERS) — EXACT TRADINGVIEW (IMAGE 1-4)
+          ==================================================================== */}
+      {orderLines.map((ord) => {
+        const isBuy = ord.side === "BUY";
+        const toneClass = isBuy ? "buy" : "sell";
+
+        return (
+          <div
+            key={ord.id}
+            className={`tv-trade-line limit ${toneClass}`}
+            style={{ top: `${ord.y}px` }}
+          >
+            {/* Colored horizontal dashed/dotted line */}
+            <div className="tv-line-dashed" />
+
+            {/* TradingView Limit Order Controls */}
+            <div className="tv-line-badge-group">
+              {/* [ TP ] dashed box */}
+              <span
+                className={`tv-bracket-badge tp ${ord.tp ? "active" : ""}`}
+                title="Drag to add take profit"
+                onPointerDown={(e) => startDragBracket(e, ord.id, "tp", ord.side, ord.tp)}
+              >
+                TP{ord.tp ? ` $${ord.tp.toLocaleString()}` : ""}
+              </span>
+
+              {/* [ SL ] dashed box */}
+              <span
+                className={`tv-bracket-badge sl ${ord.sl ? "active" : ""}`}
+                title="Drag to add stop loss"
+                onPointerDown={(e) => startDragBracket(e, ord.id, "sl", ord.side, ord.sl)}
+              >
+                SL{ord.sl ? ` $${ord.sl.toLocaleString()}` : ""}
+              </span>
+
+              {/* Dashed connector line */}
+              <div className="tv-bracket-connector" />
+
+              {/* Segmented Pill: [ {qty} | {Buy limit} | ✕ ] — Draggable! */}
+              <div
+                className={`tv-segmented-pill ${toneClass}`}
+                title="Drag to move limit price"
+                onPointerDown={(e) => startDragOrder(e, ord.order)}
+              >
+                <span className="tv-seg-qty">{ord.amount}</span>
+                <span className="tv-seg-divider" />
+                <span className="tv-seg-type">
+                  {ord.type === "stop"
+                    ? "Stop"
+                    : isBuy
+                    ? "Buy limit"
+                    : "Sell limit"}
+                </span>
+                <span className="tv-seg-divider" />
+                <button
+                  type="button"
+                  className="tv-seg-cancel"
+                  title="Cancel order"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    cancelOrder(ord.id);
+                    setAlertFeedback(`Canceled ${ord.side} order @ $${ord.price.toLocaleString()}`);
+                    setTimeout(() => setAlertFeedback(null), 3000);
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Right Price Scale Exact Limit Price Label */}
+            <div className={`tv-scale-price-chip ${toneClass}`}>
+              {ord.price.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* ====================================================================
+          3. PRICE ALERTS
+          ==================================================================== */}
+      {alertLines.map((alt) => (
+        <div key={alt.id} className="tv-trade-line alert" style={{ top: `${alt.y}px` }}>
+          <div className="tv-line-dashed alert" />
+          <div className="tv-line-badge-group">
+            <div className="tv-alert-pill">
+              <span>🔔 Alert</span>
+              <button
+                type="button"
+                className="tv-seg-cancel"
+                onClick={() => removeAlert(alt.id)}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <div className="tv-scale-price-chip alert">
+            {alt.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </div>
+        </div>
+      ))}
+
+      {/* ====================================================================
+          4. DRAGGING GHOST PREVIEW LINE
+          ==================================================================== */}
+      {dragTarget && (
         <div
-          className={"chart-trade-line limit dragging " + draggingOrder.side.toLowerCase()}
-          style={{ top: `${draggingOrder.y}px`, zIndex: 30 }}
+          className={`tv-trade-line dragging ${dragTarget.side.toLowerCase()}`}
+          style={{ top: `${dragTarget.currentY}px`, zIndex: 100 }}
         >
-          <div className="ctl-dash dragging" />
-          <div className="ctl-badge dragging">
-            <span className="ctl-drag-handle active">⠿</span>
-            <span className="ctl-side-tag">{draggingOrder.side}</span>
-            <span className="ctl-price-tag bold">
-              ${draggingOrder.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </span>
-            <span className="ctl-drag-hint">
-              {(draggingOrder.side === "BUY" && draggingOrder.price >= currentPrice) ||
-              (draggingOrder.side === "SELL" && draggingOrder.price <= currentPrice)
-                ? "⚡ Cuts Market Price (Will execute immediately!)"
-                : "Release to place"}
-            </span>
+          <div className="tv-line-dashed active" />
+          <div className="tv-line-badge-group">
+            <div className="tv-drag-pill">
+              <span className="tv-drag-icon">⠿</span>
+              <span>
+                {dragTarget.type === "tp"
+                  ? "Take Profit"
+                  : dragTarget.type === "sl"
+                  ? "Stop Loss"
+                  : `${dragTarget.side} Limit`}:
+              </span>
+              <span className="bold">${dragTarget.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              <span className="tv-drag-sub">Release to set</span>
+            </div>
+          </div>
+          <div className="tv-scale-price-chip active">
+            {dragTarget.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </div>
         </div>
       )}
 
-      {/* 3. Alert / Execution Banner Toast */}
+      {/* ====================================================================
+          5. PRICE SCALE [ ⊕ price ] BUTTON (TRADINGVIEW SIGNATURE FEATURE)
+          (Images 1, 2, 3, 4, 5 — Right click / left click / mobile longpress)
+          ==================================================================== */}
+      {cursorScale && cursorScale.visible && !dragTarget && (
+        <div
+          className="tv-scale-plus-btn"
+          style={{ top: `${cursorScale.y}px` }}
+          onClick={(e) => {
+            e.stopPropagation();
+            const host = containerRef.current?.closest(".chart-host") as HTMLElement | null;
+            if (!host) return;
+            const rect = host.getBoundingClientRect();
+            triggerMenuAt(rect.width - 150, cursorScale.y + rect.top);
+          }}
+          title="Click to place order or alert at this price level"
+        >
+          <span className="tv-spb-icon">⊕</span>
+          <span className="tv-spb-price">
+            {cursorScale.price.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </span>
+        </div>
+      )}
+
+      {/* ====================================================================
+          6. ALERT / EXECUTION NOTIFICATION TOAST
+          ==================================================================== */}
       {alertFeedback && (
-        <div className="chart-exec-toast" role="alert">
+        <div className="tv-toast-banner" role="alert">
           {alertFeedback}
         </div>
       )}
 
-      {/* 4. TradingView-Style Interactive Context Menu (Double Click / Mobile Long Press) */}
+      {/* ====================================================================
+          7. TRADINGVIEW QUICK CONTEXT ACTION MENU
+          ==================================================================== */}
       {menu && menu.visible && (
         <div
           className="chart-ctx-menu"

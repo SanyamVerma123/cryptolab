@@ -237,6 +237,22 @@ export async function closeAlpacaPosition(symbol: string): Promise<{ ok: boolean
   return { ok: res.ok, error: res.error };
 }
 
+/** Cancel all open Alpaca orders */
+export async function cancelAllAlpacaOrders(): Promise<{ ok: boolean; error?: string }> {
+  const res = await alpacaFetch("/v2/orders", {
+    method: "DELETE",
+  });
+  return { ok: res.ok, error: res.error };
+}
+
+/** Get order history (all statuses) */
+export async function getAlpacaOrderHistory(limit = 50): Promise<{ ok: boolean; orders?: AlpacaOrder[]; error?: string }> {
+  const res = await alpacaFetch<AlpacaOrder[]>(`/v2/orders?status=all&limit=${limit}&nested=true`);
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true, orders: res.data ?? [] };
+}
+
+
 export interface AlpacaQuote {
   ap: number; // ask price
   as: number; // ask size

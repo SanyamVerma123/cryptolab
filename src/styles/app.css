@@ -2654,7 +2654,7 @@ body.resizing-col .market-panel {
 }
 
 /* ==========================================================================
-   TradingView-style Chart Trading Overlay (Live Position, TP, SL Lines)
+   TradingView Exact Replica Chart Trading Overlay (Lines, Brackets, Pills, Scale)
    ========================================================================== */
 .chart-trading-overlay {
   position: absolute;
@@ -2664,246 +2664,414 @@ body.resizing-col .market-panel {
   overflow: hidden;
 }
 
-.chart-trade-line {
+.tv-trade-line {
   position: absolute;
   left: 0;
-  right: 56px; /* stop right before Vela's price scale axis */
+  right: 0;
   transform: translateY(-50%);
   display: flex;
   align-items: center;
   pointer-events: none;
-  z-index: 12;
+  z-index: 14;
 }
 
-.ctl-dash {
+/* 1. Horizontal Lines across chart */
+.tv-line-solid {
+  flex: 1 1 auto;
+  height: 1.5px;
+  background: #089981;
+}
+
+.tv-trade-line.position.short .tv-line-solid {
+  background: #f23645;
+}
+
+.tv-line-dashed {
   flex: 1 1 auto;
   height: 1px;
-  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.4) 50%, rgba(255, 255, 255, 0) 0%);
+  background-image: linear-gradient(to right, #2962ff 50%, rgba(255, 255, 255, 0) 0%);
   background-position: top;
-  background-size: 8px 1px;
+  background-size: 6px 1px;
   background-repeat: repeat-x;
 }
 
-.chart-trade-line.position.buy .ctl-dash {
-  background-image: linear-gradient(to right, #0ecb81 50%, rgba(255, 255, 255, 0) 0%);
+.tv-trade-line.limit.sell .tv-line-dashed {
+  background-image: linear-gradient(to right, #f23645 50%, rgba(255, 255, 255, 0) 0%);
 }
 
-.chart-trade-line.position.sell .ctl-dash {
-  background-image: linear-gradient(to right, #f6465d 50%, rgba(255, 255, 255, 0) 0%);
+.tv-line-dashed.alert {
+  background-image: linear-gradient(to right, #f0b90b 50%, rgba(255, 255, 255, 0) 0%);
 }
 
-.chart-trade-line.tp .ctl-dash {
-  background-image: linear-gradient(to right, #0ecb81 50%, rgba(255, 255, 255, 0) 0%);
-  height: 1.5px;
+.tv-line-dashed.active {
+  background-image: linear-gradient(to right, #2962ff 50%, rgba(255, 255, 255, 0) 0%);
+  height: 2px;
+  animation: tv-dash-scroll 0.3s linear infinite;
 }
 
-.chart-trade-line.sl .ctl-dash {
-  background-image: linear-gradient(to right, #f6465d 50%, rgba(255, 255, 255, 0) 0%);
-  height: 1.5px;
+@keyframes tv-dash-scroll {
+  from { background-position-x: 0; }
+  to { background-position-x: 6px; }
 }
 
-.ctl-badge {
+/* 2. Badge Groups (Pills & Controls) */
+.tv-line-badge-group {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 10.5px;
-  font-weight: 600;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  color: #ffffff;
+  gap: 4px;
+  margin-right: 6px;
   pointer-events: auto;
   user-select: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-  white-space: nowrap;
-  backdrop-filter: blur(4px);
 }
 
-.chart-trade-line.position.buy .ctl-badge {
-  background: rgba(14, 203, 129, 0.88);
-  border: 1px solid #0ecb81;
-}
-
-.chart-trade-line.position.sell .ctl-badge {
-  background: rgba(246, 70, 93, 0.88);
-  border: 1px solid #f6465d;
-}
-
-.chart-trade-line.tp .ctl-badge {
-  background: rgba(14, 203, 129, 0.92);
-  border: 1px solid #0ecb81;
-}
-
-.chart-trade-line.sl .ctl-badge {
-  background: rgba(246, 70, 93, 0.92);
-  border: 1px solid #f6465d;
-}
-
-.ctl-drag-handle {
-  display: inline-flex;
+/* [ ⇅ ] Reverse Position button */
+.tv-btn-reverse {
+  background: #1e222d;
+  border: 1px solid #363a45;
+  color: #d1d4dc;
+  font-size: 11px;
+  width: 20px;
+  height: 20px;
+  line-height: 18px;
+  border-radius: 3px;
+  display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  cursor: ns-resize;
-  padding: 0 3px;
-  margin-right: 2px;
-  opacity: 0.8;
-  transition: opacity 0.15s, transform 0.15s;
-  user-select: none;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.12s ease;
+}
+
+.tv-btn-reverse:hover {
+  background: #2a2e39;
+  color: #ffffff;
+  border-color: #505664;
+}
+
+/* [ TP ] & [ SL ] Brackets (Images 1, 2, 5) */
+.tv-bracket-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  cursor: grab;
   touch-action: none;
+  transition: all 0.12s ease;
+  line-height: 16px;
+  height: 18px;
+  box-sizing: border-box;
 }
 
-.ctl-drag-handle:hover,
-.ctl-drag-handle.active {
-  opacity: 1;
-  transform: scale(1.15);
+.tv-bracket-badge.tp {
+  background: rgba(8, 153, 129, 0.08);
+  border: 1px dashed rgba(8, 153, 129, 0.65);
+  color: #089981;
 }
 
-.ctl-side-tag {
-  font-size: 9px;
-  font-weight: 800;
-  text-transform: uppercase;
-  background: rgba(0, 0, 0, 0.28);
-  padding: 1px 4px;
-  border-radius: 2px;
+.tv-bracket-badge.tp:hover,
+.tv-bracket-badge.tp.active {
+  background: rgba(8, 153, 129, 0.2);
+  border-style: solid;
+  color: #0ecb81;
 }
 
-.ctl-price-tag {
-  font-size: 10px;
+.tv-bracket-badge.sl {
+  background: rgba(242, 54, 69, 0.08);
+  border: 1px dashed rgba(242, 54, 69, 0.65);
+  color: #f23645;
+}
+
+.tv-bracket-badge.sl:hover,
+.tv-bracket-badge.sl.active {
+  background: rgba(242, 54, 69, 0.2);
+  border-style: solid;
+  color: #ff6b7a;
+}
+
+.tv-bracket-connector {
+  width: 8px;
+  height: 1px;
+  background-image: linear-gradient(to right, #8b94a3 50%, rgba(255, 255, 255, 0) 0%);
+  background-size: 3px 1px;
+  background-repeat: repeat-x;
+}
+
+/* Segmented Pill: [ 1 | Buy limit | ✕ ] (Image 1, 2, 3) */
+.tv-segmented-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  background: #1e222d;
+  border-radius: 4px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  cursor: ns-resize;
+  touch-action: none;
+  transition: all 0.12s ease;
+}
+
+.tv-segmented-pill.buy {
+  border: 1px solid #2962ff;
+}
+
+.tv-segmented-pill.sell {
+  border: 1px solid #f23645;
+}
+
+.tv-segmented-pill:hover {
+  filter: brightness(1.1);
+}
+
+.tv-seg-qty {
+  font-size: 11px;
+  font-family: monospace;
+  font-weight: 700;
+  padding: 0 6px;
+  color: #ffffff;
+}
+
+.tv-seg-divider {
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.tv-segmented-pill.buy .tv-seg-divider {
+  background: rgba(41, 98, 255, 0.35);
+}
+
+.tv-segmented-pill.sell .tv-seg-divider {
+  background: rgba(242, 54, 69, 0.35);
+}
+
+.tv-seg-type {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 7px;
+  white-space: nowrap;
+}
+
+.tv-segmented-pill.buy .tv-seg-type {
+  color: #2962ff;
+}
+
+.tv-segmented-pill.sell .tv-seg-type {
+  color: #f23645;
+}
+
+.tv-seg-cancel {
+  background: none;
+  border: none;
+  color: #8b94a3;
+  font-size: 9.5px;
+  cursor: pointer;
+  padding: 0 6px;
+  line-height: 20px;
+  transition: color 0.12s ease;
+}
+
+.tv-seg-cancel:hover {
+  color: #ffffff;
+}
+
+/* Position Badges (Image 5) */
+.tv-pos-qty-pill {
+  font-size: 10.5px;
   font-weight: 700;
   font-family: monospace;
-  background: rgba(0, 0, 0, 0.22);
-  padding: 1px 4px;
-  border-radius: 2px;
-}
-
-.ctl-amount-tag {
-  font-size: 9.5px;
-  font-weight: 600;
-  opacity: 0.88;
-}
-
-.ctl-pnl {
-  font-weight: 700;
-  font-size: 10px;
-  padding: 1px 4px;
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.25);
-}
-
-.ctl-pnl.up {
-  color: #a3ffdc;
-}
-
-.ctl-pnl.down {
-  color: #ffccd3;
-}
-
-.ctl-close-pos-btn {
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #ffffff;
-  font-size: 9.5px;
-  font-weight: 700;
   padding: 1px 6px;
   border-radius: 3px;
-  cursor: pointer;
-  margin-left: 3px;
-  transition: all 0.15s ease;
-}
-
-.ctl-close-pos-btn:hover {
-  background: rgba(246, 70, 93, 0.7);
-  border-color: #f6465d;
-}
-
-.ctl-cancel-btn {
-  background: rgba(0, 0, 0, 0.2);
-  border: none;
   color: #ffffff;
-  font-size: 10px;
+}
+
+.tv-pos-qty-pill.long {
+  background: #089981;
+}
+
+.tv-pos-qty-pill.short {
+  background: #f23645;
+}
+
+.tv-pnl-pill {
+  font-size: 10.5px;
   font-weight: 700;
-  width: 15px;
-  height: 15px;
-  line-height: 15px;
-  border-radius: 50%;
+  padding: 1px 7px;
+  border-radius: 3px;
+  background: #1e222d;
+  border: 1px solid #363a45;
+  white-space: nowrap;
+}
+
+.tv-pnl-pill.up {
+  color: #089981;
+}
+
+.tv-pnl-pill.down {
+  color: #f23645;
+}
+
+.tv-btn-close {
+  background: #1e222d;
+  border: 1px solid #363a45;
+  color: #8b94a3;
+  font-size: 10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  margin-left: 2px;
-  transition: background 0.15s ease;
+  transition: all 0.12s ease;
 }
 
-.ctl-cancel-btn:hover {
-  background: rgba(0, 0, 0, 0.5);
+.tv-btn-close:hover {
+  background: #f23645;
+  border-color: #f23645;
+  color: #ffffff;
 }
 
-/* Draggable Ghost State */
-.chart-trade-line.dragging {
-  pointer-events: none;
+/* Alert badge */
+.tv-alert-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #1e222d;
+  border: 1px solid #f0b90b;
+  color: #f0b90b;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
 }
 
-.chart-trade-line.dragging .ctl-dash {
-  background-image: linear-gradient(to right, #2962ff 50%, rgba(255, 255, 255, 0) 0%);
-  height: 2px;
-  animation: ctl-dash-flow 0.4s linear infinite;
-}
-
-@keyframes ctl-dash-flow {
-  from { background-position-x: 0; }
-  to { background-position-x: 8px; }
-}
-
-.chart-trade-line.dragging .ctl-badge {
-  background: rgba(41, 98, 255, 0.95);
+/* Dragging Preview Ghost Pill */
+.tv-drag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #2962ff;
   border: 1px solid #709bfd;
+  color: #ffffff;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
   box-shadow: 0 4px 16px rgba(41, 98, 255, 0.5);
 }
 
-.ctl-drag-hint {
+.tv-drag-icon {
+  font-size: 12px;
+}
+
+.tv-drag-sub {
   font-size: 9.5px;
+  opacity: 0.85;
+  margin-left: 2px;
+}
+
+/* 3. Price Scale Marker Chips (Attached right to price axis) */
+.tv-scale-price-chip {
+  width: 58px;
+  min-width: 58px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-family: monospace;
   font-weight: 700;
-  color: #ffef8a;
-  background: rgba(0, 0, 0, 0.35);
-  padding: 1px 5px;
-  border-radius: 2px;
+  color: #ffffff;
+  border-radius: 2px 0 0 2px;
+  z-index: 20;
 }
 
-.chart-trade-line.limit.buy .ctl-dash {
-  background-image: linear-gradient(to right, #0ecb81 50%, rgba(255, 255, 255, 0) 0%);
+.tv-scale-price-chip.buy,
+.tv-scale-price-chip.long {
+  background: #2962ff;
 }
 
-.chart-trade-line.limit.buy .ctl-badge {
-  background: rgba(14, 203, 129, 0.9);
-  border: 1px solid #0ecb81;
+.tv-scale-price-chip.sell,
+.tv-scale-price-chip.short {
+  background: #f23645;
 }
 
-.chart-trade-line.limit.sell .ctl-dash {
-  background-image: linear-gradient(to right, #f6465d 50%, rgba(255, 255, 255, 0) 0%);
+.tv-scale-price-chip.alert {
+  background: #f0b90b;
+  color: #131722;
 }
 
-.chart-trade-line.limit.sell .ctl-badge {
-  background: rgba(246, 70, 93, 0.9);
-  border: 1px solid #f6465d;
+.tv-scale-price-chip.active {
+  background: #2962ff;
+  box-shadow: 0 0 10px rgba(41, 98, 255, 0.7);
 }
 
-.chart-trade-line.alert .ctl-dash {
-  background-image: linear-gradient(to right, #f0b90b 50%, rgba(255, 255, 255, 0) 0%);
-  height: 1.5px;
+/* ==========================================================================
+   4. TradingView Signature Price Scale [ ⊕ price ] Button
+   (Hovering/moving cursor on chart renders this pill right on the price axis)
+   ========================================================================== */
+.tv-scale-plus-btn {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #131722;
+  border: 1px solid #363a45;
+  border-right: none;
+  border-radius: 4px 0 0 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 25;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  transition: all 0.1s ease;
+  user-select: none;
 }
 
-.chart-trade-line.alert .ctl-badge {
-  background: rgba(240, 185, 11, 0.92);
-  border: 1px solid #f0b90b;
-  color: #13161b;
-  font-weight: 800;
+.tv-scale-plus-btn:hover {
+  background: #2a2e39;
+  border-color: #2962ff;
 }
 
-.chart-trade-line.alert .ctl-cancel-btn {
-  color: #13161b;
-  background: rgba(0, 0, 0, 0.15);
+.tv-spb-icon {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2962ff;
+  line-height: 1;
+}
+
+.tv-scale-plus-btn:hover .tv-spb-icon {
+  color: #4c82ff;
+}
+
+.tv-spb-price {
+  font-size: 10.5px;
+  font-family: monospace;
+  font-weight: 700;
+  color: #d1d4dc;
+}
+
+.tv-scale-plus-btn:hover .tv-spb-price {
+  color: #ffffff;
+}
+
+.tv-toast-banner {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(19, 23, 34, 0.95);
+  border: 1px solid #2962ff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+  z-index: 100;
+  pointer-events: none;
+  animation: toast-in 0.2s ease-out;
 }
 
 /* Bottom Orders Drawer Positions & Side Badges */
@@ -3638,4 +3806,331 @@ body.resizing-col .market-panel {
   background: var(--bg-3, #1a1e24);
   border-top: 1px solid var(--line, #23272e);
 }
+
+/* ==========================================================================
+   Order Placement Panel Pro Extensions: Dual Mode, Leverage, Brackets, Fees
+   ========================================================================== */
+.op-mode-toggle {
+  display: flex;
+  background: var(--bg-1, #0d0f12);
+  border: 1px solid var(--line, #23272e);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.op-mode-tab {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.op-mode-tab:hover {
+  color: #ffffff;
+}
+
+.op-mode-tab.active {
+  background: var(--accent, #2962ff);
+  color: #ffffff;
+}
+
+.op-settings-gear-btn {
+  background: var(--bg-3, #1a1e24);
+  border: 1px solid var(--line, #23272e);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.op-settings-gear-btn:hover {
+  background: var(--bg-4, #22262e);
+  color: #ffffff;
+  border-color: #3b4250;
+}
+
+.op-alpaca-stat-bar {
+  background: rgba(41, 98, 255, 0.08);
+  border: 1px solid rgba(41, 98, 255, 0.25);
+  border-radius: 5px;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+.op-asb-info {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text);
+}
+
+.op-asb-info b {
+  color: #ffffff;
+  font-family: monospace;
+}
+
+.op-asb-warn {
+  color: #f0b90b;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.op-asb-warn:hover {
+  text-decoration: underline;
+}
+
+.op-leverage-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-3, #1a1e24);
+  border: 1px solid var(--line, #23272e);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.op-margin-switch {
+  display: flex;
+  background: var(--bg-2, #13161b);
+  border-radius: 4px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.op-ms-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.op-ms-btn.active {
+  background: var(--bg-4, #22262e);
+  color: #ffffff;
+}
+
+.op-leverage-chips {
+  display: flex;
+  gap: 3px;
+}
+
+.op-lev-chip {
+  background: var(--bg-2, #13161b);
+  border: 1px solid var(--line, #23272e);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.op-lev-chip:hover,
+.op-lev-chip.active {
+  background: var(--accent, #2962ff);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+
+/* Brackets (TP & SL) with % and Points toggle */
+.op-brackets-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.op-bracket-card {
+  background: var(--bg-3, #1a1e24);
+  border: 1px solid var(--line, #23272e);
+  border-radius: 6px;
+  padding: 7px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.op-bracket-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.op-bracket-mode-toggle {
+  display: flex;
+  background: var(--bg-2, #13161b);
+  border-radius: 4px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.op-bmt-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.op-bmt-btn.active {
+  background: var(--accent, #2962ff);
+  color: #ffffff;
+}
+
+.op-bracket-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.op-input-wrap.small {
+  height: 28px;
+}
+
+.op-input.small {
+  font-size: 11px;
+  padding: 4px 8px;
+}
+
+.op-unit.small {
+  font-size: 10px;
+  padding: 0 6px;
+}
+
+.op-bracket-target-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: monospace;
+}
+
+.op-rr-pill {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(240, 185, 11, 0.08);
+  border: 1px solid rgba(240, 185, 11, 0.25);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.op-rr-pill span {
+  color: #f0b90b;
+}
+
+.op-rr-pill b {
+  color: #ffffff;
+  font-family: monospace;
+}
+
+/* Hyperliquid Charges & Margin Summary */
+.op-charges-card {
+  background: var(--bg-3, #1a1e24);
+  border: 1px solid var(--line, #23272e);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+}
+
+.op-charge-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.op-charge-row .k {
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.op-charge-row .v {
+  color: #ffffff;
+  font-family: monospace;
+  font-weight: 600;
+}
+
+.op-charge-row .v.text-accent {
+  color: var(--accent, #2962ff);
+}
+
+.op-info-icon {
+  font-size: 10px;
+  color: #6b7488;
+  cursor: help;
+}
+
+.op-info-icon:hover {
+  color: #ffffff;
+}
+
+/* Bottom Orders Drawer Environment Badge */
+.bod-env-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: rgba(41, 98, 255, 0.15);
+  color: #2962ff;
+  border: 1px solid rgba(41, 98, 255, 0.3);
+  letter-spacing: 0.3px;
+}
+
+.bod-env-pill.alpaca {
+  background: rgba(14, 203, 129, 0.15);
+  color: #0ecb81;
+  border-color: rgba(14, 203, 129, 0.3);
+}
+
+.sm-radio-group.vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sm-rp-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sm-rp-sub {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  font-weight: normal;
+  line-height: 1.35;
+}
+
+.sm-hint-box {
+  background: var(--bg-3, #1a1e24);
+  border: 1px solid var(--line, #23272e);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.sm-hint-box b {
+  color: #ffffff;
+}
+
 

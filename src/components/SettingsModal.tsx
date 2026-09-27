@@ -1,8 +1,13 @@
 /**
- * SettingsModal — Application & Alpaca Trading API Settings
+ * SettingsModal — Application & Trading Environment Settings
  *
- * Configures Alpaca API Key ID, Secret Key, Paper/Live mode, connection testing,
- * default TP/SL preferences, and paper wallet management.
+ * Configures:
+ * 1. Active Trading Environment:
+ *    - In-App Paper Trading (Default): Simulated $50k wallet, leverage, funding charges.
+ *    - Alpaca Paper Trading: 100% real Alpaca Paper Trading API integration.
+ * 2. Alpaca API Key ID, Secret Key, and live connection verification.
+ * 3. Default Take Profit & Stop Loss preferences.
+ * 4. Paper Wallet deposit management.
  */
 import { useEffect, useState } from "react";
 import {
@@ -11,18 +16,18 @@ import {
   testAlpacaConnection,
   type AlpacaConfig,
 } from "../lib/alpaca";
-import { useOrders } from "../lib/orderState";
+import { useOrders, type TradingMode } from "../lib/orderState";
 
 interface Props {
   open: boolean;
   onClose: () => void;
 }
 
-type SettingsTab = "alpaca" | "defaults" | "wallet";
+type SettingsTab = "environment" | "alpaca" | "defaults" | "wallet";
 
 export function SettingsModal({ open, onClose }: Props) {
-  const { balances, depositAsset } = useOrders();
-  const [tab, setTab] = useState<SettingsTab>("alpaca");
+  const { tradingMode, setTradingMode, balances, depositAsset, syncAlpaca } = useOrders();
+  const [tab, setTab] = useState<SettingsTab>("environment");
 
   const [cfg, setCfg] = useState<AlpacaConfig>(getAlpacaConfig());
   const [showSecret, setShowSecret] = useState(false);
@@ -48,6 +53,7 @@ export function SettingsModal({ open, onClose }: Props) {
   const handleSaveAlpaca = () => {
     saveAlpacaConfig(cfg);
     setTestResult({ ok: true, msg: "Alpaca API configuration saved." });
+    void syncAlpaca();
     setTimeout(() => setTestResult(null), 3000);
   };
 
@@ -67,6 +73,7 @@ export function SettingsModal({ open, onClose }: Props) {
         ok: true,
         msg: `Connected successfully! Status: ${acc.status} | Portfolio: $${portVal} ${acc.currency}`,
       });
+      void syncAlpaca();
     } else {
       setTestResult({
         ok: false,
@@ -93,6 +100,13 @@ export function SettingsModal({ open, onClose }: Props) {
         <div className="sm-tabs">
           <button
             type="button"
+            className={"sm-tab" + (tab === "environment" ? " active" : "")}
+            onClick={() => setTab("environment")}
+          >
+            Environment
+          </button>
+          <button
+            type="button"
             className={"sm-tab" + (tab === "alpaca" ? " active" : "")}
             onClick={() => setTab("alpaca")}
           >
@@ -116,6 +130,61 @@ export function SettingsModal({ open, onClose }: Props) {
 
         {/* Content Body */}
         <div className="sm-body">
+          {/* TAB 1: ENVIRONMENT SELECTION (IN-APP vs ALPACA) */}
+          {tab === "environment" && (
+            <div className="sm-sec">
+              <div className="sm-field-group">
+                <label className="sm-label">Active Trading Mode</label>
+                <div className="sm-radio-group vertical">
+                  <label className={"sm-radio-pill" + (tradingMode === "in_app" ? " active" : "")}>
+                    <input
+                      type="radio"
+                      name="tmode"
+                      checked={tradingMode === "in_app"}
+                      onChange={() => setTradingMode("in_app")}
+                    />
+                    <div className="sm-rp-content">
+                      <span className="bold">In-App Paper Trading (Default)</span>
+                      <span className="sm-rp-sub">
+                        Zero setup required. Realistic derivatives simulator with $50,000 USD wallet,
+                        leverage (up to 50x), funding rates, Maker/Taker fees, and instant matching.
+                      </span>
+                    </div>
+                  </label>
+
+                  <label className={"sm-radio-pill" + (tradingMode === "alpaca" ? " active" : "")}>
+                    <input
+                      type="radio"
+                      name="tmode"
+                      checked={tradingMode === "alpaca"}
+                      onChange={() => {
+                        setTradingMode("alpaca");
+                        if (!cfg.keyId || !cfg.secretKey) {
+                          setTab("alpaca");
+                        }
+                      }}
+                    />
+                    <div className="sm-rp-content">
+                      <span className="bold">Alpaca Paper Trading (Live Broker API)</span>
+                      <span className="sm-rp-sub">
+                        Direct connection to your official Alpaca account. Pulls real paper cash,
+                        buying power, live open orders, and positions via Alpaca API keys.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="sm-hint-box">
+                <b>Current Mode:</b>{" "}
+                {tradingMode === "in_app"
+                  ? "In-App Paper Simulator (Local matching engine active)"
+                  : "Alpaca Paper Trading (Connected to paper-api.alpaca.markets)"}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: ALPACA API KEYS */}
           {tab === "alpaca" && (
             <div className="sm-sec">
               <div className="sm-field-group">
@@ -148,11 +217,6 @@ export function SettingsModal({ open, onClose }: Props) {
                     <span>Live Trading</span>
                   </label>
                 </div>
-                <span className="sm-hint">
-                  {cfg.isPaper
-                    ? "Paper Trading (Zero risk). Alpaca credentials are used for both Live Orders & Market Data API."
-                    : "Live Trading (Real capital). Alpaca credentials are used for both Live Orders & Market Data API."}
-                </span>
               </div>
 
               <div className="sm-field-group">
@@ -226,7 +290,7 @@ export function SettingsModal({ open, onClose }: Props) {
                     alpaca.markets
                   </a>
                   .<br />
-                  2. Go to <b>Paper Trading</b> on the dashboard & click <b>Generate New Key</b>.
+                  2. Select <b>Paper Trading</b> on the dashboard and click <b>Generate New Key</b>.
                   <br />
                   3. Paste your <b>Key ID</b> and <b>Secret Key</b> above.
                 </p>
@@ -234,6 +298,7 @@ export function SettingsModal({ open, onClose }: Props) {
             </div>
           )}
 
+          {/* TAB 3: TP / SL DEFAULTS */}
           {tab === "defaults" && (
             <div className="sm-sec">
               <div className="sm-field-group">
@@ -268,12 +333,15 @@ export function SettingsModal({ open, onClose }: Props) {
             </div>
           )}
 
+          {/* TAB 4: PAPER WALLET */}
           {tab === "wallet" && (
             <div className="sm-sec">
               <div className="sm-wallet-list">
                 <div className="sm-wallet-row">
                   <span className="sm-w-coin">USD Cash</span>
-                  <span className="sm-w-val">${balances.USD?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  <span className="sm-w-val">
+                    ${balances.USD?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
                   <button
                     type="button"
                     className="sm-w-btn"
@@ -283,7 +351,7 @@ export function SettingsModal({ open, onClose }: Props) {
                   </button>
                 </div>
                 {Object.entries(balances)
-                  .filter(([k]) => k !== "USD")
+                  .filter(([k]) => k !== "USD" && k !== "BUYING_POWER" && k !== "PORTFOLIO")
                   .map(([c, val]) => (
                     <div key={c} className="sm-wallet-row">
                       <span className="sm-w-coin">{c}</span>

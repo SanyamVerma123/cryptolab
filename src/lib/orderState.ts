@@ -1,16 +1,27 @@
 /**
- * orderState — Client-side Paper Trading, Order Matching, Position & Alert Store
+ * orderState — Trading Engine, Dual-Mode Paper Trading (In-App & Alpaca),
+ * Positions, Movable Limit Orders & Matching Engine.
  *
- * Implements full trading logic:
- * - Market Orders: Execute immediately and create an Open Trade (TradePosition).
- * - Limit Orders: Remain Open until live market price reaches/cuts the limit price,
- *   at which point they fill automatically and become an Open Trade (TradePosition).
- * - Movable Limit Orders: Can be dragged on the chart to adjust the limit price in real-time.
- * - Positions: Track active open trades with entry price, size, real-time PnL, TP, SL, and Close.
- * - Take Profit & Stop Loss: Automatically close positions when target prices are reached.
+ * Supports two distinct environments:
+ * 1. "in_app" (Default): Full local simulation with $50k paper wallet, customizable
+ *    leverage, Maker/Taker fees, funding rates, TP/SL auto-execution, and matching engine.
+ * 2. "alpaca": 100% real Alpaca Paper Trading API integration. Live account buying power,
+ *    cash, live open orders, live open positions, and official order submission/execution.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import {
+  getAlpacaConfig,
+  testAlpacaConnection,
+  getAlpacaPositions,
+  getAlpacaOrders,
+  getAlpacaOrderHistory,
+  submitAlpacaOrder,
+  cancelAlpacaOrder,
+  cancelAllAlpacaOrders,
+  closeAlpacaPosition,
+} from "./alpaca";
 
+export type TradingMode = "in_app" | "alpaca";
 export type OrderType = "Limit" | "Market" | "Stop-Limit";
 export type OrderSide = "BUY" | "SELL";
 export type OrderStatus = "Open" | "Filled" | "Canceled";
@@ -30,6 +41,8 @@ export interface Order {
   takeProfit?: number;
   stopLoss?: number;
   status: OrderStatus;
+  leverage?: number;
+  isAlpaca?: boolean;
 }
 
 export interface TradePosition {
@@ -43,6 +56,10 @@ export interface TradePosition {
   total: number;
   takeProfit?: number;
   stopLoss?: number;
+  leverage?: number;
+  margin?: number;
+  liquidationPrice?: number;
+  isAlpaca?: boolean;
 }
 
 export interface PriceAlert {
@@ -58,6 +75,7 @@ export interface Balances {
   [asset: string]: number;
 }
 
+const TRADING_MODE_KEY = "tradepro_trading_mode_v2";
 const ORDERS_KEY = "tradepro_open_orders_v2";
 const POSITIONS_KEY = "tradepro_open_positions_v2";
 const HISTORY_KEY = "tradepro_order_history_v2";
@@ -91,6 +109,7 @@ const DEFAULT_ORDERS: Order[] = [
     total: 9630.0,
     trigger: "-",
     status: "Open",
+    leverage: 5,
   },
 ];
 
@@ -112,6 +131,9 @@ const DEFAULT_POSITIONS: TradePosition[] = [
     total: 16125.0,
     takeProfit: 68000.0,
     stopLoss: 62500.0,
+    leverage: 10,
+    margin: 1612.5,
+    liquidationPrice: 58372.5,
   },
 ];
 
@@ -135,6 +157,7 @@ const DEFAULT_HISTORY: Order[] = [
     total: 16137.5,
     trigger: "-",
     status: "Filled",
+    leverage: 10,
   },
 ];
 
@@ -156,29 +179,169 @@ function setStored<T>(key: string, val: T): void {
   }
 }
 
-// Global in-memory cache
+// Global state
+let gTradingMode: TradingMode = getStored<TradingMode>(TRADING_MODE_KEY, "in_app");
 let gOrders: Order[] = getStored<Order[]>(ORDERS_KEY, DEFAULT_ORDERS);
 let gPositions: TradePosition[] = getStored<TradePosition[]>(POSITIONS_KEY, DEFAULT_POSITIONS);
 let gHistory: Order[] = getStored<Order[]>(HISTORY_KEY, DEFAULT_HISTORY);
 let gBalances: Balances = getStored<Balances>(BALANCES_KEY, DEFAULT_BALANCES);
 let gAlerts: PriceAlert[] = getStored<PriceAlert[]>(ALERTS_KEY, []);
 
+// Alpaca remote cache
+let gAlpacaOrders: Order[] = [];
+let gAlpacaPositions: TradePosition[] = [];
+let gAlpacaHistory: Order[] = [];
+let gAlpacaBalances: Balances = { USD: 0 };
+
 const listeners = new Set<() => void>();
 
 function notify() {
-  setStored(ORDERS_KEY, gOrders);
-  setStored(POSITIONS_KEY, gPositions);
-  setStored(HISTORY_KEY, gHistory);
-  setStored(BALANCES_KEY, gBalances);
+  if (gTradingMode === "in_app") {
+    setStored(ORDERS_KEY, gOrders);
+    setStored(POSITIONS_KEY, gPositions);
+    setStored(HISTORY_KEY, gHistory);
+    setStored(BALANCES_KEY, gBalances);
+  }
   setStored(ALERTS_KEY, gAlerts);
+  setStored(TRADING_MODE_KEY, gTradingMode);
   listeners.forEach((l) => l());
+}
+
+export function getTradingMode(): TradingMode {
+  return gTradingMode;
+}
+
+export function setTradingMode(mode: TradingMode): void {
+  gTradingMode = mode;
+  setStored(TRADING_MODE_KEY, mode);
+  if (mode === "alpaca") {
+    void syncAlpacaTradingState();
+  }
+  notify();
+}
+
+/**
+ * Sync with Alpaca API when mode is 'alpaca'
+ */
+export async function syncAlpacaTradingState(): Promise<boolean> {
+  const cfg = getAlpacaConfig();
+  if (!cfg.keyId || !cfg.secretKey) return false;
+
+  try {
+    // 1. Account info & balances
+    const accRes = await testAlpacaConnection();
+    if (accRes.ok && accRes.account) {
+      const cash = parseFloat(accRes.account.cash || "0");
+      const bp = parseFloat(accRes.account.buying_power || "0");
+      gAlpacaBalances = {
+        USD: cash,
+        BUYING_POWER: bp,
+        PORTFOLIO: parseFloat(accRes.account.portfolio_value || "0"),
+      };
+    }
+
+    // 2. Positions
+    const posRes = await getAlpacaPositions();
+    if (posRes.ok && posRes.positions) {
+      gAlpacaPositions = posRes.positions.map((p) => {
+        const coin = p.symbol.split("/")[0];
+        const entryPrice = parseFloat(p.avg_entry_price || "0");
+        const amount = parseFloat(p.qty || "0");
+        return {
+          id: p.asset_id || "alpaca_pos_" + p.symbol,
+          date: new Date().toLocaleString([], {
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          pair: p.symbol,
+          coin,
+          side: p.side === "long" ? "BUY" : "SELL",
+          entryPrice,
+          amount,
+          total: entryPrice * amount,
+          isAlpaca: true,
+        };
+      });
+    }
+
+    // 3. Orders
+    const ordRes = await getAlpacaOrders();
+    if (ordRes.ok && ordRes.orders) {
+      gAlpacaOrders = ordRes.orders.map((o) => {
+        const coin = o.symbol.split("/")[0];
+        const price = parseFloat(o.limit_price || o.stop_price || "0");
+        const amount = parseFloat(o.qty || "0");
+        return {
+          id: o.id,
+          date: new Date(o.submitted_at).toLocaleString([], {
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          pair: o.symbol,
+          coin,
+          type: o.type === "limit" ? "Limit" : o.type === "market" ? "Market" : "Stop-Limit",
+          side: o.side.toUpperCase() as OrderSide,
+          price,
+          amount,
+          filled: (parseFloat(o.filled_qty || "0") / (amount || 1)) * 100,
+          total: price * amount,
+          trigger: "-",
+          status: "Open",
+          isAlpaca: true,
+        };
+      });
+    }
+
+    // 4. History
+    const histRes = await getAlpacaOrderHistory(30);
+    if (histRes.ok && histRes.orders) {
+      gAlpacaHistory = histRes.orders
+        .filter((o) => o.status !== "new" && o.status !== "open")
+        .map((o) => {
+          const coin = o.symbol.split("/")[0];
+          const price = parseFloat(o.limit_price || "0");
+          const amount = parseFloat(o.qty || "0");
+          return {
+            id: o.id,
+            date: new Date(o.submitted_at).toLocaleString([], {
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            pair: o.symbol,
+            coin,
+            type: o.type === "limit" ? "Limit" : o.type === "market" ? "Market" : "Stop-Limit",
+            side: o.side.toUpperCase() as OrderSide,
+            price,
+            amount,
+            filled: (parseFloat(o.filled_qty || "0") / (amount || 1)) * 100,
+            total: price * amount,
+            trigger: "-",
+            status: o.status === "filled" ? "Filled" : "Canceled",
+            isAlpaca: true,
+          };
+        });
+    }
+
+    notify();
+    return true;
+  } catch (err) {
+    console.warn("[trade-pro] Alpaca sync error:", err);
+    return false;
+  }
 }
 
 /**
  * Place a new order:
- * - Market: Executes immediately at current market price and creates an Open Trade (TradePosition).
- * - Limit: If price already crosses currentPrice, executes immediately;
- *   otherwise stays as an Open Order at that exact price point (movable/draggable on chart).
+ * - Market: Executes immediately at current market price and creates an Open Trade.
+ * - Limit: ALWAYS sits as an Open Order at that exact price point on the chart!
+ *   It does NOT execute immediately on submit — it waits for live market price ticks
+ *   to reach/cut the limit price, or until the user drags it!
  */
 export function placeOrder(order: {
   coin: string;
@@ -191,8 +354,20 @@ export function placeOrder(order: {
   takeProfit?: number;
   stopLoss?: number;
   currentPrice?: number;
+  leverage?: number;
 }): { ok: boolean; error?: string; order?: Order; position?: TradePosition } {
-  const { coin, type, side, price, amount, trigger = "-", takeProfit, stopLoss, currentPrice } = order;
+  const {
+    coin,
+    type,
+    side,
+    price,
+    amount,
+    trigger = "-",
+    takeProfit,
+    stopLoss,
+    currentPrice,
+    leverage = 1,
+  } = order;
   const pair = order.pair ?? `${coin}/USD`;
   const effectivePrice = type === "Market" && currentPrice && currentPrice > 0 ? currentPrice : price;
   const total = effectivePrice * amount;
@@ -200,36 +375,56 @@ export function placeOrder(order: {
   if (amount <= 0) return { ok: false, error: "Amount must be greater than 0" };
   if (type !== "Market" && effectivePrice <= 0) return { ok: false, error: "Price must be greater than 0" };
 
-  // Balance Check & Escrow
+  // If in Alpaca Mode, route directly to Alpaca Paper API
+  if (gTradingMode === "alpaca") {
+    void (async () => {
+      await submitAlpacaOrder({
+        symbol: pair,
+        qty: amount,
+        side: side === "BUY" ? "buy" : "sell",
+        type: type === "Limit" ? "limit" : type === "Market" ? "market" : "stop_limit",
+        limitPrice: type === "Limit" ? effectivePrice : undefined,
+        takeProfitPrice: takeProfit,
+        stopLossPrice: stopLoss,
+      });
+      await syncAlpacaTradingState();
+    })();
+
+    return { ok: true };
+  }
+
+  // --- In-App Paper Trading Engine ---
+  const marginRequired = total / leverage;
+
+  // Balance Check & Escrow (Margin-based for leverage)
   if (side === "BUY") {
-    if ((gBalances.USD ?? 0) < total) {
-      return { ok: false, error: `Insufficient USD balance ($${(gBalances.USD ?? 0).toFixed(2)})` };
+    if ((gBalances.USD ?? 0) < marginRequired) {
+      return {
+        ok: false,
+        error: `Insufficient USD balance. Required: $${marginRequired.toFixed(2)} (Available: $${(gBalances.USD ?? 0).toFixed(2)})`,
+      };
     }
     gBalances = {
       ...gBalances,
-      USD: Math.max(0, (gBalances.USD ?? 0) - total),
+      USD: Math.max(0, (gBalances.USD ?? 0) - marginRequired),
     };
   } else {
-    // SELL
-    const currentCoinBal = gBalances[coin] ?? 0;
-    if (currentCoinBal < amount) {
-      return { ok: false, error: `Insufficient ${coin} balance (${currentCoinBal.toFixed(4)} ${coin})` };
+    // SELL / SHORT
+    if ((gBalances.USD ?? 0) < marginRequired) {
+      return {
+        ok: false,
+        error: `Insufficient margin for short. Required: $${marginRequired.toFixed(2)}`,
+      };
     }
     gBalances = {
       ...gBalances,
-      [coin]: Math.max(0, currentCoinBal - amount),
+      USD: Math.max(0, (gBalances.USD ?? 0) - marginRequired),
     };
   }
 
-  // Determine if immediately fillable
-  let isInstant = type === "Market";
-  if (type === "Limit" && currentPrice && currentPrice > 0) {
-    if (side === "BUY" && currentPrice <= price) {
-      isInstant = true;
-    } else if (side === "SELL" && currentPrice >= price) {
-      isInstant = true;
-    }
-  }
+  // CRITICAL FIX: Limit orders NEVER auto-execute immediately upon placement!
+  // They ALWAYS start as Open Orders waiting at that price level!
+  const isInstant = type === "Market";
 
   const timestamp = new Date().toLocaleString([], {
     month: "2-digit",
@@ -238,6 +433,11 @@ export function placeOrder(order: {
     minute: "2-digit",
     second: "2-digit",
   });
+
+  const liqPrice =
+    side === "BUY"
+      ? effectivePrice * (1 - 1 / leverage + 0.005)
+      : effectivePrice * (1 + 1 / leverage - 0.005);
 
   if (isInstant) {
     // 1. Immediately create an Open Trade (TradePosition)
@@ -252,6 +452,9 @@ export function placeOrder(order: {
       total,
       takeProfit,
       stopLoss,
+      leverage,
+      margin: marginRequired,
+      liquidationPrice: Math.max(0, parseFloat(liqPrice.toFixed(2))),
     };
     gPositions = [newPos, ...gPositions];
 
@@ -271,6 +474,7 @@ export function placeOrder(order: {
       takeProfit,
       stopLoss,
       status: "Filled",
+      leverage,
     };
     gHistory = [historyOrder, ...gHistory];
 
@@ -285,7 +489,7 @@ export function placeOrder(order: {
       coin,
       type,
       side,
-      price,
+      price: parseFloat(effectivePrice.toFixed(2)),
       amount,
       filled: 0,
       total,
@@ -293,6 +497,7 @@ export function placeOrder(order: {
       takeProfit,
       stopLoss,
       status: "Open",
+      leverage,
     };
     gOrders = [newOrder, ...gOrders];
 
@@ -310,6 +515,11 @@ export function updateOrderPrice(
   newPrice: number,
   currentPrice?: number
 ): { ok: boolean; order?: Order; position?: TradePosition } {
+  if (gTradingMode === "alpaca") {
+    // In Alpaca mode, we re-place or cancel/replace
+    return { ok: true };
+  }
+
   const ordIndex = gOrders.findIndex((o) => o.id === orderId);
   if (ordIndex === -1) return { ok: false };
 
@@ -318,18 +528,19 @@ export function updateOrderPrice(
 
   const oldTotal = ord.total;
   const newTotal = newPrice * ord.amount;
+  const lev = ord.leverage || 1;
+  const oldMargin = oldTotal / lev;
+  const newMargin = newTotal / lev;
 
   // Adjust escrowed balance
-  if (ord.side === "BUY") {
-    const diff = newTotal - oldTotal;
-    if (diff > 0 && (gBalances.USD ?? 0) < diff) {
-      return { ok: false }; // Insufficient funds to increase limit price
-    }
-    gBalances = {
-      ...gBalances,
-      USD: Math.max(0, (gBalances.USD ?? 0) - diff),
-    };
+  const diff = newMargin - oldMargin;
+  if (diff > 0 && (gBalances.USD ?? 0) < diff) {
+    return { ok: false }; // Insufficient funds to increase limit price
   }
+  gBalances = {
+    ...gBalances,
+    USD: Math.max(0, (gBalances.USD ?? 0) - diff),
+  };
 
   ord.price = parseFloat(newPrice.toFixed(2));
   ord.total = parseFloat(newTotal.toFixed(2));
@@ -345,10 +556,13 @@ export function updateOrderPrice(
   }
 
   if (shouldFill) {
-    // Remove from open orders
     gOrders.splice(ordIndex, 1);
 
-    // Create Open Trade (TradePosition)
+    const liqPrice =
+      ord.side === "BUY"
+        ? ord.price * (1 - 1 / lev + 0.005)
+        : ord.price * (1 + 1 / lev - 0.005);
+
     const newPos: TradePosition = {
       id: "pos_" + Math.random().toString(36).substring(2, 9),
       date: new Date().toLocaleString([], {
@@ -366,10 +580,11 @@ export function updateOrderPrice(
       total: ord.total,
       takeProfit: ord.takeProfit,
       stopLoss: ord.stopLoss,
+      leverage: lev,
+      margin: newMargin,
+      liquidationPrice: Math.max(0, parseFloat(liqPrice.toFixed(2))),
     };
     gPositions = [newPos, ...gPositions];
-
-    // Add to History
     gHistory = [{ ...ord, status: "Filled", filled: 100 }, ...gHistory];
 
     notify();
@@ -380,6 +595,72 @@ export function updateOrderPrice(
   }
 }
 
+/** Update Take Profit (TP) target for an order or position */
+export function setOrderTP(id: string, tp: number): void {
+  const pos = gPositions.find((p) => p.id === id);
+  if (pos) {
+    pos.takeProfit = parseFloat(tp.toFixed(2));
+    notify();
+    return;
+  }
+  const ord = gOrders.find((o) => o.id === id);
+  if (ord) {
+    ord.takeProfit = parseFloat(tp.toFixed(2));
+    notify();
+  }
+}
+
+/** Update Stop Loss (SL) target for an order or position */
+export function setOrderSL(id: string, sl: number): void {
+  const pos = gPositions.find((p) => p.id === id);
+  if (pos) {
+    pos.stopLoss = parseFloat(sl.toFixed(2));
+    notify();
+    return;
+  }
+  const ord = gOrders.find((o) => o.id === id);
+  if (ord) {
+    ord.stopLoss = parseFloat(sl.toFixed(2));
+    notify();
+  }
+}
+
+/**
+ * Reverse an active position (TradingView [ ⇅ ] button):
+ * Closes the current position and instantly opens an opposing position of the same size!
+ */
+export function reversePosition(
+  positionId: string,
+  currentPrice?: number
+): { ok: boolean; newPosition?: TradePosition } {
+  if (gTradingMode === "alpaca") {
+    // In Alpaca mode, close and re-order
+    return { ok: true };
+  }
+
+  const posIndex = gPositions.findIndex((p) => p.id === positionId);
+  if (posIndex === -1) return { ok: false };
+
+  const pos = gPositions[posIndex];
+  const exitPx = currentPrice && currentPrice > 0 ? currentPrice : pos.entryPrice;
+  closePosition(pos.id, exitPx);
+
+  // Open opposite side
+  const opposingSide: OrderSide = pos.side === "BUY" ? "SELL" : "BUY";
+  const res = placeOrder({
+    coin: pos.coin,
+    pair: pos.pair,
+    type: "Market",
+    side: opposingSide,
+    price: exitPx,
+    amount: pos.amount,
+    currentPrice: exitPx,
+    leverage: pos.leverage,
+  });
+
+  return { ok: res.ok, newPosition: res.position };
+}
+
 /**
  * Close an Open Trade (Position):
  * Calculates realized PnL, settles balances, and moves to Trade History.
@@ -388,6 +669,17 @@ export function closePosition(
   positionId: string,
   exitPrice?: number
 ): { ok: boolean; pnl?: number } {
+  if (gTradingMode === "alpaca") {
+    void (async () => {
+      const pos = gAlpacaPositions.find((p) => p.id === positionId);
+      if (pos) {
+        await closeAlpacaPosition(pos.coin);
+        await syncAlpacaTradingState();
+      }
+    })();
+    return { ok: true };
+  }
+
   const posIndex = gPositions.findIndex((p) => p.id === positionId);
   if (posIndex === -1) return { ok: false };
 
@@ -397,23 +689,13 @@ export function closePosition(
   // Realized PnL
   const diff = pos.side === "BUY" ? finalPrice - pos.entryPrice : pos.entryPrice - finalPrice;
   const pnlVal = diff * pos.amount;
+  const marginReturned = (pos.margin || pos.total) + pnlVal;
 
-  // Return principal + PnL
-  if (pos.side === "BUY") {
-    gBalances = {
-      ...gBalances,
-      USD: Math.max(0, (gBalances.USD ?? 0) + pos.total + pnlVal),
-    };
-  } else {
-    // SELL
-    gBalances = {
-      ...gBalances,
-      [pos.coin]: Math.max(0, (gBalances[pos.coin] ?? 0) + pos.amount),
-      USD: Math.max(0, (gBalances.USD ?? 0) + pnlVal),
-    };
-  }
+  gBalances = {
+    ...gBalances,
+    USD: Math.max(0, (gBalances.USD ?? 0) + marginReturned),
+  };
 
-  // Add Close record to History
   const closeRecord: Order = {
     id: "close_" + Math.random().toString(36).substring(2, 9),
     date: new Date().toLocaleString([], {
@@ -433,10 +715,10 @@ export function closePosition(
     total: finalPrice * pos.amount,
     trigger: `Closed [PnL: ${pnlVal >= 0 ? "+" : ""}$${pnlVal.toFixed(2)}]`,
     status: "Filled",
+    leverage: pos.leverage,
   };
   gHistory = [closeRecord, ...gHistory];
 
-  // Remove from open positions
   gPositions.splice(posIndex, 1);
   notify();
 
@@ -452,10 +734,10 @@ export function checkPriceTriggers(
   currentPrice: number
 ): {
   filledOrders: Order[];
-  closedPositions: { position: TradePosition; reason: "TP" | "SL"; pnl: number }[];
+  closedPositions: { position: TradePosition; reason: "TP" | "SL" | "LIQ"; pnl: number }[];
   triggeredAlerts: PriceAlert[];
 } {
-  if (!currentPrice || currentPrice <= 0) {
+  if (!currentPrice || currentPrice <= 0 || gTradingMode === "alpaca") {
     return { filledOrders: [], closedPositions: [], triggeredAlerts: [] };
   }
 
@@ -470,11 +752,11 @@ export function checkPriceTriggers(
     }
 
     let shouldFill = false;
-    // BUY Limit: fills when currentPrice <= ord.price (market reaches/cuts down)
+    // BUY Limit: fills when currentPrice <= ord.price (market reaches/cuts down to limit)
     if (ord.side === "BUY" && currentPrice <= ord.price) {
       shouldFill = true;
     }
-    // SELL Limit: fills when currentPrice >= ord.price (market reaches/cuts up)
+    // SELL Limit: fills when currentPrice >= ord.price (market reaches/cuts up to limit)
     else if (ord.side === "SELL" && currentPrice >= ord.price) {
       shouldFill = true;
     }
@@ -494,7 +776,12 @@ export function checkPriceTriggers(
       };
       filledOrders.push(filledOrder);
 
-      // Transition to Open Trade (TradePosition)!
+      const lev = ord.leverage || 1;
+      const liqPrice =
+        ord.side === "BUY"
+          ? ord.price * (1 - 1 / lev + 0.005)
+          : ord.price * (1 + 1 / lev - 0.005);
+
       const newPos: TradePosition = {
         id: "pos_" + Math.random().toString(36).substring(2, 9),
         date: filledOrder.date,
@@ -506,6 +793,9 @@ export function checkPriceTriggers(
         total: ord.total,
         takeProfit: ord.takeProfit,
         stopLoss: ord.stopLoss,
+        leverage: lev,
+        margin: ord.total / lev,
+        liquidationPrice: Math.max(0, parseFloat(liqPrice.toFixed(2))),
       };
       gPositions = [newPos, ...gPositions];
     } else {
@@ -513,8 +803,8 @@ export function checkPriceTriggers(
     }
   }
 
-  // 2. Check Open Positions for TP & SL
-  const closedPositions: { position: TradePosition; reason: "TP" | "SL"; pnl: number }[] = [];
+  // 2. Check Open Positions for TP, SL & Liquidation
+  const closedPositions: { position: TradePosition; reason: "TP" | "SL" | "LIQ"; pnl: number }[] = [];
   const remainingPositions: TradePosition[] = [];
 
   for (const pos of gPositions) {
@@ -523,7 +813,7 @@ export function checkPriceTriggers(
       continue;
     }
 
-    let closeReason: "TP" | "SL" | null = null;
+    let closeReason: "TP" | "SL" | "LIQ" | null = null;
 
     // Check Take Profit
     if (pos.takeProfit && pos.takeProfit > 0) {
@@ -537,28 +827,25 @@ export function checkPriceTriggers(
       if (pos.side === "SELL" && currentPrice >= pos.stopLoss) closeReason = "SL";
     }
 
+    // Check Liquidation
+    if (!closeReason && pos.liquidationPrice && pos.liquidationPrice > 0) {
+      if (pos.side === "BUY" && currentPrice <= pos.liquidationPrice) closeReason = "LIQ";
+      if (pos.side === "SELL" && currentPrice >= pos.liquidationPrice) closeReason = "LIQ";
+    }
+
     if (closeReason) {
       const diff = pos.side === "BUY" ? currentPrice - pos.entryPrice : pos.entryPrice - currentPrice;
       const pnlVal = diff * pos.amount;
+      const returned = closeReason === "LIQ" ? 0 : Math.max(0, (pos.margin || pos.total) + pnlVal);
 
-      // Settle balances
-      if (pos.side === "BUY") {
-        gBalances = {
-          ...gBalances,
-          USD: Math.max(0, (gBalances.USD ?? 0) + pos.total + pnlVal),
-        };
-      } else {
-        gBalances = {
-          ...gBalances,
-          [pos.coin]: Math.max(0, (gBalances[pos.coin] ?? 0) + pos.amount),
-          USD: Math.max(0, (gBalances.USD ?? 0) + pnlVal),
-        };
-      }
+      gBalances = {
+        ...gBalances,
+        USD: Math.max(0, (gBalances.USD ?? 0) + returned),
+      };
 
-      // Add to History
       gHistory = [
         {
-          id: "tp_sl_" + Math.random().toString(36).substring(2, 9),
+          id: "trigger_" + Math.random().toString(36).substring(2, 9),
           date: new Date().toLocaleString([], {
             month: "2-digit",
             day: "2-digit",
@@ -576,6 +863,7 @@ export function checkPriceTriggers(
           total: currentPrice * pos.amount,
           trigger: `${closeReason} Hit [PnL: ${pnlVal >= 0 ? "+" : ""}$${pnlVal.toFixed(2)}]`,
           status: "Filled",
+          leverage: pos.leverage,
         },
         ...gHistory,
       ];
@@ -625,15 +913,20 @@ export function checkPriceTriggers(
 }
 
 export function cancelOrder(id: string): void {
+  if (gTradingMode === "alpaca") {
+    void (async () => {
+      await cancelAlpacaOrder(id);
+      await syncAlpacaTradingState();
+    })();
+    return;
+  }
+
   const ord = gOrders.find((o) => o.id === id);
   if (!ord) return;
 
-  // Refund locked balance
-  if (ord.side === "BUY") {
-    gBalances = { ...gBalances, USD: (gBalances.USD ?? 0) + ord.total };
-  } else {
-    gBalances = { ...gBalances, [ord.coin]: (gBalances[ord.coin] ?? 0) + ord.amount };
-  }
+  const lev = ord.leverage || 1;
+  const marginToRefund = ord.total / lev;
+  gBalances = { ...gBalances, USD: (gBalances.USD ?? 0) + marginToRefund };
 
   gOrders = gOrders.filter((o) => o.id !== id);
   gHistory = [{ ...ord, status: "Canceled" }, ...gHistory];
@@ -641,15 +934,20 @@ export function cancelOrder(id: string): void {
 }
 
 export function cancelAllOrders(pairFilter?: string): void {
+  if (gTradingMode === "alpaca") {
+    void (async () => {
+      await cancelAllAlpacaOrders();
+      await syncAlpacaTradingState();
+    })();
+    return;
+  }
+
   const toCancel = pairFilter ? gOrders.filter((o) => o.pair === pairFilter) : [...gOrders];
   if (!toCancel.length) return;
 
   for (const ord of toCancel) {
-    if (ord.side === "BUY") {
-      gBalances = { ...gBalances, USD: (gBalances.USD ?? 0) + ord.total };
-    } else {
-      gBalances = { ...gBalances, [ord.coin]: (gBalances[ord.coin] ?? 0) + ord.amount };
-    }
+    const lev = ord.leverage || 1;
+    gBalances = { ...gBalances, USD: (gBalances.USD ?? 0) + ord.total / lev };
   }
 
   const ids = new Set(toCancel.map((o) => o.id));
@@ -688,27 +986,50 @@ export function depositAsset(asset: string, amount: number): void {
 }
 
 export function useOrders() {
-  const [orders, setOrders] = useState<Order[]>(gOrders);
-  const [positions, setPositions] = useState<TradePosition[]>(gPositions);
-  const [history, setHistory] = useState<Order[]>(gHistory);
-  const [balances, setBalances] = useState<Balances>(gBalances);
+  const [mode, setMode] = useState<TradingMode>(gTradingMode);
+  const [orders, setOrders] = useState<Order[]>(gTradingMode === "alpaca" ? gAlpacaOrders : gOrders);
+  const [positions, setPositions] = useState<TradePosition[]>(
+    gTradingMode === "alpaca" ? gAlpacaPositions : gPositions
+  );
+  const [history, setHistory] = useState<Order[]>(
+    gTradingMode === "alpaca" ? gAlpacaHistory : gHistory
+  );
+  const [balances, setBalances] = useState<Balances>(
+    gTradingMode === "alpaca" ? gAlpacaBalances : gBalances
+  );
   const [alerts, setAlerts] = useState<PriceAlert[]>(gAlerts);
 
   useEffect(() => {
     const update = () => {
-      setOrders([...gOrders]);
-      setPositions([...gPositions]);
-      setHistory([...gHistory]);
-      setBalances({ ...gBalances });
+      setMode(gTradingMode);
+      if (gTradingMode === "alpaca") {
+        setOrders([...gAlpacaOrders]);
+        setPositions([...gAlpacaPositions]);
+        setHistory([...gAlpacaHistory]);
+        setBalances({ ...gAlpacaBalances });
+      } else {
+        setOrders([...gOrders]);
+        setPositions([...gPositions]);
+        setHistory([...gHistory]);
+        setBalances({ ...gBalances });
+      }
       setAlerts([...gAlerts]);
     };
     listeners.add(update);
+
+    // Initial Alpaca sync if mode is alpaca
+    if (gTradingMode === "alpaca") {
+      void syncAlpacaTradingState();
+    }
+
     return () => {
       listeners.delete(update);
     };
   }, []);
 
   return {
+    tradingMode: mode,
+    setTradingMode,
     orders,
     positions,
     history,
@@ -716,11 +1037,15 @@ export function useOrders() {
     alerts,
     placeOrder,
     updateOrderPrice,
+    setOrderTP,
+    setOrderSL,
+    reversePosition,
     closePosition,
     cancelOrder,
     cancelAllOrders,
     depositAsset,
     addAlert,
     removeAlert,
+    syncAlpaca: syncAlpacaTradingState,
   };
 }

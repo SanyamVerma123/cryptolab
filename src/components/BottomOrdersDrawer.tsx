@@ -33,7 +33,7 @@ export function BottomOrdersDrawer({
   onToggle,
   onResize,
 }: Props) {
-  const { orders, positions, history, balances, cancelOrder, cancelAllOrders, closePosition } =
+  const { tradingMode, orders, positions, history, balances, cancelOrder, cancelAllOrders, closePosition } =
     useOrders();
   const [tab, setTab] = useState<BottomTab>("positions");
   const [hideOtherPairs, setHideOtherPairs] = useState(false);
@@ -234,6 +234,10 @@ export function BottomOrdersDrawer({
         </div>
 
         <div className="bod-controls">
+          <span className={"bod-env-pill " + tradingMode}>
+            {tradingMode === "alpaca" ? "● Alpaca Paper" : "● In-App Paper"}
+          </span>
+
           {posCount > 0 && currentPrice > 0 && (
             <div className={"bod-pnl-pill " + (totalPositionPnl >= 0 ? "up" : "down")}>
               <span className="bod-pnl-pill-k">Unrealized PnL:</span>
