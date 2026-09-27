@@ -1,17 +1,15 @@
 /**
- * BottomOrdersDrawer — Binance/TradingView-style Bottom Orders & Positions Drawer
+ * BottomOrdersDrawer — Exact TradingView Paper Trading Drawer
  *
- * Sits docked at the bottom of the chart area. Features:
- * 1. Positions Tab (Open Trades):
- *    - Real-time PnL ($ and %), Entry Price, Mark Price, TP/SL, and instant Close Position button.
- * 2. Open Orders Tab:
- *    - Pending Limit Orders waiting for price execution, with Cancel and Cancel All buttons.
- * 3. Order History & Trade History:
- *    - Historical execution records with fees and realized PnL.
- * 4. Funds:
- *    - Asset balances breakdown.
- * 5. Controls:
- *    - "Hide Other Pairs" toggle, draggable vertical height resizer, and bottom-right "^" toggle chevron.
+ * Implements:
+ * 1. Account Metrics Row (Matching Image 2 & 3):
+ *    - Account balance | Equity | Realized PnL | Unrealized PnL | Account margin | Available funds | Orders margin | Margin buffer
+ * 2. TradingView Tabs:
+ *    - Positions (N), Orders (N), Order history, Balance history, Activity log, Trade history, Analytics
+ * 3. Exact Positions Table (Matching Image 2 & 3):
+ *    - Symbol badge ([ ₿ CRYPTO:BTCUSD ]), Side (Long/Short), Quantity, Avg fill price, Take profit, Stop loss,
+ *      Last price, Unrealized PnL ($ and %), Trade value, Market value, Leverage, Margin, Actions (Edit ✎, Close ✕).
+ * 4. Dual environment support (In-App Paper vs Alpaca Paper).
  */
 import { useState } from "react";
 import { useOrders } from "../lib/orderState";
@@ -24,7 +22,14 @@ interface Props {
   onResize?: () => void;
 }
 
-type BottomTab = "positions" | "open" | "history" | "trades" | "funds";
+type BottomTab =
+  | "positions"
+  | "orders"
+  | "order_history"
+  | "balance_history"
+  | "activity_log"
+  | "trade_history"
+  | "funds";
 
 export function BottomOrdersDrawer({
   currentCoin,
@@ -33,23 +38,36 @@ export function BottomOrdersDrawer({
   onToggle,
   onResize,
 }: Props) {
-  const { tradingMode, orders, positions, history, balances, cancelOrder, cancelAllOrders, closePosition } =
-    useOrders();
+  const {
+    tradingMode,
+    orders,
+    positions,
+    history,
+    balances,
+    cancelOrder,
+    cancelAllOrders,
+    closePosition,
+    setOrderTP,
+    setOrderSL,
+  } = useOrders();
+
   const [tab, setTab] = useState<BottomTab>("positions");
   const [hideOtherPairs, setHideOtherPairs] = useState(false);
+  const [editingPosId, setEditingPosId] = useState<string | null>(null);
+  const [editTpInput, setEditTpInput] = useState("");
+  const [editSlInput, setEditSlInput] = useState("");
 
   const [drawerHeight, setDrawerHeight] = useState<number>(() => {
     try {
       const saved = localStorage.getItem("tradepro_bottom_orders_height");
-      return saved ? parseInt(saved, 10) : 230;
+      return saved ? parseInt(saved, 10) : 250;
     } catch {
-      return 230;
+      return 250;
     }
   });
 
   const currentPair = `${currentCoin}/USD`;
 
-  // Filter positions and orders if "Hide Other Pairs" is enabled
   const displayedPositions = hideOtherPairs
     ? positions.filter((p) => p.pair === currentPair || p.coin === currentCoin)
     : positions;
@@ -62,13 +80,11 @@ export function BottomOrdersDrawer({
     ? history.filter((o) => o.pair === currentPair || o.coin === currentCoin)
     : history;
 
-  const filledTrades = displayedHistory.filter((o) => o.status === "Filled");
-
   const posCount = displayedPositions.length;
   const openCount = displayedOrders.length;
 
-  // Real-time Unrealized PnL for an open position
-  const getPositionPnl = (pos: {
+  // Real-time Unrealized PnL per position
+  const getPosPnl = (pos: {
     side: "BUY" | "SELL";
     entryPrice: number;
     amount: number;
@@ -80,43 +96,49 @@ export function BottomOrdersDrawer({
         : pos.entryPrice - currentPrice;
     const pnlVal = diff * pos.amount;
     const pnlPct = (diff / pos.entryPrice) * 100;
-    const isUp = pnlVal >= 0;
     return {
       val: pnlVal,
       pct: pnlPct,
-      tone: isUp ? "up" : "down",
-      str: `${isUp ? "+" : ""}$${pnlVal.toFixed(2)} (${isUp ? "+" : ""}${pnlPct.toFixed(2)}%)`,
+      tone: pnlVal >= 0 ? "up" : "down",
+      strVal: `${pnlVal >= 0 ? "+" : ""}${pnlVal.toFixed(2)} USD`,
+      strPct: `${pnlVal >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%`,
     };
   };
 
-  // Real-time PnL for historical / closed orders
-  const getOrderPnl = (o: { side: string; price: number; amount: number }) => {
-    if (!currentPrice || currentPrice <= 0 || !o.price) return null;
-    const diff = o.side === "BUY" ? currentPrice - o.price : o.price - currentPrice;
-    const pnlVal = diff * o.amount;
-    const pnlPct = (diff / o.price) * 100;
-    const isUp = pnlVal >= 0;
-    return {
-      val: pnlVal,
-      pct: pnlPct,
-      tone: isUp ? "up" : "down",
-      str: `${isUp ? "+" : ""}$${pnlVal.toFixed(2)} (${isUp ? "+" : ""}${pnlPct.toFixed(2)}%)`,
-    };
-  };
+  // Realized PnL from history
+  const totalRealizedPnl = history.reduce((acc, h) => {
+    if (h.status === "Filled" && h.trigger?.includes("PnL:")) {
+      const match = h.trigger.match(/PnL:\s*([+-]?\$?[\d.]+)/);
+      if (match) {
+        const num = parseFloat(match[1].replace("$", ""));
+        if (!isNaN(num)) return acc + num;
+      }
+    }
+    return acc;
+  }, 0);
 
-  // Total Open Unrealized PnL across active positions
-  const totalPositionPnl = displayedPositions.reduce((acc, pos) => {
-    const pnl = getPositionPnl(pos);
+  // Total Unrealized PnL across active positions
+  const totalUnrealizedPnl = displayedPositions.reduce((acc, pos) => {
+    const pnl = getPosPnl(pos);
     return acc + (pnl ? pnl.val : 0);
   }, 0);
 
-  // Close all open positions at market price
-  const handleCloseAllPositions = () => {
-    for (const pos of displayedPositions) {
-      closePosition(pos.id, currentPrice);
-    }
-  };
+  // Margin collateral locked in active positions
+  const totalAccountMargin = displayedPositions.reduce((acc, pos) => {
+    return acc + (pos.margin || pos.total / (pos.leverage || 1));
+  }, 0);
 
+  // Margin locked in pending limit orders
+  const totalOrdersMargin = displayedOrders.reduce((acc, ord) => {
+    return acc + ord.total / (ord.leverage || 1);
+  }, 0);
+
+  const accountBalance = balances.USD ?? 50000;
+  const equity = accountBalance + totalUnrealizedPnl;
+  const availableFunds = Math.max(0, accountBalance - totalAccountMargin - totalOrdersMargin);
+  const marginBuffer = equity > 0 ? ((availableFunds / equity) * 100).toFixed(2) : "100.00";
+
+  // Drag resizer
   const handleResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -130,9 +152,9 @@ export function BottomOrdersDrawer({
 
     const onPointerMove = (ev: PointerEvent) => {
       ev.preventDefault();
-      const dy = startY - ev.clientY; // dragging up increases height
-      const maxH = Math.round(window.innerHeight * 0.65);
-      const newH = Math.max(90, Math.min(maxH, startH + dy));
+      const dy = startY - ev.clientY;
+      const maxH = Math.round(window.innerHeight * 0.7);
+      const newH = Math.max(100, Math.min(maxH, startH + dy));
       setDrawerHeight(newH);
       try {
         localStorage.setItem("tradepro_bottom_orders_height", String(newH));
@@ -147,21 +169,27 @@ export function BottomOrdersDrawer({
       document.body.classList.remove("resizing-row");
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("pointercancel", onPointerUp);
       onResize?.();
     };
 
     window.addEventListener("pointermove", onPointerMove, { passive: false });
     window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("pointercancel", onPointerUp);
+  };
+
+  const handleSaveEditBrackets = (posId: string) => {
+    const tpNum = parseFloat(editTpInput);
+    const slNum = parseFloat(editSlInput);
+    if (!isNaN(tpNum) && tpNum > 0) setOrderTP(posId, tpNum);
+    if (!isNaN(slNum) && slNum > 0) setOrderSL(posId, slNum);
+    setEditingPosId(null);
   };
 
   return (
     <div
-      className={"bottom-orders-drawer" + (isOpen ? " open" : " collapsed")}
+      className={"bottom-orders-drawer tv-paper-drawer" + (isOpen ? " open" : " collapsed")}
       style={isOpen ? { height: `${drawerHeight}px` } : undefined}
     >
-      {/* Draggable horizontal separator bar */}
+      {/* Draggable resize bar */}
       {isOpen && (
         <div
           className="bod-resizer-handle"
@@ -180,73 +208,14 @@ export function BottomOrdersDrawer({
           onToggle();
         }}
       >
-        <div className="bod-tabs">
-          <button
-            type="button"
-            className={"bod-tab" + (tab === "positions" ? " active" : "")}
-            onClick={() => {
-              setTab("positions");
-              if (!isOpen) onToggle();
-            }}
-          >
-            Positions ({posCount})
-          </button>
-          <button
-            type="button"
-            className={"bod-tab" + (tab === "open" ? " active" : "")}
-            onClick={() => {
-              setTab("open");
-              if (!isOpen) onToggle();
-            }}
-          >
-            Open Orders ({openCount})
-          </button>
-          <button
-            type="button"
-            className={"bod-tab" + (tab === "history" ? " active" : "")}
-            onClick={() => {
-              setTab("history");
-              if (!isOpen) onToggle();
-            }}
-          >
-            Order History
-          </button>
-          <button
-            type="button"
-            className={"bod-tab" + (tab === "trades" ? " active" : "")}
-            onClick={() => {
-              setTab("trades");
-              if (!isOpen) onToggle();
-            }}
-          >
-            Trade History
-          </button>
-          <button
-            type="button"
-            className={"bod-tab" + (tab === "funds" ? " active" : "")}
-            onClick={() => {
-              setTab("funds");
-              if (!isOpen) onToggle();
-            }}
-          >
-            Funds
-          </button>
+        <div className="bod-header-title-row">
+          <span className="tv-drawer-logo">✦ Paper Trading</span>
+          <span className={"bod-env-pill " + tradingMode}>
+            {tradingMode === "alpaca" ? "Alpaca Live Sync" : "In-App Simulator"}
+          </span>
         </div>
 
         <div className="bod-controls">
-          <span className={"bod-env-pill " + tradingMode}>
-            {tradingMode === "alpaca" ? "● Alpaca Paper" : "● In-App Paper"}
-          </span>
-
-          {posCount > 0 && currentPrice > 0 && (
-            <div className={"bod-pnl-pill " + (totalPositionPnl >= 0 ? "up" : "down")}>
-              <span className="bod-pnl-pill-k">Unrealized PnL:</span>
-              <span className="bod-pnl-pill-v">
-                {totalPositionPnl >= 0 ? "+" : ""}${totalPositionPnl.toFixed(2)}
-              </span>
-            </div>
-          )}
-
           <label className="bod-checkbox-label">
             <input
               type="checkbox"
@@ -256,139 +225,263 @@ export function BottomOrdersDrawer({
             <span>Hide Other Pairs</span>
           </label>
 
-          {tab === "positions" && posCount > 0 && (
+          {posCount > 0 && (
             <button
               type="button"
               className="bod-cancel-all-btn danger"
-              onClick={handleCloseAllPositions}
+              onClick={() => {
+                for (const p of displayedPositions) closePosition(p.id, currentPrice);
+              }}
               title="Close all open positions at market price"
             >
-              Close All Positions
+              Close All
             </button>
           )}
 
-          {tab === "open" && openCount > 0 && (
+          {openCount > 0 && (
             <button
               type="button"
               className="bod-cancel-all-btn"
               onClick={() => cancelAllOrders(hideOtherPairs ? currentPair : undefined)}
               title="Cancel all listed open limit orders"
             >
-              Cancel All Orders
+              Cancel All
             </button>
           )}
 
-          {/* The "^" toggle button at the bottom-right corner */}
           <button
             type="button"
             className="bod-toggle-btn"
             onClick={onToggle}
-            title={isOpen ? "Collapse orders panel" : "Expand orders panel"}
-            aria-label={isOpen ? "Collapse orders" : "Expand orders"}
+            title={isOpen ? "Collapse panel" : "Expand panel"}
           >
             {isOpen ? "⌄" : "^"}
           </button>
         </div>
       </div>
 
-      {/* Drawer Body (Table Content) */}
       {isOpen && (
-        <div className="bod-body">
-          {/* TAB 1: Positions (Open Trades) */}
+        <div className="bod-body tv-drawer-body">
+          {/* ====================================================================
+              TRADINGVIEW ACCOUNT METRICS ROW (MATCHING IMAGE 2 & 3)
+              ==================================================================== */}
+          <div className="tv-acc-metrics-row">
+            <div className="tv-am-item">
+              <span className="tv-am-k">Account balance</span>
+              <span className="tv-am-v">
+                {accountBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+
+            <div className="tv-am-item">
+              <span className="tv-am-k">Equity</span>
+              <span className="tv-am-v bold">
+                {equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+
+            <div className="tv-am-item">
+              <span className="tv-am-k">Realized PnL</span>
+              <span className={`tv-am-v ${totalRealizedPnl >= 0 ? "text-buy" : "text-sell"}`}>
+                {totalRealizedPnl >= 0 ? "+" : ""}{totalRealizedPnl.toFixed(2)}
+              </span>
+            </div>
+
+            <div className="tv-am-item">
+              <span className="tv-am-k">Unrealized PnL</span>
+              <span className={`tv-am-v bold ${totalUnrealizedPnl >= 0 ? "text-buy" : "text-sell"}`}>
+                {totalUnrealizedPnl >= 0 ? "+" : ""}{totalUnrealizedPnl.toFixed(2)}
+              </span>
+            </div>
+
+            <div className="tv-am-item">
+              <span className="tv-am-k">Account margin</span>
+              <span className="tv-am-v">
+                {totalAccountMargin.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+
+            <div className="tv-am-item">
+              <span className="tv-am-k">Available funds</span>
+              <span className="tv-am-v">
+                {availableFunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+
+            <div className="tv-am-item">
+              <span className="tv-am-k">Orders margin</span>
+              <span className="tv-am-v">
+                {totalOrdersMargin.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+
+            <div className="tv-am-item">
+              <span className="tv-am-k">Margin buffer</span>
+              <span className="tv-am-v">{marginBuffer}%</span>
+            </div>
+          </div>
+
+          {/* ====================================================================
+              TRADINGVIEW TABS (MATCHING IMAGE 2 & 3)
+              ==================================================================== */}
+          <div className="tv-tab-bar">
+            <button
+              type="button"
+              className={"tv-tab-item" + (tab === "positions" ? " active" : "")}
+              onClick={() => setTab("positions")}
+            >
+              Positions <span className="tv-tab-badge">{posCount}</span>
+            </button>
+            <button
+              type="button"
+              className={"tv-tab-item" + (tab === "orders" ? " active" : "")}
+              onClick={() => setTab("orders")}
+            >
+              Orders <span className="tv-tab-badge">{openCount}</span>
+            </button>
+            <button
+              type="button"
+              className={"tv-tab-item" + (tab === "order_history" ? " active" : "")}
+              onClick={() => setTab("order_history")}
+            >
+              Order history
+            </button>
+            <button
+              type="button"
+              className={"tv-tab-item" + (tab === "balance_history" ? " active" : "")}
+              onClick={() => setTab("balance_history")}
+            >
+              Balance history
+            </button>
+            <button
+              type="button"
+              className={"tv-tab-item" + (tab === "activity_log" ? " active" : "")}
+              onClick={() => setTab("activity_log")}
+            >
+              Activity log
+            </button>
+            <button
+              type="button"
+              className={"tv-tab-item" + (tab === "trade_history" ? " active" : "")}
+              onClick={() => setTab("trade_history")}
+            >
+              Trade history
+            </button>
+            <button
+              type="button"
+              className={"tv-tab-item" + (tab === "funds" ? " active" : "")}
+              onClick={() => setTab("funds")}
+            >
+              Funds
+            </button>
+          </div>
+
+          {/* ====================================================================
+              TABLE CONTENT
+              ==================================================================== */}
+          {/* TAB 1: POSITIONS (IMAGE 2 & 3 EXACT TABLE) */}
           {tab === "positions" && (
             <div className="bod-table-wrap">
               {displayedPositions.length === 0 ? (
                 <div className="bod-empty">No open positions</div>
               ) : (
-                <table className="bod-table">
+                <table className="bod-table tv-table">
                   <thead>
                     <tr>
-                      <th>Date</th>
-                      <th>Pair</th>
+                      <th>Symbol</th>
                       <th>Side</th>
-                      <th>Size</th>
-                      <th>Entry Price</th>
-                      <th>Mark Price</th>
-                      <th>Total Value</th>
+                      <th>Quantity</th>
+                      <th>Avg fill price</th>
+                      <th>Take profit</th>
+                      <th>Stop loss</th>
+                      <th>Last price</th>
                       <th>Unrealized PnL</th>
-                      <th>TP / SL</th>
+                      <th>Unrealized PnL %</th>
+                      <th>Trade value</th>
+                      <th>Market value</th>
+                      <th>Leverage</th>
+                      <th>Margin</th>
                       <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {displayedPositions.map((pos) => {
-                      const pnl = getPositionPnl(pos);
+                      const pnl = getPosPnl(pos);
+                      const isLong = pos.side === "BUY";
+                      const tradeVal = pos.entryPrice * pos.amount;
+                      const mktVal = (currentPrice || pos.entryPrice) * pos.amount;
+                      const lev = pos.leverage || 10;
+                      const marginVal = pos.margin || tradeVal / lev;
+
                       return (
                         <tr key={pos.id}>
-                          <td>{pos.date}</td>
-                          <td className="bold">{pos.pair}</td>
                           <td>
-                            <span
-                              className={
-                                "bod-side-badge " +
-                                (pos.side === "BUY" ? "buy" : "sell")
-                              }
-                            >
-                              {pos.side === "BUY" ? "LONG" : "SHORT"}
+                            <span className="tv-sym-pill">
+                              <span className="tv-sym-coin-icon">₿</span>
+                              <span>CRYPTO:{pos.coin}USD</span>
                             </span>
                           </td>
-                          <td>
-                            {pos.amount.toFixed(4)} {pos.coin}
+                          <td className={isLong ? "text-buy bold" : "text-sell bold"}>
+                            {isLong ? "Long" : "Short"}
                           </td>
+                          <td className="bold">{pos.amount}</td>
                           <td>
-                            $
                             {pos.entryPrice.toLocaleString(undefined, {
                               minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
                             })}
                           </td>
                           <td>
-                            $
+                            {pos.takeProfit
+                              ? pos.takeProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })
+                              : "—"}
+                          </td>
+                          <td>
+                            {pos.stopLoss
+                              ? pos.stopLoss.toLocaleString(undefined, { minimumFractionDigits: 2 })
+                              : "—"}
+                          </td>
+                          <td>
                             {currentPrice.toLocaleString(undefined, {
                               minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
                             })}
                           </td>
-                          <td>
-                            $
-                            {(pos.entryPrice * pos.amount).toLocaleString(
-                              undefined,
-                              { minimumFractionDigits: 2 }
-                            )}
+                          <td className={pnl ? (pnl.tone === "up" ? "text-buy bold" : "text-sell bold") : ""}>
+                            {pnl ? pnl.strVal : "—"}
                           </td>
-                          <td
-                            className={
-                              pnl
-                                ? pnl.tone === "up"
-                                  ? "text-buy bold"
-                                  : "text-sell bold"
-                                : ""
-                            }
-                          >
-                            {pnl ? pnl.str : "--"}
+                          <td className={pnl ? (pnl.tone === "up" ? "text-buy bold" : "text-sell bold") : ""}>
+                            {pnl ? pnl.strPct : "—"}
                           </td>
+                          <td>{tradeVal.toLocaleString(undefined, { minimumFractionDigits: 2 })} USD</td>
+                          <td>{mktVal.toLocaleString(undefined, { minimumFractionDigits: 2 })} USD</td>
                           <td>
-                            {pos.takeProfit || pos.stopLoss ? (
-                              <span className="bod-tp-sl-tag">
-                                {pos.takeProfit
-                                  ? `TP $${pos.takeProfit.toLocaleString()}`
-                                  : ""}
-                                {pos.takeProfit && pos.stopLoss ? " / " : ""}
-                                {pos.stopLoss
-                                  ? `SL $${pos.stopLoss.toLocaleString()}`
-                                  : ""}
-                              </span>
-                            ) : (
-                              "--"
-                            )}
+                            <span className="tv-leverage-box">{lev}x</span>
                           </td>
+                          <td>{marginVal.toLocaleString(undefined, { minimumFractionDigits: 2 })} USD</td>
                           <td>
-                            <button
-                              type="button"
-                              className="bod-close-pos-btn"
-                              onClick={() => closePosition(pos.id, currentPrice)}
-                              title="Close position at current market price"
-                            >
-                              Close Position
-                            </button>
+                            <div className="tv-table-actions">
+                              <button
+                                type="button"
+                                className="tv-act-btn edit"
+                                title="Edit Take Profit / Stop Loss"
+                                onClick={() => {
+                                  setEditingPosId(pos.id);
+                                  setEditTpInput(pos.takeProfit ? String(pos.takeProfit) : "");
+                                  setEditSlInput(pos.stopLoss ? String(pos.stopLoss) : "");
+                                }}
+                              >
+                                ✎
+                              </button>
+                              <button
+                                type="button"
+                                className="tv-act-btn close"
+                                title="Close position at market price"
+                                onClick={() => closePosition(pos.id, currentPrice)}
+                              >
+                                ✕
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -396,256 +489,263 @@ export function BottomOrdersDrawer({
                   </tbody>
                 </table>
               )}
+
+              {/* In-Drawer Edit Modal */}
+              {editingPosId && (
+                <div className="tv-edit-inline-bar">
+                  <span>Edit TP / SL:</span>
+                  <input
+                    type="number"
+                    placeholder="Take Profit Price"
+                    className="sm-input small"
+                    value={editTpInput}
+                    onChange={(e) => setEditTpInput(e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Stop Loss Price"
+                    className="sm-input small"
+                    value={editSlInput}
+                    onChange={(e) => setEditSlInput(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="sm-btn primary small"
+                    onClick={() => handleSaveEditBrackets(editingPosId)}
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    className="sm-btn secondary small"
+                    onClick={() => setEditingPosId(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {/* TAB 2: Open Orders (Pending Limit Orders) */}
-          {tab === "open" && (
+          {/* TAB 2: ORDERS (PENDING LIMIT ORDERS) */}
+          {tab === "orders" && (
             <div className="bod-table-wrap">
               {displayedOrders.length === 0 ? (
-                <div className="bod-empty">No open limit orders</div>
+                <div className="bod-empty">No open orders</div>
               ) : (
-                <table className="bod-table">
+                <table className="bod-table tv-table">
                   <thead>
                     <tr>
-                      <th>Date</th>
-                      <th>Pair</th>
+                      <th>Symbol</th>
                       <th>Type</th>
                       <th>Side</th>
-                      <th>Limit Price</th>
-                      <th>Amount</th>
-                      <th>Filled</th>
-                      <th>Total</th>
-                      <th>Trigger Conditions</th>
+                      <th>Limit price</th>
+                      <th>Quantity</th>
+                      <th>Total value</th>
+                      <th>Take profit</th>
+                      <th>Stop loss</th>
+                      <th>Date</th>
                       <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {displayedOrders.map((o) => {
-                      return (
-                        <tr key={o.id}>
-                          <td>{o.date}</td>
-                          <td className="bold">{o.pair}</td>
-                          <td>{o.type}</td>
-                          <td>
-                            <span
-                              className={
-                                "bod-side-badge " +
-                                (o.side === "BUY" ? "buy" : "sell")
-                              }
-                            >
-                              {o.side}
-                            </span>
-                          </td>
-                          <td>
-                            $
-                            {o.price.toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                            })}
-                          </td>
-                          <td>
-                            {o.amount.toFixed(4)} {o.coin}
-                          </td>
-                          <td>{o.filled.toFixed(2)}%</td>
-                          <td>
-                            $
-                            {o.total.toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                            })}
-                          </td>
-                          <td>{o.trigger}</td>
-                          <td>
-                            <button
-                              type="button"
-                              className="bod-cancel-btn"
-                              onClick={() => cancelOrder(o.id)}
-                              title="Cancel limit order"
-                            >
-                              Cancel
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {displayedOrders.map((o) => (
+                      <tr key={o.id}>
+                        <td>
+                          <span className="tv-sym-pill">
+                            <span className="tv-sym-coin-icon">₿</span>
+                            <span>CRYPTO:{o.coin}USD</span>
+                          </span>
+                        </td>
+                        <td>{o.type}</td>
+                        <td className={o.side === "BUY" ? "text-buy bold" : "text-sell bold"}>
+                          {o.side === "BUY" ? "Buy" : "Sell"}
+                        </td>
+                        <td className="bold">
+                          ${o.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </td>
+                        <td>{o.amount}</td>
+                        <td>${o.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td>{o.takeProfit ? `$${o.takeProfit.toLocaleString()}` : "—"}</td>
+                        <td>{o.stopLoss ? `$${o.stopLoss.toLocaleString()}` : "—"}</td>
+                        <td>{o.date}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="tv-act-btn close"
+                            title="Cancel order"
+                            onClick={() => cancelOrder(o.id)}
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               )}
             </div>
           )}
 
-          {/* TAB 3: Order History */}
-          {tab === "history" && (
+          {/* TAB 3: ORDER HISTORY */}
+          {tab === "order_history" && (
             <div className="bod-table-wrap">
               {displayedHistory.length === 0 ? (
                 <div className="bod-empty">No order history</div>
               ) : (
-                <table className="bod-table">
+                <table className="bod-table tv-table">
                   <thead>
                     <tr>
                       <th>Date</th>
-                      <th>Pair</th>
+                      <th>Symbol</th>
                       <th>Type</th>
                       <th>Side</th>
                       <th>Price</th>
-                      <th>Amount</th>
+                      <th>Quantity</th>
                       <th>Total</th>
-                      <th>Status / PnL</th>
+                      <th>Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {displayedHistory.map((o) => {
-                      return (
-                        <tr key={o.id}>
-                          <td>{o.date}</td>
-                          <td className="bold">{o.pair}</td>
-                          <td>{o.type}</td>
-                          <td>
-                            <span
-                              className={
-                                "bod-side-badge " +
-                                (o.side === "BUY" ? "buy" : "sell")
-                              }
-                            >
-                              {o.side}
-                            </span>
-                          </td>
-                          <td>
-                            $
-                            {o.price.toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                            })}
-                          </td>
-                          <td>
-                            {o.amount.toFixed(4)} {o.coin}
-                          </td>
-                          <td>
-                            $
-                            {o.total.toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                            })}
-                          </td>
-                          <td>
-                            <span
-                              className={
-                                "bod-status " + o.status.toLowerCase()
-                              }
-                            >
-                              {o.status}
-                            </span>
-                            {o.trigger && o.trigger !== "-" && (
-                              <span className="bod-hist-trigger">
-                                {" "}
-                                {o.trigger}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {displayedHistory.map((h) => (
+                      <tr key={h.id}>
+                        <td>{h.date}</td>
+                        <td>CRYPTO:{h.coin}USD</td>
+                        <td>{h.type}</td>
+                        <td className={h.side === "BUY" ? "text-buy bold" : "text-sell bold"}>
+                          {h.side}
+                        </td>
+                        <td>${h.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td>{h.amount}</td>
+                        <td>${h.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td>
+                          <span className={"bod-status " + h.status.toLowerCase()}>{h.status}</span>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               )}
             </div>
           )}
 
-          {/* TAB 4: Trade History */}
-          {tab === "trades" && (
+          {/* TAB 4: BALANCE HISTORY */}
+          {tab === "balance_history" && (
             <div className="bod-table-wrap">
-              {filledTrades.length === 0 ? (
+              <table className="bod-table tv-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Account balance</th>
+                    <th>Equity</th>
+                    <th>Change</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>{new Date().toLocaleDateString()}</td>
+                    <td>${accountBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td>${equity.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td className={totalUnrealizedPnl >= 0 ? "text-buy" : "text-sell"}>
+                      {totalUnrealizedPnl >= 0 ? "+" : ""}${totalUnrealizedPnl.toFixed(2)}
+                    </td>
+                    <td>Trading balance update</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* TAB 5: ACTIVITY LOG */}
+          {tab === "activity_log" && (
+            <div className="bod-table-wrap">
+              <table className="bod-table tv-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Activity</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayedHistory.slice(0, 15).map((h) => (
+                    <tr key={h.id}>
+                      <td>{h.date}</td>
+                      <td>{h.status === "Filled" ? "Order Filled" : "Order Canceled"}</td>
+                      <td>
+                        {h.side} {h.amount} {h.coin} @ ${h.price.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* TAB 6: TRADE HISTORY */}
+          {tab === "trade_history" && (
+            <div className="bod-table-wrap">
+              {displayedHistory.filter((h) => h.status === "Filled").length === 0 ? (
                 <div className="bod-empty">No trade history</div>
               ) : (
-                <table className="bod-table">
+                <table className="bod-table tv-table">
                   <thead>
                     <tr>
                       <th>Date</th>
-                      <th>Pair</th>
+                      <th>Symbol</th>
                       <th>Side</th>
                       <th>Executed Price</th>
                       <th>Filled Amount</th>
                       <th>Fee</th>
                       <th>Total</th>
-                      <th>Execution Details</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filledTrades.map((o) => {
-                      return (
-                        <tr key={o.id}>
-                          <td>{o.date}</td>
-                          <td className="bold">{o.pair}</td>
-                          <td>
-                            <span
-                              className={
-                                "bod-side-badge " +
-                                (o.side === "BUY" ? "buy" : "sell")
-                              }
-                            >
-                              {o.side}
-                            </span>
+                    {displayedHistory
+                      .filter((h) => h.status === "Filled")
+                      .map((h) => (
+                        <tr key={h.id}>
+                          <td>{h.date}</td>
+                          <td>CRYPTO:{h.coin}USD</td>
+                          <td className={h.side === "BUY" ? "text-buy bold" : "text-sell bold"}>
+                            {h.side}
                           </td>
-                          <td>
-                            $
-                            {o.price.toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                            })}
-                          </td>
-                          <td>
-                            {o.amount.toFixed(4)} {o.coin}
-                          </td>
-                          <td>${(o.total * 0.0005).toFixed(2)} (0.05%)</td>
-                          <td>
-                            $
-                            {o.total.toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                            })}
-                          </td>
-                          <td>
-                            {o.trigger && o.trigger !== "-" ? (
-                              <span className="text-buy bold">{o.trigger}</span>
-                            ) : (
-                              "Market Execution"
-                            )}
-                          </td>
+                          <td>${h.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td>{h.amount}</td>
+                          <td>${(h.total * 0.00035).toFixed(3)}</td>
+                          <td>${h.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                         </tr>
-                      );
-                    })}
+                      ))}
                   </tbody>
                 </table>
               )}
             </div>
           )}
 
-          {/* TAB 5: Funds */}
+          {/* TAB 7: FUNDS */}
           {tab === "funds" && (
             <div className="bod-table-wrap">
-              <table className="bod-table">
+              <table className="bod-table tv-table">
                 <thead>
                   <tr>
                     <th>Asset</th>
-                    <th>Total Balance</th>
-                    <th>Available</th>
-                    <th>In Positions / Orders</th>
+                    <th>Total balance</th>
+                    <th>Available funds</th>
+                    <th>In positions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(balances).map(([asset, bal]) => (
-                    <tr key={asset}>
-                      <td className="bold">{asset}</td>
-                      <td>
-                        {bal.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 6,
-                        })}
-                      </td>
-                      <td>
-                        {bal.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 6,
-                        })}
-                      </td>
-                      <td>0.00</td>
-                    </tr>
-                  ))}
+                  {Object.entries(balances)
+                    .filter(([k]) => k !== "BUYING_POWER" && k !== "PORTFOLIO")
+                    .map(([asset, bal]) => (
+                      <tr key={asset}>
+                        <td className="bold">{asset}</td>
+                        <td>{bal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+                        <td>{bal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+                        <td>0.00</td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>

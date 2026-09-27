@@ -2003,26 +2003,37 @@ html, body, #root {
 /* Order Type Tabs */
 .op-type-tabs {
   display: flex;
-  gap: 14px;
+  gap: 16px;
   border-bottom: 1px solid var(--line, #23272e);
   padding-bottom: 6px;
+  margin-top: 2px;
 }
 
+.op-type-tab,
 .op-type-btn {
   background: none;
   border: none;
-  color: var(--text-dim);
+  color: var(--text-dim, #8b94a3);
   font-size: 12px;
   font-weight: 600;
-  padding: 2px 0;
+  padding: 3px 0;
   cursor: pointer;
   position: relative;
+  transition: color 0.15s ease;
 }
 
-.op-type-btn.active {
+.op-type-tab:hover,
+.op-type-btn:hover {
   color: #ffffff;
 }
 
+.op-type-tab.active,
+.op-type-btn.active {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.op-type-tab.active::after,
 .op-type-btn.active::after {
   content: "";
   position: absolute;
@@ -2030,7 +2041,7 @@ html, body, #root {
   left: 0;
   right: 0;
   height: 2px;
-  background: #f0b90b;
+  background: var(--accent, #2962ff);
   border-radius: 1px;
 }
 
@@ -2054,6 +2065,41 @@ html, body, #root {
   gap: 10px;
 }
 
+.op-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.op-field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-dim, #8b94a3);
+  font-weight: 600;
+}
+
+.op-mark-quick {
+  color: var(--accent, #2962ff);
+  cursor: pointer;
+  font-size: 10.5px;
+  font-family: monospace;
+  transition: color 0.12s ease;
+}
+
+.op-mark-quick:hover {
+  color: #5383ff;
+  text-decoration: underline;
+}
+
+.op-sub-info {
+  color: var(--text-dim, #8b94a3);
+  font-size: 10.5px;
+  font-family: monospace;
+}
+
+.op-input-wrap,
 .op-field {
   display: flex;
   align-items: center;
@@ -2062,18 +2108,13 @@ html, body, #root {
   border-radius: 6px;
   padding: 0 10px;
   height: 38px;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+.op-input-wrap:focus-within,
 .op-field:focus-within {
   border-color: var(--accent, #2962ff);
-}
-
-.op-field-label {
-  font-size: 11px;
-  color: var(--text-dim);
-  width: 55px;
-  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(41, 98, 255, 0.35);
 }
 
 .op-input {
@@ -2083,9 +2124,14 @@ html, body, #root {
   color: #ffffff;
   font-size: 13px;
   font-weight: 600;
-  font-family: monospace;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", monospace;
   outline: none;
   min-width: 0;
+  width: 100%;
+}
+
+.op-input::placeholder {
+  color: #555d6e;
 }
 
 .op-input.disabled {
@@ -2095,23 +2141,60 @@ html, body, #root {
 
 .op-unit {
   font-size: 11px;
-  font-weight: 600;
-  color: var(--text-dim);
+  font-weight: 700;
+  color: var(--text-dim, #8b94a3);
   margin-left: 6px;
   flex-shrink: 0;
 }
 
+/* Preset Lot Chips */
+.op-lot-presets {
+  display: flex;
+  gap: 4px;
+  margin-top: -2px;
+}
+
+.op-lot-chip {
+  flex: 1;
+  background: var(--bg-3, #1a1e24);
+  border: 1px solid var(--line, #23272e);
+  color: var(--text-dim, #8b94a3);
+  font-size: 10.5px;
+  font-family: monospace;
+  font-weight: 600;
+  padding: 4px 0;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.12s ease;
+}
+
+.op-lot-chip:hover {
+  background: var(--bg-4, #22262e);
+  color: #ffffff;
+  border-color: #3b4250;
+}
+
+.op-lot-chip.active {
+  background: rgba(41, 98, 255, 0.15);
+  border-color: var(--accent, #2962ff);
+  color: #ffffff;
+  font-weight: 700;
+}
+
 /* Percentage Quick Selector */
+.op-percent-bar,
 .op-slider-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 6px;
 }
 
+.op-pct-btn,
 .op-pct-pill {
   background: var(--bg-3, #1a1e24);
   border: 1px solid var(--line, #23272e);
-  color: var(--text-dim);
+  color: var(--text-dim, #8b94a3);
   font-size: 11px;
   font-weight: 600;
   padding: 5px 0;
@@ -2121,11 +2204,19 @@ html, body, #root {
   transition: all 0.15s ease;
 }
 
-.op-pct-pill:hover,
-.op-pct-pill.active {
+.op-pct-btn:hover,
+.op-pct-pill:hover {
   background: var(--bg-4, #22262e);
+  color: #ffffff;
+  border-color: #3b4250;
+}
+
+.op-pct-btn.active,
+.op-pct-pill.active {
+  background: rgba(41, 98, 255, 0.2);
   border-color: var(--accent, #2962ff);
   color: #ffffff;
+  font-weight: 700;
 }
 
 /* Checkboxes & TIF Options */
@@ -2142,14 +2233,17 @@ html, body, #root {
 .op-checkbox-label {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   cursor: pointer;
   user-select: none;
+  font-size: 11.5px;
 }
 
 .op-checkbox-label input[type="checkbox"] {
   accent-color: var(--accent, #2962ff);
   cursor: pointer;
+  width: 14px;
+  height: 14px;
 }
 
 .op-tif-select {
@@ -2179,40 +2273,62 @@ html, body, #root {
   cursor: pointer;
   transition: all 0.15s ease;
   margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.2px;
 }
 
 .op-submit-btn.buy {
   background: #0ecb81;
   color: #ffffff;
+  box-shadow: 0 2px 10px rgba(14, 203, 129, 0.3);
 }
-.op-submit-btn.buy:hover { background: #0bbb76; }
-.op-submit-btn.buy:active { transform: scale(0.98); }
+.op-submit-btn.buy:hover {
+  background: #0bbb76;
+  box-shadow: 0 4px 14px rgba(14, 203, 129, 0.45);
+}
+.op-submit-btn.buy:active { transform: scale(0.985); }
 
 .op-submit-btn.sell {
   background: #f6465d;
   color: #ffffff;
+  box-shadow: 0 2px 10px rgba(246, 70, 93, 0.3);
 }
-.op-submit-btn.sell:hover { background: #e03b51; }
-.op-submit-btn.sell:active { transform: scale(0.98); }
+.op-submit-btn.sell:hover {
+  background: #e03b51;
+  box-shadow: 0 4px 14px rgba(246, 70, 93, 0.45);
+}
+.op-submit-btn.sell:active { transform: scale(0.985); }
+
+.op-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
 
 /* Feedback Banner */
+.op-msg,
 .op-feedback {
-  padding: 8px 10px;
-  border-radius: 4px;
+  padding: 8px 12px;
+  border-radius: 5px;
   font-size: 11.5px;
   font-weight: 600;
   text-align: center;
   animation: op-in 0.18s ease;
+  line-height: 1.4;
 }
+.op-msg.up,
 .op-feedback.up {
   background: rgba(14, 203, 129, 0.15);
   color: #0ecb81;
-  border: 1px solid rgba(14, 203, 129, 0.3);
+  border: 1px solid rgba(14, 203, 129, 0.35);
 }
+.op-msg.down,
 .op-feedback.down {
   background: rgba(246, 70, 93, 0.15);
   color: #f6465d;
-  border: 1px solid rgba(246, 70, 93, 0.3);
+  border: 1px solid rgba(246, 70, 93, 0.35);
 }
 
 @keyframes op-in {
@@ -2551,6 +2667,240 @@ html, body, #root {
 }
 
 /* ==========================================================================
+   TradingView Paper Trading Drawer Styles (Matching Images 2 & 3)
+   ========================================================================== */
+.bottom-orders-drawer.tv-paper-drawer {
+  background: var(--bg-2, #13161b);
+}
+
+.bod-header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tv-drawer-logo {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 1. Account Metrics Row (Matching Image 2 & 3) */
+.tv-acc-metrics-row {
+  display: flex;
+  align-items: center;
+  background: #13161b;
+  border-bottom: 1px solid var(--line, #23272e);
+  padding: 6px 14px;
+  gap: 20px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.tv-am-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tv-am-k {
+  font-size: 10.5px;
+  color: #7d8798;
+  font-weight: 500;
+}
+
+.tv-am-v {
+  font-size: 12.5px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", monospace;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.tv-am-v.bold {
+  font-weight: 700;
+}
+
+/* 2. TradingView Tab Bar (Matching Image 2 & 3) */
+.tv-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #13161b;
+  border-bottom: 1px solid var(--line, #23272e);
+  padding: 0 10px;
+  overflow-x: auto;
+}
+
+.tv-tab-item {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim, #8b94a3);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+
+.tv-tab-item:hover {
+  color: #ffffff;
+}
+
+.tv-tab-item.active {
+  color: var(--accent, #2962ff);
+  font-weight: 700;
+  border-bottom-color: var(--accent, #2962ff);
+}
+
+.tv-tab-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d1d4dc;
+  padding: 1px 5px;
+  border-radius: 10px;
+  margin-left: 5px;
+}
+
+.tv-tab-item.active .tv-tab-badge {
+  background: rgba(41, 98, 255, 0.2);
+  color: #2962ff;
+}
+
+/* 3. TradingView Table Styles (Matching Image 2 & 3) */
+.tv-table {
+  font-size: 11.5px;
+}
+
+.tv-table th {
+  padding: 8px 12px;
+  font-weight: 600;
+  color: #7d8798;
+  font-size: 11px;
+  border-bottom: 1px solid #23272e;
+}
+
+.tv-table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.035);
+  font-size: 11.5px;
+}
+
+.tv-sym-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.tv-sym-coin-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #f0b90b;
+  color: #000000;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9.5px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.tv-leverage-box {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: monospace;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #d1d4dc;
+}
+
+.tv-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tv-act-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  background: #1e222d;
+  border: 1px solid #363a45;
+  color: #8b94a3;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.12s ease;
+}
+
+.tv-act-btn:hover.edit {
+  background: rgba(41, 98, 255, 0.15);
+  border-color: #2962ff;
+  color: #2962ff;
+}
+
+.tv-act-btn:hover.close {
+  background: rgba(242, 54, 69, 0.15);
+  border-color: #f23645;
+  color: #f23645;
+}
+
+/* In-drawer Edit Bar */
+.tv-edit-inline-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #1a1e24;
+  border-top: 1px solid var(--line, #23272e);
+  font-size: 11.5px;
+  color: #ffffff;
+}
+
+.tv-edit-inline-bar .sm-input.small {
+  width: 140px;
+  height: 26px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+}
+
+.tv-edit-inline-bar .sm-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+  font-weight: 600;
+}
+
+.tv-edit-inline-bar .sm-btn.primary {
+  background: var(--accent, #2962ff);
+  color: #ffffff;
+}
+
+.tv-edit-inline-bar .sm-btn.secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-dim);
+}
+
+/* ==========================================================================
    Draggable Separators & Resize Handles
    ========================================================================== */
 .panel-resizer-handle {
@@ -2664,6 +3014,17 @@ body.resizing-col .market-panel {
   overflow: hidden;
 }
 
+.chart-trading-overlay.inside-plot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 12;
+  overflow: visible;
+}
+
 .tv-trade-line {
   position: absolute;
   left: 0;
@@ -2673,6 +3034,54 @@ body.resizing-col .market-panel {
   align-items: center;
   pointer-events: none;
   z-index: 14;
+}
+
+/* Take Profit (Target) Line - Green (Matching Image 1) */
+.tv-trade-line.tp-target .tv-line-solid.tp {
+  background: #089981;
+  height: 1.5px;
+}
+
+.tv-segmented-pill.tp {
+  border: 1px solid #089981;
+}
+
+.tv-seg-target-pnl.tp {
+  color: #089981;
+  font-weight: 700;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.tv-scale-price-chip.tp {
+  background: #089981;
+  color: #ffffff;
+}
+
+/* Stop Loss Line - Orange (Matching Image 1) */
+.tv-trade-line.sl-stop .tv-line-solid.sl {
+  background: #ff9800;
+  height: 1.5px;
+}
+
+.tv-segmented-pill.sl {
+  border: 1px solid #ff9800;
+}
+
+.tv-seg-target-pnl.sl {
+  color: #ff9800;
+  font-weight: 700;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.tv-scale-price-chip.sl {
+  background: #ff9800;
+  color: #ffffff;
 }
 
 /* 1. Horizontal Lines across chart */
