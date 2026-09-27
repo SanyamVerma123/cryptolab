@@ -23,6 +23,7 @@ import {
   type LuxIndicator,
   type LuxFamily,
 } from "../lib/luxAlgoClient";
+import { rememberLuxIndicator } from "../lib/luxPersist";
 
 interface Props {
   ws: VelaWorkspace | null;
@@ -109,7 +110,11 @@ export function LuxAlgoPanel({ ws, open, onOpenChange }: Props) {
         // component performs; existing indicators/params are untouched.
         setAdd({ kind: "compiling", slug: item.slug, name: item.name });
         const chart = ws.chart;
-        chart.addIndicator(source);
+        const handle = chart.addIndicator(source);
+        // Remember the slug so a reload/symbol switch re-mounts it
+        // (luxPersist). Vela's own persistence does not keep host-added
+        // indicators, so without this the script is gone on refresh.
+        rememberLuxIndicator(ws.chart.market?.symbol, item.slug, handle?.id);
         setAdd({ kind: "done", name: item.name });
       } catch (e) {
         setAdd({ kind: "error", message: (e as Error).message });

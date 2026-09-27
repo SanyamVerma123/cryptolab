@@ -28,6 +28,14 @@
  * `indicator:visibility` / `indicator:inputs` change events.
  */
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { forgetLuxIndicator, slugForIndicatorId } from "./luxPersist";
+import {
+  forgetPineIndicator,
+  pineNameForIndicatorId,
+  pineScriptName,
+  appliedPineForCoin,
+  rememberPineIndicator,
+} from "./pinePersist";
 
 const KEY = "trade-pro:indicators";
 
@@ -73,8 +81,34 @@ function bareSymbol(sym: string | undefined): string | undefined {
   return i === -1 ? sym : sym.slice(i + 1);
 }
 
-/** The stable match key for a handle — nativeType for native, title for Pine. */
-function keyOf(h: { nativeType?: string; title: string }): string {
+/**
+ * The stable match key for a handle — nativeType for native, title for Pine.
+ *
+ * NOTE on LuxAlgo library indicators: every one of them compiles to the SAME
+ * `title` ("Indicator"), because their scripts do not declare a unique
+ * `indicator(...)` title. Title-matching would therefore collapse them into a
+ * single record, so a hide/edit/delete applied to one would land on (or be
+ * replayed by) any other. Those are keyed by their LuxAlgo `slug` instead —
+ * `slugForIndicatorId` resolves the one that created the handle. See
+ * `luxPersist.ts`.
+ */
+function keyOf(h: {
+  nativeType?: string;
+  title: string;
+  id?: string;
+  source?: string;
+}): string {
+  // A LuxAlgo library script resolves to a unique slug; use it when present.
+  const slug = slugForIndicatorId(h.id);
+  if (slug) return `lux:${slug}`;
+  // A custom Pine script resolves to its declared name. Prefer the session map
+  // (populated by rememberPineIndicator), but fall back to parsing `source`
+  // directly: `indicator:added` fires BEFORE the editor registers the id -> name
+  // map, so at snapshot time the map is still empty and the record would
+  // collapse onto the generic `title` "Indicator" — colliding with every other
+  // script and losing this one's inputs.
+  const pineName = pineNameForIndicatorId(h.id) ?? (h.source ? pineScriptName(h.source) : null);
+  if (pineName) return `pine:${pineName}`;
   return h.nativeType || h.title;
 }
 
@@ -90,6 +124,34 @@ function keyOf(h: { nativeType?: string; title: string }): string {
  * Vela's ids change per session, so the match key is `nativeType` (native) or
  * the script `title` (Pine), never the id.
  */
+/**
+ * Keys forgotten by a removal within the last snapshot cycle. `snapshot`'s
+ * merge deliberately keeps the record of any unmounted indicator, which would
+ * otherwise resurrect the key `onRemoved` just forgot (the indicator came back
+ * on every reload). See `onRemoved`.
+ */
+const justRemoved = new Set<string>();
+
+/**
+ * True while the persistence layers are re-mounting saved indicators
+ * (`restoreLuxIndicators` / `restorePineIndicators`). Vela fires
+ * `indicator:added` inside that restore, and its snapshot would otherwise write
+ * the freshly-mounted `visible: true` before `applyIndicatorState` replays the
+ * user's hidden state — losing the eye toggle on every reload.
+ */
+let isRestoring = false;
+
+/** Mark the start of a restore so `indicator:added` suppresses its snapshot. */
+export function beginRestore(): void {
+  isRestoring = true;
+}
+
+/** Mark the restore complete and replay the saved indicator state. */
+export function endRestore(ws: VelaWorkspace, sym: string | undefined): void {
+  isRestoring = false;
+  applyIndicatorState(ws, sym);
+}
+
 function snapshot(ws: VelaWorkspace, sym: string | undefined): void {
   const coin = bareSymbol(sym);
   if (!coin) return;
@@ -122,6 +184,10 @@ function snapshot(ws: VelaWorkspace, sym: string | undefined): void {
     // later re-add can only come back with declaration defaults.
     const mounted = new Set(list.map((s) => s.key));
     for (const [key, rec] of prev) {
+      // EXCEPT a key `onRemoved` deliberately forgot: keeping it here would
+      // resurrect the indicator on the next reload. Suppression is per-key and
+      // short-lived, so a genuine re-add still records normally.
+      if (justRemoved.has(key)) continue;
       if (!mounted.has(key)) {
         // Drop only the VISIBILITY of a removed indicator — remembering it as
         // hidden would force a re-add to come back hidden, which is not what
@@ -263,17 +329,68 @@ export function installIndicatorState(ws: VelaWorkspace): () => void {
   };
   const onRemoved = (e: { id?: string }) => {
     void e;
-    // A removal must NOT delete the indicator's saved config. `snapshot` keeps
-    // the previous record for any key that is no longer mounted (so the inputs
-    // survive), so all we do here is trigger that merge a beat early. The
-    // debounced `dirty()` after a remove used to land AFTER our handler had
-    // already forgotten the handle, which is exactly why settings never came
-    // back on re-add. Flushing now keeps the record current.
+
+    // If the removed indicator is one the persistence layers recorded for this
+    // coin, forget it — otherwise the restore re-mounts it on the next reload.
+    // This covers BOTH foreign script families:
+    //   - LuxAlgo library indicators (traced by their slug)
+    //   - custom Pine scripts written in the editor (traced by script name)
+    let forgotKey: string | undefined;
+    try {
+      const slug = e.id ? slugForIndicatorId(e.id) : undefined;
+      if (slug) {
+        forgetLuxIndicator(coin, slug);
+        forgotKey = `lux:${slug}`;
+      }
+    } catch {
+      /* persistence is best-effort */
+    }
+    try {
+      // 1) fast path: the editor or restore registered this id → name on add
+      let name = e.id ? pineNameForIndicatorId(e.id) : undefined;
+      // 2) sweep applied store for a custom script no longer mounted
+      if (!name) {
+        const live = (ws.chart.indicators() ?? []) as {
+          id: string;
+          title: string;
+          source?: string;
+        }[];
+        const gone = appliedPineForCoin(coin).filter(
+          (s) =>
+            !live.some(
+              (h) =>
+                h.source !== undefined &&
+                (pineScriptName(h.source) ?? h.title) === s.name
+            )
+        );
+        // Only safe to act on an unambiguous removal — one custom script gone.
+        if (gone.length === 1) name = gone[0].name;
+      }
+      if (name) {
+        forgetPineIndicator(coin, name);
+        forgotKey = `pine:${name}`;
+      }
+    } catch (e2) {
+      console.warn("[trade-pro] forget pine failed:", e2);
+    }
+
+    // Suppress the key BEFORE snapshot runs, so snapshot's merge does not
+    // re-insert the removed key into store[coin]!
+    if (forgotKey) {
+      justRemoved.add(forgotKey);
+      setTimeout(() => { justRemoved.delete(forgotKey); }, 1500);
+    }
+
+    // Flush any pending debounce and snapshot with justRemoved active.
     if (timer) {
       clearTimeout(timer);
       timer = undefined;
     }
-    snapshot(ws, coin);
+    try {
+      snapshot(ws, coin);
+    } catch {
+      /* chart may be mid-teardown */
+    }
   };
   const onAdded = (e: { id?: string }) => {
     void e;
@@ -288,11 +405,23 @@ export function installIndicatorState(ws: VelaWorkspace): () => void {
       const me = e.id ? all.find((h) => h.id === e.id) : undefined;
       const key = me ? keyOf(me) : undefined;
       if (me && key) carryInputsTo(ws, coin, key);
+      // Map any newly added Pine indicator's id to its name
+      if (me && me.source && me.id) {
+        const name = pineScriptName(me.source) ?? me.title ?? "Custom indicator";
+        rememberPineIndicator(coin, me.source, name, me.id);
+      }
     } catch {
       /* chart torn down */
     }
-    // Then snapshot so the newly-added indicator enters the store.
-    dirty();
+    // Then snapshot so the newly-added indicator enters the store — EXCEPT
+    // during a restore. A reload / symbol switch re-adds indicators the user
+    // had hidden, and this handler fires synchronously inside that restore,
+    // BEFORE `applyIndicatorState` replays the visibility. Letting the snapshot
+    // run here wrote the freshly-mounted `visible: true` first and the hidden
+    // state was lost on every reload. A genuinely new key still enters the
+    // store on the next real change event; an existing record keeps its
+    // visibility until the user toggles it.
+    if (!isRestoring) dirty();
   };
   const onMarketChanged = (e: { symbol?: string }) => {
     coin = bareSymbol(e.symbol);

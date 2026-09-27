@@ -65,28 +65,59 @@ export const LUX_FAMILIES = [
 
 export type LuxFamily = (typeof LUX_FAMILIES)[number];
 
-const BASE = "";
+let resolvedPrefix: string | null = null;
+
+async function fetchRaw(url: string): Promise<{ ok: boolean; status: number; data: unknown }> {
+  try {
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    const text = await res.text();
+    // Guard against HTML from SPA fallback
+    if (text.trim().startsWith("<!DOCTYPE") || text.trim().startsWith("<html")) {
+      return { ok: false, status: 404, data: { ok: false, error: "SPA fallback" } };
+    }
+    let data: unknown = {};
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return { ok: false, status: res.status, data: { ok: false, error: "Invalid JSON" } };
+    }
+    return { ok: res.ok && (data as { ok?: boolean }).ok !== false, status: res.status, data };
+  } catch (e) {
+    return { ok: false, status: 0, data: { ok: false, error: (e as Error).message } };
+  }
+}
 
 async function getJson(path: string): Promise<unknown> {
-  let res: Response;
-  try {
-    res = await fetch(path, { headers: { Accept: "application/json" } });
-  } catch (e) {
+  const target = resolvedPrefix ? path.replace(/^\/luxalgo/, resolvedPrefix) : path;
+  const attempt = await fetchRaw(target);
+
+  // If the direct path failed (e.g. 404 or HTML fallback) and we haven't tried /api/luxalgo yet:
+  if (!attempt.ok && !target.startsWith("/api") && path.startsWith("/luxalgo")) {
+    const apiTarget = `/api${path}`;
+    const second = await fetchRaw(apiTarget);
+    if (second.ok) {
+      resolvedPrefix = "/api/luxalgo";
+      return second.data;
+    }
+  }
+
+  if (attempt.ok) {
+    if (!resolvedPrefix && target.startsWith("/luxalgo")) {
+      resolvedPrefix = "/luxalgo";
+    }
+    return attempt.data;
+  }
+
+  const body = (attempt.data || {}) as { error?: string };
+  if (attempt.status === 404) {
     throw new Error(
-      "Could not reach the LuxAlgo library proxy. The dev server may not be running."
+      "This indicator's source is not publicly available (premium-tier indicators are excluded)."
     );
   }
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok || !(body as { ok?: boolean }).ok) {
-    const msg = (body as { error?: string }).error;
-    if (res.status === 404) {
-      throw new Error(
-        "This indicator's source is not publicly available (premium-tier indicators are excluded)."
-      );
-    }
-    throw new Error(msg || `The library proxy returned HTTP ${res.status}.`);
-  }
-  return body;
+  throw new Error(
+    body.error ||
+      `The library proxy returned HTTP ${attempt.status || "error"}. Ensure the Vercel Serverless Function is deployed.`
+  );
 }
 
 /**
@@ -108,7 +139,7 @@ export async function listIndicators(
   params.set("pageSize", String(pageSize));
   if (family) params.set("family", family);
   if (text.trim()) params.set("text", text.trim());
-  const body = (await getJson(`${BASE}/luxalgo/indicators?${params}`)) as LuxIndicatorPage & {
+  const body = (await getJson(`/luxalgo/indicators?${params}`)) as LuxIndicatorPage & {
     ok: boolean;
   };
   return {
@@ -123,7 +154,7 @@ export async function listIndicators(
 export async function getIndicatorSource(slug: string): Promise<LuxSource> {
   if (!slug) throw new Error("No indicator selected.");
   const body = (await getJson(
-    `${BASE}/luxalgo/source?slug=${encodeURIComponent(slug)}`
+    `/luxalgo/source?slug=${encodeURIComponent(slug)}`
   )) as LuxSource & { ok: boolean };
   return {
     slug: body.slug,

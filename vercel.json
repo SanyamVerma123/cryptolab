@@ -1,0 +1,13 @@
+{
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/luxalgo/:path*",
+      "destination": "/api/luxalgo/:path*"
+    },
+    {
+      "source": "/((?!api/|luxalgo/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

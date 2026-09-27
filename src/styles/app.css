@@ -1714,3 +1714,58 @@ html, body, #root {
   }
   .series-select.ai-toggle .ctl-ico { font-size: 14px; }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   MOBILE ONLY (<= 720px) — drawing settings popup containment.
+   The user's bug: with a drawing near the right edge, Vela's settings
+   popup (.vela-dpop, 351px wide) is anchored at the drawing and its
+   right side — including the DELETE button — runs off the screen edge
+   and becomes untappable. Clamp it inside the viewport.
+   Tablet/desktop are untouched.
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .vela-dpop {
+    /* Never wider than the screen minus a small safety margin. */
+    max-width: calc(100vw - 16px) !important;
+    /* Clamp both edges: left >= 8px, right <= vw - 8px. Vela positions the
+       popup at the drawing's anchor; this overrides that anchor when it
+       would push the popup (and its delete button) off-canvas. */
+    left: 8px !important;
+    right: auto !important;
+    /* Keep the rows from forcing horizontal overflow inside the popup. */
+    overflow-x: hidden;
+    box-sizing: border-box;
+  }
+  /* Inner content must shrink to fit, not push the delete button out. */
+  .vela-dpop > * {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Crosshair placement cursor (mobile + tablet).
+   When a drawing tool is armed, the chart area becomes a placement
+   surface: the finger moves the crosshair, a TAP places an anchor.
+   The system mouse cursor is hidden so the crosshair is the only
+   pointer on screen. Applies to touch AND mouse — the user wants the
+   same behaviour on every device.
+   ───────────────────────────────────────────────────────────── */
+.chart-host.tool-armed,
+.chart-host.tool-armed * {
+  cursor: none !important;
+}
+/* Keep the chart from scrolling or pinch-zooming the PAGE while a tool is
+   armed, so the finger stays a placement gesture. Scope it narrowly to the
+   chart element itself; when the tool disarms this class is removed and the
+   chart is fully touch-native again (pan, select, move/resize). */
+.chart-host.tool-armed {
+  touch-action: none !important;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* (removed) The offset ".xhair" crosshair ring and its interceptor have been
+   dropped — swallowing real touch and replaying synthetic pointer events broke
+   Vela's native selection and panning on glass. Vela's own touch handling is
+   used unmodified now; see src/lib/crosshairPlacement.ts. */

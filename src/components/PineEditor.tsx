@@ -15,6 +15,11 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import {
+  rememberPineIndicator,
+  loadPineLibrary,
+  savePineLibrary,
+} from "../lib/pinePersist";
 
 interface Props {
   ws: VelaWorkspace | null;
@@ -23,8 +28,6 @@ interface Props {
 }
 
 const STORE_KEY = "trade-pro:pine-source";
-/** Saved custom scripts — the "custom" group in the indicator picker. */
-const LIB_KEY = "trade-pro:pine-library";
 
 const SAMPLE = `//@version=6
 indicator("EMA + RSI bands", overlay=true)
@@ -41,50 +44,27 @@ function scriptName(src: string): string | null {
   return m ? (m[1] ?? m[2] ?? null) : null;
 }
 
-interface SavedScript {
-  name: string;
-  script: string;
-}
-
-/** Load + save the custom library (survives reloads). */
-function loadLibrary(): SavedScript[] {
-  try {
-    const raw = localStorage.getItem(LIB_KEY);
-    const arr = raw ? (JSON.parse(raw) as SavedScript[]) : [];
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
-  }
-}
-function saveLibrary(lib: SavedScript[]): void {
-  try {
-    localStorage.setItem(LIB_KEY, JSON.stringify(lib));
-  } catch {
-    /* ignore */
-  }
-}
-
 /**
- * Register every saved script with the chart's indicator library. Vela exposes
- * `addExternalIndicator({name, script, language})` for exactly this — the
- * entries show in the picker after the natives, in our own order. Calling it
- * for an id/name already present is a safe no-op-ish update.
+ * Register saved scripts with the chart's indicator catalog manifest without
+ * auto-mounting them on the active chart. `cell.setManifest(..., false)` ensures
+ * they appear in the library picker dialog, while on-chart persistence is handled
+ * exclusively by `restorePineIndicators`.
  */
 export function syncCustomLibrary(ws: VelaWorkspace): void {
-  const lib = loadLibrary();
-  if (!lib.length) return;
+  const lib = loadPineLibrary();
   try {
-    const cell = ws.active;
-    for (const s of lib) {
-      try {
-        cell.addExternalIndicator({
-          name: s.name,
-          script: s.script,
-          language: "pine",
-        });
-      } catch {
-        /* already present or unsupported — skip */
-      }
+    const cell = ws.active as unknown as {
+      setManifest?: (list: unknown[], seedEnabled: boolean) => void;
+    };
+    if (typeof cell?.setManifest === "function") {
+      const manifest = lib.map((s) => ({
+        name: s.name,
+        script: s.script,
+        language: "pine",
+        category: "Custom",
+        enabled: false,
+      }));
+      cell.setManifest(manifest, false);
     }
   } catch {
     /* cell not ready */
@@ -158,6 +138,14 @@ export function PineEditor({ ws, open, onOpenChange }: Props) {
     setOk(null);
     try {
       const handle = ws.chart.addIndicator(src);
+
+      // The handle is usable synchronously (per Vela's IndicatorHandle docs),
+      // so record the script for THIS coin immediately — do NOT wait for
+      // `ready`. The engine can take many seconds to compile, and if `ready`
+      // is late or never fires the script would still be on the chart but
+      // forgotten by persistence, silently vanishing on the next reload.
+      rememberPineIndicator(ws.chart.market?.symbol, src, handle.title, handle.id);
+
       const t = setTimeout(() => {
         setStatus("Timed out waiting for the engine.");
         setOk(false);
@@ -170,9 +158,13 @@ export function PineEditor({ ws, open, onOpenChange }: Props) {
         // Save into the indicator library's "custom" group so it appears in the
         // picker by name and can be re-added after a reload.
         const name = scriptName(src) ?? handle.title ?? "Custom indicator";
-        const lib = loadLibrary().filter((s) => s.name !== name);
+        const lib = loadPineLibrary().filter((s) => s.name !== name);
         lib.push({ name, script: src });
-        saveLibrary(lib);
+        savePineLibrary(lib);
+        // Re-record now that the compiled title is final (it can differ from
+        // the pre-compile placeholder), keeping the same id → name mapping.
+        rememberPineIndicator(ws.chart.market?.symbol, src, handle.title, handle.id);
+        syncCustomLibrary(ws);
       });
       handle.on("error", (e: { error: Error }) => {
         clearTimeout(t);

@@ -93,8 +93,29 @@ async function callTool(name, args) {
 
 // ---- HTTP helpers -----------------------------------------------------------
 
-function sendJson(res, status, obj) {
-  res.writeHead(status, { "Content-Type": "application/json" });
+export function sendJson(res, status, obj) {
+  if (res.setHeader) {
+    try {
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
+    } catch {}
+  }
+  if (typeof res.status === "function" && typeof res.json === "function") {
+    res.status(status).json(obj);
+    return;
+  }
+  if (res.writeHead) {
+    try {
+      res.writeHead(status, {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Accept",
+      });
+    } catch {}
+  }
   res.end(JSON.stringify(obj));
 }
 
@@ -112,7 +133,7 @@ function readBody(req) {
 
 // ---- route handlers ---------------------------------------------------------
 
-async function handleIndicators(url, res) {
+export async function handleIndicators(url, res) {
   const family = url.searchParams.get("family") || undefined;
   const text = url.searchParams.get("text") || undefined;
   const pageRaw = url.searchParams.get("page");
@@ -149,7 +170,7 @@ async function handleIndicators(url, res) {
   });
 }
 
-async function handleSource(slug, res) {
+export async function handleSource(slug, res) {
   if (!slug) {
     sendJson(res, 400, { ok: false, error: "missing slug" });
     return;
@@ -184,8 +205,27 @@ async function handleSource(slug, res) {
  * AI relay) so /luxalgo/* wins over the SPA fallback.
  */
 export async function handleLuxAlgo(req, res) {
+  if (req.method === "OPTIONS") {
+    if (res.setHeader) {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
+    }
+    if (typeof res.status === "function") {
+      res.status(204).end();
+      return true;
+    }
+    res.writeHead?.(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Accept",
+    });
+    res.end?.();
+    return true;
+  }
+
   const rawUrl = req.url || "/";
-  if (!rawUrl.startsWith("/luxalgo/")) return false;
+  if (!rawUrl.startsWith("/luxalgo/") && !rawUrl.startsWith("/api/luxalgo/")) return false;
 
   let url;
   try {
@@ -196,11 +236,17 @@ export async function handleLuxAlgo(req, res) {
   }
 
   try {
-    if (url.pathname === "/luxalgo/indicators" && req.method === "GET") {
+    if (
+      (url.pathname === "/luxalgo/indicators" || url.pathname === "/api/luxalgo/indicators") &&
+      req.method === "GET"
+    ) {
       await handleIndicators(url, res);
       return true;
     }
-    if (url.pathname === "/luxalgo/source" && req.method === "GET") {
+    if (
+      (url.pathname === "/luxalgo/source" || url.pathname === "/api/luxalgo/source") &&
+      req.method === "GET"
+    ) {
       await handleSource(url.searchParams.get("slug"), res);
       return true;
     }

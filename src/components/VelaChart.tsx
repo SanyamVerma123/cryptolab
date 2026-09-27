@@ -37,6 +37,9 @@ import { syncCustomLibrary } from "./PineEditor";
 import { installToolDefaults } from "../lib/toolDefaults";
 import { installPerSymbolDrawings } from "../lib/perSymbolDrawings";
 import { installIndicatorState } from "../lib/indicatorState";
+import { installCrosshairPlacement } from "../lib/crosshairPlacement";
+import { restoreLuxIndicators } from "../lib/luxPersist";
+import { restorePineIndicators } from "../lib/pinePersist";
 import { trackSelection } from "../lib/drawingPresets";
 import { mountMarket } from "../lib/marketData";
 
@@ -153,6 +156,42 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     let stopDefaults: (() => void) | undefined;
     let stopSymbols: (() => void) | undefined;
     let stopIndicators: (() => void) | undefined;
+    let stopCrosshair: (() => void) | undefined;
+
+    // Re-mount this coin's LuxAlgo library indicators once the market is live.
+    // Defined before `setupMarket` (which calls it) — a `const` is not hoisted.
+    const restoreLux = () => {
+      try {
+        void restoreLuxIndicators(ws, ws.chart.market?.symbol).then((r) => {
+          if (r.failed.length) {
+            console.warn(
+              "[trade-pro] some library indicators could not be restored:",
+              r.failed
+            );
+          }
+        });
+      } catch (e) {
+        console.warn("[trade-pro] lux restore failed:", e);
+      }
+    };
+
+    // Re-mount this coin's CUSTOM Pine scripts (pinePersist). Same pattern as
+    // the library restore above — the editor saves a palette of scripts, this
+    // is the "which were actually on the chart" list.
+    const restorePine = () => {
+      try {
+        void restorePineIndicators(ws, ws.chart.market?.symbol).then((r) => {
+          if (r.failed.length) {
+            console.warn(
+              "[trade-pro] some custom indicators could not be restored:",
+              r.failed
+            );
+          }
+        });
+      } catch (e) {
+        console.warn("[trade-pro] pine restore failed:", e);
+      }
+    };
 
     const setupMarket = () => {
       try {
@@ -160,6 +199,11 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       } catch (e) {
         console.error("[trade-pro] setMarket failed", e);
       }
+      // Re-mount this coin's LuxAlgo library indicators now that the market is
+      // set (the list is coin-scoped, so this needs a real symbol).
+      restoreLux();
+      // Same for custom Pine scripts the user wrote + applied.
+      restorePine();
       // Keep the app's own bar store in lockstep — the AI draws from this.
       // (Vela owns the chart's array internally; this is the AI's read copy.)
       // CRITICAL: Only subscribe AFTER the chart is ready to prevent the
@@ -194,6 +238,18 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
         console.warn("[trade-pro] indicator state failed:", e);
       }
 
+      // (restoreLux is defined above, alongside setupMarket — the library
+      // restore runs from there, once the market symbol is actually set.)
+
+      // Crosshair placement: while a drawing tool is armed, the chart stops
+      // scrolling and the system cursor hides so only Vela's crosshair shows —
+      // the "move, then tap to place" behaviour the user has on desktop.
+      try {
+        stopCrosshair = installCrosshairPlacement(ws);
+      } catch (e) {
+        console.warn("[trade-pro] crosshair placement failed:", e);
+      }
+
       // Ensure the "current price line" (last value marker) is visible on ALL panes,
       // including oscillator panes (MACD, RSI, etc.). Vela's renderer setting
       // `currentPriceLine` typically targets the main scale; we explicitly enforce
@@ -222,6 +278,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       stopDefaults?.();
       stopSymbols?.();
       stopIndicators?.();
+      stopCrosshair?.();
     };
   }, [coin, timeframe]);
 
