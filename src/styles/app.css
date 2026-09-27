@@ -2352,7 +2352,38 @@ html, body, #root {
 .bod-controls {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
+}
+
+.bod-pnl-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+}
+
+.bod-pnl-pill.up {
+  background: rgba(14, 203, 129, 0.12);
+  border: 1px solid rgba(14, 203, 129, 0.3);
+  color: #0ecb81;
+}
+
+.bod-pnl-pill.down {
+  background: rgba(246, 70, 93, 0.12);
+  border: 1px solid rgba(246, 70, 93, 0.3);
+  color: #f6465d;
+}
+
+.bod-pnl-pill-k {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.bod-pnl-pill-v {
+  font-weight: 700;
 }
 
 .bod-checkbox-label {

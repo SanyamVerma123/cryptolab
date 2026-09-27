@@ -10,6 +10,7 @@ import { useOrders } from "../lib/orderState";
 
 interface Props {
   currentCoin: string;
+  currentPrice?: number;
   isOpen: boolean;
   onToggle: () => void;
   onResize?: () => void;
@@ -17,7 +18,7 @@ interface Props {
 
 type BottomTab = "open" | "history" | "trades" | "funds";
 
-export function BottomOrdersDrawer({ currentCoin, isOpen, onToggle, onResize }: Props) {
+export function BottomOrdersDrawer({ currentCoin, currentPrice = 0, isOpen, onToggle, onResize }: Props) {
   const { orders, history, balances, cancelOrder, cancelAllOrders } = useOrders();
   const [tab, setTab] = useState<BottomTab>("open");
   const [hideOtherPairs, setHideOtherPairs] = useState(false);
@@ -45,6 +46,27 @@ export function BottomOrdersDrawer({ currentCoin, isOpen, onToggle, onResize }: 
   const filledTrades = displayedHistory.filter((o) => o.status === "Filled");
 
   const openCount = displayedOrders.length;
+
+  // Calculate real-time profit or loss for an order
+  const getOrderPnl = (o: { side: string; price: number; amount: number }) => {
+    if (!currentPrice || currentPrice <= 0 || !o.price) return null;
+    const diff = o.side === "BUY" ? currentPrice - o.price : o.price - currentPrice;
+    const pnlVal = diff * o.amount;
+    const pnlPct = (diff / o.price) * 100;
+    const isUp = pnlVal >= 0;
+    return {
+      val: pnlVal,
+      pct: pnlPct,
+      tone: isUp ? "up" : "down",
+      str: `${isUp ? "+" : ""}$${pnlVal.toFixed(2)} (${isUp ? "+" : ""}${pnlPct.toFixed(2)}%)`,
+    };
+  };
+
+  // Total Open Unrealized PnL
+  const totalOpenPnl = displayedOrders.reduce((acc, o) => {
+    const pnl = getOrderPnl(o);
+    return acc + (pnl ? pnl.val : 0);
+  }, 0);
 
   const handleResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -153,6 +175,15 @@ export function BottomOrdersDrawer({ currentCoin, isOpen, onToggle, onResize }: 
         </div>
 
         <div className="bod-controls">
+          {openCount > 0 && currentPrice > 0 && (
+            <div className={"bod-pnl-pill " + (totalOpenPnl >= 0 ? "up" : "down")}>
+              <span className="bod-pnl-pill-k">Open PnL:</span>
+              <span className="bod-pnl-pill-v">
+                {totalOpenPnl >= 0 ? "+" : ""}${totalOpenPnl.toFixed(2)}
+              </span>
+            </div>
+          )}
+
           <label className="bod-checkbox-label">
             <input
               type="checkbox"
@@ -205,36 +236,43 @@ export function BottomOrdersDrawer({ currentCoin, isOpen, onToggle, onResize }: 
                       <th>Amount</th>
                       <th>Filled</th>
                       <th>Total</th>
+                      <th>Unrealized PnL</th>
                       <th>Trigger Conditions</th>
                       <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {displayedOrders.map((o) => (
-                      <tr key={o.id}>
-                        <td>{o.date}</td>
-                        <td className="bold">{o.pair}</td>
-                        <td>{o.type}</td>
-                        <td className={o.side === "BUY" ? "text-buy" : "text-sell"}>
-                          {o.side}
-                        </td>
-                        <td>${o.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        <td>{o.amount.toFixed(4)} {o.coin}</td>
-                        <td>{o.filled.toFixed(2)}%</td>
-                        <td>${o.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        <td>{o.trigger}</td>
-                        <td>
-                          <button
-                            type="button"
-                            className="bod-cancel-btn"
-                            onClick={() => cancelOrder(o.id)}
-                            title="Cancel order"
-                          >
-                            Cancel
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {displayedOrders.map((o) => {
+                      const pnl = getOrderPnl(o);
+                      return (
+                        <tr key={o.id}>
+                          <td>{o.date}</td>
+                          <td className="bold">{o.pair}</td>
+                          <td>{o.type}</td>
+                          <td className={o.side === "BUY" ? "text-buy" : "text-sell"}>
+                            {o.side}
+                          </td>
+                          <td>${o.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td>{o.amount.toFixed(4)} {o.coin}</td>
+                          <td>{o.filled.toFixed(2)}%</td>
+                          <td>${o.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className={pnl ? (pnl.tone === "up" ? "text-buy bold" : "text-sell bold") : ""}>
+                            {pnl ? pnl.str : "--"}
+                          </td>
+                          <td>{o.trigger}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="bod-cancel-btn"
+                              onClick={() => cancelOrder(o.id)}
+                              title="Cancel order"
+                            >
+                              Cancel
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -256,28 +294,35 @@ export function BottomOrdersDrawer({ currentCoin, isOpen, onToggle, onResize }: 
                       <th>Price</th>
                       <th>Amount</th>
                       <th>Total</th>
+                      <th>PnL</th>
                       <th>Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {displayedHistory.map((o) => (
-                      <tr key={o.id}>
-                        <td>{o.date}</td>
-                        <td className="bold">{o.pair}</td>
-                        <td>{o.type}</td>
-                        <td className={o.side === "BUY" ? "text-buy" : "text-sell"}>
-                          {o.side}
-                        </td>
-                        <td>${o.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        <td>{o.amount.toFixed(4)} {o.coin}</td>
-                        <td>${o.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        <td>
-                          <span className={"bod-status " + o.status.toLowerCase()}>
-                            {o.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {displayedHistory.map((o) => {
+                      const pnl = getOrderPnl(o);
+                      return (
+                        <tr key={o.id}>
+                          <td>{o.date}</td>
+                          <td className="bold">{o.pair}</td>
+                          <td>{o.type}</td>
+                          <td className={o.side === "BUY" ? "text-buy" : "text-sell"}>
+                            {o.side}
+                          </td>
+                          <td>${o.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td>{o.amount.toFixed(4)} {o.coin}</td>
+                          <td>${o.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className={pnl ? (pnl.tone === "up" ? "text-buy bold" : "text-sell bold") : ""}>
+                            {pnl ? pnl.str : "--"}
+                          </td>
+                          <td>
+                            <span className={"bod-status " + o.status.toLowerCase()}>
+                              {o.status}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -299,22 +344,29 @@ export function BottomOrdersDrawer({ currentCoin, isOpen, onToggle, onResize }: 
                       <th>Filled Amount</th>
                       <th>Fee</th>
                       <th>Total</th>
+                      <th>PnL</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filledTrades.map((o) => (
-                      <tr key={o.id}>
-                        <td>{o.date}</td>
-                        <td className="bold">{o.pair}</td>
-                        <td className={o.side === "BUY" ? "text-buy" : "text-sell"}>
-                          {o.side}
-                        </td>
-                        <td>${o.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        <td>{o.amount.toFixed(4)} {o.coin}</td>
-                        <td>${(o.total * 0.0005).toFixed(2)} (0.05%)</td>
-                        <td>${o.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                      </tr>
-                    ))}
+                    {filledTrades.map((o) => {
+                      const pnl = getOrderPnl(o);
+                      return (
+                        <tr key={o.id}>
+                          <td>{o.date}</td>
+                          <td className="bold">{o.pair}</td>
+                          <td className={o.side === "BUY" ? "text-buy" : "text-sell"}>
+                            {o.side}
+                          </td>
+                          <td>${o.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td>{o.amount.toFixed(4)} {o.coin}</td>
+                          <td>${(o.total * 0.0005).toFixed(2)} (0.05%)</td>
+                          <td>${o.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className={pnl ? (pnl.tone === "up" ? "text-buy bold" : "text-sell bold") : ""}>
+                            {pnl ? pnl.str : "--"}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}

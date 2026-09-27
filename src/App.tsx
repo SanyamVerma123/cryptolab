@@ -284,6 +284,7 @@ export default function App() {
           {/* Bottom Orders Drawer with '^' toggle icon at bottom-right corner */}
           <BottomOrdersDrawer
             currentCoin={coin}
+            currentPrice={live.ctx?.markPx || live.ctx?.midPx || 0}
             isOpen={bottomOrdersOpen}
             onResize={() => {
               try {
