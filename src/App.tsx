@@ -25,6 +25,8 @@ import { PineEditor } from "./components/PineEditor";
 import { IndicatorToggles } from "./components/IndicatorToggles";
 import { UpdateModal } from "./components/UpdateModal";
 import { LuxAlgoPanel } from "./components/LuxAlgoPanel";
+import { OrderPlacementPanel } from "./components/OrderPlacementPanel";
+import { BottomOrdersDrawer } from "./components/BottomOrdersDrawer";
 import { HyperliquidSocket } from "./lib/hyperliquid";
 import { useLiveData } from "./lib/useLiveData";
 import "./styles/app.css";
@@ -44,6 +46,8 @@ export default function App() {
   const [tf, setTf] = useState("60");
   const [ws, setWs] = useState<VelaWorkspace | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
+  const [panelMode, setPanelMode] = useState<"data" | "order">("order");
+  const [bottomOrdersOpen, setBottomOrdersOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [pineOpen, setPineOpen] = useState(false);
   const [indOpen, setIndOpen] = useState(false);
@@ -216,47 +220,68 @@ export default function App() {
       </header>
 
       <main className={"chart-area" + (panelOpen ? "" : " panel-closed")}>
-        <div className="chart-host">
-          <VelaChart coin={coin} timeframe={tf} onReady={(w) => {
-            // Expose for in-page diagnostics; harmless in production.
-            (window as unknown as { __ws?: VelaWorkspace }).__ws = w;
-            setWs(w);
-          }} />
-          {/* AI floating chat — opens from the topbar "✦ AI" button or the
-              "Show AI chat" tab in the right panel. No button on the left
-              side of the chart: it collided with the favorites bar. */}
-          <AiPanel
-            ws={ws}
-            open={aiOpen}
-            onOpenChange={setAiOpen}
-            onPineOpen={() => setPineOpen(true)}
+        <div className="chart-main-column">
+          <div className="chart-host">
+            <VelaChart coin={coin} timeframe={tf} onReady={(w) => {
+              // Expose for in-page diagnostics; harmless in production.
+              (window as unknown as { __ws?: VelaWorkspace }).__ws = w;
+              setWs(w);
+            }} />
+            {/* AI floating chat */}
+            <AiPanel
+              ws={ws}
+              open={aiOpen}
+              onOpenChange={setAiOpen}
+              onPineOpen={() => setPineOpen(true)}
+            />
+            {/* Pine Script editor (PineTS engine registered in VelaChart). */}
+            <PineEditor ws={ws} open={pineOpen} onOpenChange={setPineOpen} />
+            {/* The official LuxAlgo indicator library */}
+            <LuxAlgoPanel ws={ws} open={luxOpen} onOpenChange={setLuxOpen} />
+            {/* Indicator toggles */}
+            <IndicatorToggles ws={ws} open={indOpen} />
+            <UpdateModal open={updateOpen} onClose={() => setUpdateOpen(false)} />
+          </div>
+
+          {/* Bottom Orders Drawer with '^' toggle icon at bottom-right corner */}
+          <BottomOrdersDrawer
+            currentCoin={coin}
+            isOpen={bottomOrdersOpen}
+            onToggle={() => {
+              setBottomOrdersOpen((v) => !v);
+              setTimeout(() => {
+                try {
+                  ws?.chart?.resize();
+                } catch {}
+              }, 120);
+            }}
           />
-          {/* Pine Script editor (PineTS engine registered in VelaChart). */}
-          <PineEditor ws={ws} open={pineOpen} onOpenChange={setPineOpen} />
-          {/* The official LuxAlgo indicator library: fetch a list, click a row,
-              its Pine source is pulled and compiled onto the chart. */}
-          <LuxAlgoPanel ws={ws} open={luxOpen} onOpenChange={setLuxOpen} />
-          {/* Re-factors Vela's indicator dialog rows into front-of-row toggles
-              while that dialog is open. */}
-          <IndicatorToggles ws={ws} open={indOpen} />
-          <UpdateModal open={updateOpen} onClose={() => setUpdateOpen(false)} />
         </div>
+
         {panelOpen && (
           <aside className="market-panel">
             <div className="mp-head">
               <div className="mp-tabs">
                 <button
-                  className={"mp-tab on"}
-                  title="Market data for the current symbol"
+                  className={"mp-tab" + (panelMode === "order" ? " on" : "")}
+                  title="Place Limit, Market, or Stop-Limit orders"
+                  onClick={() => setPanelMode("order")}
                 >
-                  Show data
+                  Order
+                </button>
+                <button
+                  className={"mp-tab" + (panelMode === "data" ? " on" : "")}
+                  title="Market data, order book, and trades"
+                  onClick={() => setPanelMode("data")}
+                >
+                  Data
                 </button>
                 <button
                   className={"mp-tab" + (aiOpen ? " on" : "")}
                   title="Show AI chat panel"
                   onClick={() => setAiOpen((v) => !v)}
                 >
-                  Show AI chat
+                  AI
                 </button>
               </div>
               <button
@@ -267,7 +292,24 @@ export default function App() {
                 ✕
               </button>
             </div>
-            <MarketPanel coin={coin} data={live} />
+            {panelMode === "data" ? (
+              <MarketPanel coin={coin} data={live} />
+            ) : (
+              <div className="mp-body">
+                <OrderPlacementPanel
+                  coin={coin}
+                  data={live}
+                  onOrderPlaced={() => {
+                    setBottomOrdersOpen(true);
+                    setTimeout(() => {
+                      try {
+                        ws?.chart?.resize();
+                      } catch {}
+                    }, 120);
+                  }}
+                />
+              </div>
+            )}
           </aside>
         )}
       </main>

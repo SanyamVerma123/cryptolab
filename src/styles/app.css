@@ -1899,3 +1899,624 @@ html, body, #root {
     touch-action: none !important;
   }
 }
+
+/* ==========================================================================
+   Chart Main Column & Layout with Bottom Orders Drawer
+   ========================================================================== */
+.chart-main-column {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.chart-main-column > .chart-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+}
+
+/* ==========================================================================
+   Binance-style Place Order Panel (.order-placement-panel)
+   ========================================================================== */
+.order-placement-panel {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-2, #13161b);
+  color: var(--text, #d8dde4);
+  font-size: 12px;
+}
+
+.op-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.op-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.op-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.op-vip {
+  font-size: 10px;
+  font-weight: 700;
+  color: #f0b90b;
+  background: rgba(240, 185, 11, 0.12);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.op-badge-dot {
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+/* Buy / Sell toggle switch */
+.op-side-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: var(--bg-3, #1a1e24);
+  padding: 3px;
+  border-radius: 6px;
+}
+
+.op-side-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-dim, #8b94a3);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.op-side-btn.buy.active {
+  background: #0ecb81;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(14, 203, 129, 0.35);
+}
+
+.op-side-btn.sell.active {
+  background: #f6465d;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(246, 70, 93, 0.35);
+}
+
+/* Order Type Tabs */
+.op-type-tabs {
+  display: flex;
+  gap: 14px;
+  border-bottom: 1px solid var(--line, #23272e);
+  padding-bottom: 6px;
+}
+
+.op-type-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 0;
+  cursor: pointer;
+  position: relative;
+}
+
+.op-type-btn.active {
+  color: #ffffff;
+}
+
+.op-type-btn.active::after {
+  content: "";
+  position: absolute;
+  bottom: -7px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #f0b90b;
+  border-radius: 1px;
+}
+
+/* Balance Row */
+.op-balance-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: -4px;
+}
+
+.op-bal-icon { font-size: 12px; }
+.op-bal-val { color: #ffffff; font-weight: 600; font-family: monospace; }
+
+/* Form & Input Fields */
+.op-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.op-field {
+  display: flex;
+  align-items: center;
+  background: var(--bg-3, #1a1e24);
+  border: 1px solid var(--line, #23272e);
+  border-radius: 6px;
+  padding: 0 10px;
+  height: 38px;
+  transition: border-color 0.15s ease;
+}
+
+.op-field:focus-within {
+  border-color: var(--accent, #2962ff);
+}
+
+.op-field-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  width: 55px;
+  flex-shrink: 0;
+}
+
+.op-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: monospace;
+  outline: none;
+  min-width: 0;
+}
+
+.op-input.disabled {
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+.op-unit {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+/* Percentage Quick Selector */
+.op-slider-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.op-pct-pill {
+  background: var(--bg-3, #1a1e24);
+  border: 1px solid var(--line, #23272e);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 0;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.op-pct-pill:hover,
+.op-pct-pill.active {
+  background: var(--bg-4, #22262e);
+  border-color: var(--accent, #2962ff);
+  color: #ffffff;
+}
+
+/* Checkboxes & TIF Options */
+.op-options-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-dim);
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.op-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.op-checkbox-label input[type="checkbox"] {
+  accent-color: var(--accent, #2962ff);
+  cursor: pointer;
+}
+
+.op-tif-select {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.op-tif-select select {
+  background: var(--bg-3, #1a1e24);
+  border: 1px solid var(--line, #23272e);
+  color: #ffffff;
+  border-radius: 3px;
+  font-size: 10px;
+  padding: 2px 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+/* Submit Action Button */
+.op-submit-btn {
+  height: 42px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-top: 4px;
+}
+
+.op-submit-btn.buy {
+  background: #0ecb81;
+  color: #ffffff;
+}
+.op-submit-btn.buy:hover { background: #0bbb76; }
+.op-submit-btn.buy:active { transform: scale(0.98); }
+
+.op-submit-btn.sell {
+  background: #f6465d;
+  color: #ffffff;
+}
+.op-submit-btn.sell:hover { background: #e03b51; }
+.op-submit-btn.sell:active { transform: scale(0.98); }
+
+/* Feedback Banner */
+.op-feedback {
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+  animation: op-in 0.18s ease;
+}
+.op-feedback.up {
+  background: rgba(14, 203, 129, 0.15);
+  color: #0ecb81;
+  border: 1px solid rgba(14, 203, 129, 0.3);
+}
+.op-feedback.down {
+  background: rgba(246, 70, 93, 0.15);
+  color: #f6465d;
+  border: 1px solid rgba(246, 70, 93, 0.3);
+}
+
+@keyframes op-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Assets Section */
+.op-assets-sec {
+  border-top: 1px solid var(--line, #23272e);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.op-assets-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.op-assets-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.op-assets-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.op-asset-action-btn {
+  background: var(--bg-3, #1a1e24);
+  border: 1px solid var(--line, #23272e);
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.op-asset-action-btn:hover {
+  background: var(--bg-4);
+  color: #ffffff;
+}
+
+.op-asset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.op-asset-name { color: var(--text-dim); }
+.op-asset-val { color: #ffffff; font-family: monospace; font-weight: 600; }
+
+/* ==========================================================================
+   Binance-style Bottom Orders Drawer (.bottom-orders-drawer)
+   ========================================================================== */
+.bottom-orders-drawer {
+  background: var(--bg-2, #13161b);
+  border-top: 1px solid var(--line, #23272e);
+  display: flex;
+  flex-direction: column;
+  z-index: 25;
+  transition: height 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.bottom-orders-drawer.collapsed {
+  height: 36px;
+  min-height: 36px;
+}
+
+.bottom-orders-drawer.open {
+  height: 220px;
+  min-height: 220px;
+}
+
+.bod-header {
+  height: 36px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 14px;
+  background: var(--bg-2, #13161b);
+  border-bottom: 1px solid var(--line, #23272e);
+  user-select: none;
+  cursor: pointer;
+}
+
+.bod-tabs {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 100%;
+}
+
+.bod-tab {
+  background: none;
+  border: none;
+  color: var(--text-dim, #8b94a3);
+  font-size: 12px;
+  font-weight: 600;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+  padding: 0 2px;
+  transition: color 0.15s ease;
+}
+
+.bod-tab:hover {
+  color: var(--text, #d8dde4);
+}
+
+.bod-tab.active {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.bod-tab.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #f0b90b;
+}
+
+.bod-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.bod-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.bod-checkbox-label input[type="checkbox"] {
+  accent-color: var(--accent, #2962ff);
+  cursor: pointer;
+}
+
+.bod-cancel-all-btn {
+  background: rgba(246, 70, 93, 0.12);
+  border: 1px solid rgba(246, 70, 93, 0.25);
+  color: #f6465d;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bod-cancel-all-btn:hover {
+  background: #f6465d;
+  color: #ffffff;
+}
+
+/* The "^" toggle button at the bottom-right corner */
+.bod-toggle-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-3, #1a1e24);
+  border: 1px solid var(--line, #23272e);
+  color: var(--text, #d8dde4);
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+
+.bod-toggle-btn:hover {
+  background: var(--bg-4, #22262e);
+  color: #ffffff;
+  border-color: var(--accent, #2962ff);
+}
+
+/* Table Area */
+.bod-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg, #0d0f12);
+}
+
+.bod-table-wrap {
+  width: 100%;
+  min-height: 100%;
+}
+
+.bod-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.bod-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-2, #13161b);
+  color: var(--text-dim, #8b94a3);
+  font-weight: 600;
+  text-align: left;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line, #23272e);
+  white-space: nowrap;
+  font-size: 11px;
+  z-index: 2;
+}
+
+.bod-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text, #d8dde4);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.bod-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.bod-table td.bold {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.bod-table td.text-buy {
+  color: #0ecb81;
+  font-weight: 700;
+}
+
+.bod-table td.text-sell {
+  color: #f6465d;
+  font-weight: 700;
+}
+
+.bod-cancel-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bod-cancel-btn:hover {
+  background: rgba(246, 70, 93, 0.2);
+  border-color: #f6465d;
+  color: #f6465d;
+}
+
+.bod-status {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.bod-status.filled {
+  background: rgba(14, 203, 129, 0.15);
+  color: #0ecb81;
+}
+.bod-status.canceled {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-dim);
+}
+.bod-status.open {
+  background: rgba(41, 98, 255, 0.15);
+  color: #2962ff;
+}
+
+.bod-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
