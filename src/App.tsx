@@ -23,7 +23,8 @@ import { AiPanel } from "./components/AiPanel";
 import { FavoritesBar } from "./components/FavoritesBar";
 import { PineEditor } from "./components/PineEditor";
 import { IndicatorToggles } from "./components/IndicatorToggles";
-import { UpdateModal } from "./components/UpdateModal";
+import { SettingsModal } from "./components/SettingsModal";
+import { ChartTradingOverlay } from "./components/ChartTradingOverlay";
 import { LuxAlgoPanel } from "./components/LuxAlgoPanel";
 import { OrderPlacementPanel } from "./components/OrderPlacementPanel";
 import { BottomOrdersDrawer } from "./components/BottomOrdersDrawer";
@@ -51,8 +52,48 @@ export default function App() {
   const [aiOpen, setAiOpen] = useState(false);
   const [pineOpen, setPineOpen] = useState(false);
   const [indOpen, setIndOpen] = useState(false);
-  const [updateOpen, setUpdateOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [luxOpen, setLuxOpen] = useState(false);
+  const [panelWidth, setPanelWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("tradepro_right_panel_width");
+      const maxW = Math.round(window.innerWidth * 0.4);
+      return saved ? Math.min(maxW, Math.max(260, parseInt(saved, 10))) : 340;
+    } catch {
+      return 340;
+    }
+  });
+
+  const handlePanelResizeStart = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = panelWidth;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const dx = startX - ev.clientX;
+      const maxW = Math.round(window.innerWidth * 0.4);
+      const minW = 260;
+      const nextW = Math.max(minW, Math.min(maxW, startW + dx));
+      setPanelWidth(nextW);
+      try {
+        localStorage.setItem("tradepro_right_panel_width", String(nextW));
+      } catch {}
+      try {
+        ws?.chart?.resize();
+      } catch {}
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      try {
+        ws?.chart?.resize();
+      } catch {}
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  };
 
   // One shared socket for the market panel (the chart uses Vela's own
   // Hyperliquid provider). Open it once and keep it for the session.
@@ -209,12 +250,12 @@ export default function App() {
               checklist and progress bar that animates each step as it lands,
               then a reload with the refreshed modules. */}
           <button
-            className={"series-select" + (updateOpen ? " on" : "")}
-            title="See what's new and update all modules"
-            onClick={() => setUpdateOpen(true)}
+            className={"series-select" + (settingsOpen ? " on" : "")}
+            title="Alpaca Trading & App Settings"
+            onClick={() => setSettingsOpen(true)}
           >
-            <span className="ctl-ico" aria-hidden="true">⟳</span>
-            <span className="ctl-text">Update</span>
+            <span className="ctl-ico" aria-hidden="true">⚙</span>
+            <span className="ctl-text">Settings</span>
           </button>
         </div>
       </header>
@@ -227,6 +268,8 @@ export default function App() {
               (window as unknown as { __ws?: VelaWorkspace }).__ws = w;
               setWs(w);
             }} />
+            {/* Live Chart Trading Overlay: TradingView style Entry, TP, SL Lines */}
+            <ChartTradingOverlay ws={ws} coin={coin} data={live} />
             {/* AI floating chat */}
             <AiPanel
               ws={ws}
@@ -240,7 +283,7 @@ export default function App() {
             <LuxAlgoPanel ws={ws} open={luxOpen} onOpenChange={setLuxOpen} />
             {/* Indicator toggles */}
             <IndicatorToggles ws={ws} open={indOpen} />
-            <UpdateModal open={updateOpen} onClose={() => setUpdateOpen(false)} />
+            <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
           </div>
 
           {/* Bottom Orders Drawer with '^' toggle icon at bottom-right corner */}
@@ -259,7 +302,17 @@ export default function App() {
         </div>
 
         {panelOpen && (
-          <aside className="market-panel">
+          <div
+            className="panel-resizer-handle"
+            onPointerDown={handlePanelResizeStart}
+            title="Drag left or right to resize panel"
+          >
+            <div className="panel-resizer-line" />
+          </div>
+        )}
+
+        {panelOpen && (
+          <aside className="market-panel" style={{ width: `${panelWidth}px` }}>
             <div className="mp-head">
               <div className="mp-tabs">
                 <button

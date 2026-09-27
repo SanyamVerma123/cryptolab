@@ -2,24 +2,34 @@
  * BottomOrdersDrawer — Binance-style Bottom Orders & Positions Drawer
  *
  * Sits docked at the bottom of the chart area. Features Open Orders, Order History,
- * Trade History, Funds, "Hide Other Pairs", "Cancel All", and an expand/collapse
- * chevron button ("^" / "⌄") at the bottom-right corner.
+ * Trade History, Funds, "Hide Other Pairs", "Cancel All", draggable height resize bar,
+ * and an expand/collapse chevron button ("^" / "⌄") at the bottom-right corner.
  */
 import { useState } from "react";
-import { useOrders, type Order } from "../lib/orderState";
+import { useOrders } from "../lib/orderState";
 
 interface Props {
   currentCoin: string;
   isOpen: boolean;
   onToggle: () => void;
+  onResize?: () => void;
 }
 
 type BottomTab = "open" | "history" | "trades" | "funds";
 
-export function BottomOrdersDrawer({ currentCoin, isOpen, onToggle }: Props) {
+export function BottomOrdersDrawer({ currentCoin, isOpen, onToggle, onResize }: Props) {
   const { orders, history, balances, cancelOrder, cancelAllOrders } = useOrders();
   const [tab, setTab] = useState<BottomTab>("open");
   const [hideOtherPairs, setHideOtherPairs] = useState(false);
+
+  const [drawerHeight, setDrawerHeight] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("tradepro_bottom_orders_height");
+      return saved ? parseInt(saved, 10) : 220;
+    } catch {
+      return 220;
+    }
+  });
 
   const currentPair = `${currentCoin}/USD`;
 
@@ -36,14 +46,56 @@ export function BottomOrdersDrawer({ currentCoin, isOpen, onToggle }: Props) {
 
   const openCount = displayedOrders.length;
 
+  const handleResizeStart = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = drawerHeight;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const dy = startY - ev.clientY; // dragging up increases height
+      const maxH = Math.round(window.innerHeight * 0.6);
+      const newH = Math.max(120, Math.min(maxH, startH + dy));
+      setDrawerHeight(newH);
+      try {
+        localStorage.setItem("tradepro_bottom_orders_height", String(newH));
+      } catch {}
+      onResize?.();
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      onResize?.();
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  };
+
   return (
-    <div className={"bottom-orders-drawer" + (isOpen ? " open" : " collapsed")}>
+    <div
+      className={"bottom-orders-drawer" + (isOpen ? " open" : " collapsed")}
+      style={isOpen ? { height: `${drawerHeight}px` } : undefined}
+    >
+      {/* Draggable horizontal separator bar */}
+      {isOpen && (
+        <div
+          className="bod-resizer-handle"
+          onPointerDown={handleResizeStart}
+          title="Drag up or down to resize orders panel"
+        >
+          <div className="bod-resizer-line" />
+        </div>
+      )}
+
       {/* Drawer Header Bar */}
-      <div className="bod-header" onClick={(e) => {
-        // Only toggle if not clicking on an interactive button or checkbox
-        if ((e.target as HTMLElement).closest("button, input, label")) return;
-        onToggle();
-      }}>
+      <div
+        className="bod-header"
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest("button, input, label")) return;
+          onToggle();
+        }}
+      >
         <div className="bod-tabs">
           <button
             type="button"

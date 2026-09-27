@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import { handleRelay } from "./src/server/relayHandler.mjs";
 import { handleUpdate } from "./src/server/updateHandler.mjs";
 import { handleLuxAlgo } from "./src/server/luxAlgoProxy.mjs";
+import { handleAlpacaProxy } from "./src/server/alpacaProxy.mjs";
 
 // Vite config for trade-pro.
 // No proxy needed for market data: Hyperliquid's REST (/info) and WS
@@ -35,6 +36,7 @@ function aiRelayPlugin(): PluginOption {
           // Same reason as the relay — LuxAlgo's MCP sends no CORS header, so
           // the browser cannot POST to it directly.
           if (await handleLuxAlgo(req, res)) return;
+          if (await handleAlpacaProxy(req, res)) return;
           const handled = await handleRelay(req, res);
           // handleRelay returns false for anything it doesn't own → let
           // Vite's static/SPA middleware take it (that's how / and
