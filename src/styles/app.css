@@ -2760,6 +2760,160 @@ body.resizing-col .market-panel {
   background: rgba(0, 0, 0, 0.5);
 }
 
+.chart-trade-line.limit.buy .ctl-dash {
+  background-image: linear-gradient(to right, #0ecb81 50%, rgba(255, 255, 255, 0) 0%);
+}
+
+.chart-trade-line.limit.buy .ctl-badge {
+  background: rgba(14, 203, 129, 0.9);
+  border: 1px solid #0ecb81;
+}
+
+.chart-trade-line.limit.sell .ctl-dash {
+  background-image: linear-gradient(to right, #f6465d 50%, rgba(255, 255, 255, 0) 0%);
+}
+
+.chart-trade-line.limit.sell .ctl-badge {
+  background: rgba(246, 70, 93, 0.9);
+  border: 1px solid #f6465d;
+}
+
+.chart-trade-line.alert .ctl-dash {
+  background-image: linear-gradient(to right, #f0b90b 50%, rgba(255, 255, 255, 0) 0%);
+  height: 1.5px;
+}
+
+.chart-trade-line.alert .ctl-badge {
+  background: rgba(240, 185, 11, 0.92);
+  border: 1px solid #f0b90b;
+  color: #13161b;
+  font-weight: 800;
+}
+
+.chart-trade-line.alert .ctl-cancel-btn {
+  color: #13161b;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* TradingView-Style Interactive Context Menu on Chart */
+.chart-ctx-menu {
+  position: absolute;
+  z-index: 100;
+  background: var(--bg-2, #13161b);
+  border: 1px solid var(--line, #23272e);
+  border-radius: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 190px;
+  pointer-events: auto;
+  user-select: none;
+  animation: ctx-pop 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes ctx-pop {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.chart-ctx-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 2px;
+}
+
+.ctx-price {
+  font-family: monospace;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.ctx-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px;
+  line-height: 1;
+}
+
+.ctx-close:hover {
+  color: #ffffff;
+}
+
+.chart-ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-3, #1a1e24);
+  border: 1px solid transparent;
+  color: var(--text, #d8dde4);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 7px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s ease;
+}
+
+.chart-ctx-item:hover {
+  background: var(--bg-4, #22262e);
+}
+
+.chart-ctx-item.buy:hover {
+  background: rgba(14, 203, 129, 0.15);
+  border-color: rgba(14, 203, 129, 0.4);
+  color: #0ecb81;
+}
+
+.chart-ctx-item.sell:hover {
+  background: rgba(246, 70, 93, 0.15);
+  border-color: rgba(246, 70, 93, 0.4);
+  color: #f6465d;
+}
+
+.chart-ctx-item.alert:hover {
+  background: rgba(240, 185, 11, 0.15);
+  border-color: rgba(240, 185, 11, 0.4);
+  color: #f0b90b;
+}
+
+.ctx-icon {
+  font-size: 11px;
+}
+
+/* Floating Execution Toast Notification */
+.chart-exec-toast {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(19, 22, 27, 0.94);
+  border: 1px solid var(--accent, #2962ff);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+  z-index: 100;
+  pointer-events: none;
+  animation: toast-in 0.2s ease-out;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
 /* ==========================================================================
    Settings Modal (.settings-modal-backdrop, .settings-modal)
    ========================================================================== */
