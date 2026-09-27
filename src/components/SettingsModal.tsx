@@ -126,7 +126,11 @@ export function SettingsModal({ open, onClose }: Props) {
                       type="radio"
                       name="env"
                       checked={cfg.isPaper}
-                      onChange={() => setCfg({ ...cfg, isPaper: true })}
+                      onChange={() => {
+                        const updated = { ...cfg, isPaper: true };
+                        setCfg(updated);
+                        saveAlpacaConfig(updated);
+                      }}
                     />
                     <span>Paper Trading (Recommended)</span>
                   </label>
@@ -135,15 +139,19 @@ export function SettingsModal({ open, onClose }: Props) {
                       type="radio"
                       name="env"
                       checked={!cfg.isPaper}
-                      onChange={() => setCfg({ ...cfg, isPaper: false })}
+                      onChange={() => {
+                        const updated = { ...cfg, isPaper: false };
+                        setCfg(updated);
+                        saveAlpacaConfig(updated);
+                      }}
                     />
                     <span>Live Trading</span>
                   </label>
                 </div>
                 <span className="sm-hint">
                   {cfg.isPaper
-                    ? "Endpoint: https://paper-api.alpaca.markets (Zero risk simulated execution)"
-                    : "Endpoint: https://api.alpaca.markets (Executes real capital)"}
+                    ? "Paper Trading (Zero risk). Alpaca credentials are used for both Live Orders & Market Data API."
+                    : "Live Trading (Real capital). Alpaca credentials are used for both Live Orders & Market Data API."}
                 </span>
               </div>
 
@@ -154,7 +162,11 @@ export function SettingsModal({ open, onClose }: Props) {
                   className="sm-input"
                   placeholder="PK..."
                   value={cfg.keyId}
-                  onChange={(e) => setCfg({ ...cfg, keyId: e.target.value })}
+                  onChange={(e) => {
+                    const updated = { ...cfg, keyId: e.target.value };
+                    setCfg(updated);
+                    saveAlpacaConfig(updated);
+                  }}
                 />
               </div>
 
@@ -166,7 +178,11 @@ export function SettingsModal({ open, onClose }: Props) {
                     className="sm-input"
                     placeholder="Enter secret key..."
                     value={cfg.secretKey}
-                    onChange={(e) => setCfg({ ...cfg, secretKey: e.target.value })}
+                    onChange={(e) => {
+                      const updated = { ...cfg, secretKey: e.target.value };
+                      setCfg(updated);
+                      saveAlpacaConfig(updated);
+                    }}
                   />
                   <button
                     type="button"

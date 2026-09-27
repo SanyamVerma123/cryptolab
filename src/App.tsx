@@ -47,9 +47,8 @@ export default function App() {
   const [tf, setTf] = useState("60");
   const [ws, setWs] = useState<VelaWorkspace | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [panelMode, setPanelMode] = useState<"data" | "order">("order");
+  const [panelMode, setPanelMode] = useState<"data" | "order" | "ai">("order");
   const [bottomOrdersOpen, setBottomOrdersOpen] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
   const [pineOpen, setPineOpen] = useState(false);
   const [indOpen, setIndOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -58,21 +57,29 @@ export default function App() {
     try {
       const saved = localStorage.getItem("tradepro_right_panel_width");
       const maxW = Math.round(window.innerWidth * 0.4);
-      return saved ? Math.min(maxW, Math.max(260, parseInt(saved, 10))) : 340;
+      return saved ? Math.min(maxW, Math.max(240, parseInt(saved, 10))) : 340;
     } catch {
       return 340;
     }
   });
 
-  const handlePanelResizeStart = (e: React.PointerEvent) => {
+  const handlePanelResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
+    e.stopPropagation();
+    const handleEl = e.currentTarget;
     const startX = e.clientX;
     const startW = panelWidth;
+    try {
+      handleEl.setPointerCapture(e.pointerId);
+    } catch {}
+    document.body.classList.add("resizing-col");
 
     const onPointerMove = (ev: PointerEvent) => {
+      ev.preventDefault();
+      // Right-docked panel: dragging left (ev.clientX < startX) increases panel width
       const dx = startX - ev.clientX;
-      const maxW = Math.round(window.innerWidth * 0.4);
-      const minW = 260;
+      const maxW = Math.round(window.innerWidth * 0.4); // max 2:5 ratio (40%)
+      const minW = 240;
       const nextW = Math.max(minW, Math.min(maxW, startW + dx));
       setPanelWidth(nextW);
       try {
@@ -83,16 +90,22 @@ export default function App() {
       } catch {}
     };
 
-    const onPointerUp = () => {
+    const onPointerUp = (ev: PointerEvent) => {
+      try {
+        handleEl.releasePointerCapture(ev.pointerId);
+      } catch {}
+      document.body.classList.remove("resizing-col");
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
       try {
         ws?.chart?.resize();
       } catch {}
     };
 
-    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
     window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
   };
 
   // One shared socket for the market panel (the chart uses Vela's own
@@ -204,14 +217,6 @@ export default function App() {
 
         <div className="controls">
           <button
-            className={"series-select ai-toggle" + (aiOpen ? " on" : "")}
-            title="Show AI chat panel"
-            onClick={() => setAiOpen((v) => !v)}
-          >
-            <span className="ctl-ico" aria-hidden="true">✦</span>
-            <span className="ctl-text">AI</span>
-          </button>
-          <button
             className={"series-select" + (pineOpen ? " on" : "")}
             title="Open the Pine Script editor"
             onClick={() => setPineOpen((v) => !v)}
@@ -245,10 +250,7 @@ export default function App() {
             <span className="ctl-text">{panelOpen ? "Hide panel" : "Show panel"}</span>
           </button>
 
-          {/* The full Update flow: a changelog pop-up (grouped "what's new",
-              Cancel / Update), then a blank loading screen with a grouped
-              checklist and progress bar that animates each step as it lands,
-              then a reload with the refreshed modules. */}
+          {/* Settings modal (Alpaca API Keys & Trading Preferences) */}
           <button
             className={"series-select" + (settingsOpen ? " on" : "")}
             title="Alpaca Trading & App Settings"
@@ -270,13 +272,6 @@ export default function App() {
             }} />
             {/* Live Chart Trading Overlay: TradingView style Entry, TP, SL Lines */}
             <ChartTradingOverlay ws={ws} coin={coin} data={live} />
-            {/* AI floating chat */}
-            <AiPanel
-              ws={ws}
-              open={aiOpen}
-              onOpenChange={setAiOpen}
-              onPineOpen={() => setPineOpen(true)}
-            />
             {/* Pine Script editor (PineTS engine registered in VelaChart). */}
             <PineEditor ws={ws} open={pineOpen} onOpenChange={setPineOpen} />
             {/* The official LuxAlgo indicator library */}
@@ -290,6 +285,11 @@ export default function App() {
           <BottomOrdersDrawer
             currentCoin={coin}
             isOpen={bottomOrdersOpen}
+            onResize={() => {
+              try {
+                ws?.chart?.resize();
+              } catch {}
+            }}
             onToggle={() => {
               setBottomOrdersOpen((v) => !v);
               setTimeout(() => {
@@ -312,7 +312,15 @@ export default function App() {
         )}
 
         {panelOpen && (
-          <aside className="market-panel" style={{ width: `${panelWidth}px` }}>
+          <aside
+            className="market-panel"
+            style={{
+              width: `${panelWidth}px`,
+              flex: `0 0 ${panelWidth}px`,
+              minWidth: 240,
+              maxWidth: `${Math.round(window.innerWidth * 0.4)}px`,
+            }}
+          >
             <div className="mp-head">
               <div className="mp-tabs">
                 <button
@@ -330,11 +338,11 @@ export default function App() {
                   Data
                 </button>
                 <button
-                  className={"mp-tab" + (aiOpen ? " on" : "")}
-                  title="Show AI chat panel"
-                  onClick={() => setAiOpen((v) => !v)}
+                  className={"mp-tab" + (panelMode === "ai" ? " on" : "")}
+                  title="AI Trading Assistant"
+                  onClick={() => setPanelMode("ai")}
                 >
-                  AI
+                  ✦ AI
                 </button>
               </div>
               <button
@@ -347,11 +355,16 @@ export default function App() {
             </div>
             {panelMode === "data" ? (
               <MarketPanel coin={coin} data={live} />
+            ) : panelMode === "ai" ? (
+              <div className="mp-body mp-ai-body">
+                <AiPanel ws={ws} inline onPineOpen={() => setPineOpen(true)} />
+              </div>
             ) : (
               <div className="mp-body">
                 <OrderPlacementPanel
                   coin={coin}
                   data={live}
+                  onOpenSettings={() => setSettingsOpen(true)}
                   onOrderPlaced={() => {
                     setBottomOrdersOpen(true);
                     setTimeout(() => {

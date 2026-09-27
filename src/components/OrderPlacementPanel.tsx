@@ -1,12 +1,24 @@
 /**
- * OrderPlacementPanel — Binance-style Order Placement Panel with Alpaca Bracket Orders (TP/SL)
+ * OrderPlacementPanel — Binance-style Pro Order Placement Panel
  *
- * Implements spot/perp order execution with Limit, Market, and Stop-Limit orders,
- * Take Profit & Stop Loss brackets, Alpaca API integration, and real-time balance calculations.
+ * Fully integrated with Alpaca Trading & Market Data APIs, featuring:
+ * - Limit, Market, Stop-Limit order types
+ * - Quick Lot Size chips & step increments (+ / -)
+ * - Automatic fee calculation (Maker 0.15% / Taker 0.25%, net cost)
+ * - Take Profit (TP) & Stop Loss (SL) brackets with estimated PnL & R:R ratio
+ * - Live Alpaca account buying power, cash, and Alpaca crypto quote integration
+ * - Paper simulator wallet fallback with instant deposit
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useOrders, type OrderSide, type OrderType } from "../lib/orderState";
-import { getAlpacaConfig, submitAlpacaOrder } from "../lib/alpaca";
+import {
+  getAlpacaConfig,
+  submitAlpacaOrder,
+  testAlpacaConnection,
+  getAlpacaLatestQuote,
+  type AlpacaQuote,
+  type AlpacaAccount,
+} from "../lib/alpaca";
 import type { LiveData } from "../lib/useLiveData";
 
 interface Props {
@@ -37,8 +49,48 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
   const [tif, setTif] = useState<"GTC" | "IOC" | "FOK">("GTC");
   const [message, setMessage] = useState<{ text: string; tone: "up" | "down" } | null>(null);
 
-  const alpacaConfig = getAlpacaConfig();
+  // Alpaca API connection state & live account data
+  const [alpacaConfig, setAlpacaConfig] = useState(getAlpacaConfig());
+  const [alpacaAccount, setAlpacaAccount] = useState<AlpacaAccount | null>(null);
+  const [alpacaQuote, setAlpacaQuote] = useState<AlpacaQuote | null>(null);
+  const [loadingAlpaca, setLoadingAlpaca] = useState(false);
+
   const hasAlpaca = Boolean(alpacaConfig.keyId && alpacaConfig.secretKey);
+
+  // Refresh Alpaca live account details
+  const refreshAlpaca = useCallback(async () => {
+    if (!hasAlpaca) {
+      setAlpacaAccount(null);
+      return;
+    }
+    setLoadingAlpaca(true);
+    const res = await testAlpacaConnection();
+    if (res.ok && res.account) {
+      setAlpacaAccount(res.account);
+    }
+    // Also fetch latest quote from Alpaca Data API
+    const qRes = await getAlpacaLatestQuote(coin);
+    if (qRes.ok && qRes.quote) {
+      setAlpacaQuote(qRes.quote);
+    }
+    setLoadingAlpaca(false);
+  }, [hasAlpaca, coin]);
+
+  // Listen to configuration updates from SettingsModal
+  useEffect(() => {
+    const handleCfgChange = () => {
+      const next = getAlpacaConfig();
+      setAlpacaConfig(next);
+    };
+    window.addEventListener("alpaca-config-changed", handleCfgChange);
+    return () => window.removeEventListener("alpaca-config-changed", handleCfgChange);
+  }, []);
+
+  useEffect(() => {
+    if (hasAlpaca) {
+      void refreshAlpaca();
+    }
+  }, [hasAlpaca, coin, refreshAlpaca]);
 
   // Sync initial price input when coin or mark price changes
   useEffect(() => {
@@ -62,17 +114,48 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
 
   const priceNum = parseFloat(priceInput) || currentPrice || 0;
   const amountNum = parseFloat(amountInput) || 0;
-  const total = type === "Market" ? currentPrice * amountNum : priceNum * amountNum;
+  const effectivePrice = type === "Market" ? currentPrice : priceNum;
+  const total = effectivePrice * amountNum;
 
+  // Fee calculation (Maker: 0.15% if limit + postOnly, Taker: 0.25% standard)
+  const isMaker = type === "Limit" && postOnly;
+  const feeRate = isMaker ? 0.0015 : 0.0025;
+  const estFee = total * feeRate;
+  const netTotal = side === "BUY" ? total + estFee : Math.max(0, total - estFee);
+
+  // Balances
   const availableUsd = balances.USD ?? 0;
   const availableCoin = balances[coin] ?? 0;
+
+  // Lot size presets depending on coin price
+  const lotPresets = currentPrice > 10000
+    ? [0.001, 0.01, 0.05, 0.1, 0.5, 1.0]
+    : currentPrice > 500
+    ? [0.05, 0.1, 0.5, 1.0, 5.0, 10.0]
+    : [1, 5, 10, 50, 100, 500];
+
+  const handleLotSelect = (lot: number) => {
+    setAmountInput(String(lot));
+    setPercent(null);
+  };
+
+  const handleStepAmount = (delta: number) => {
+    const next = Math.max(0, parseFloat((amountNum + delta).toFixed(4)));
+    setAmountInput(next > 0 ? String(next) : "");
+    setPercent(null);
+  };
+
+  const handleStepPrice = (deltaPct: number) => {
+    const next = Math.max(0, parseFloat((priceNum * (1 + deltaPct)).toFixed(2)));
+    setPriceInput(String(next));
+    setPercent(null);
+  };
 
   // Percentage allocation button (25%, 50%, 75%, 100%)
   const handlePercentSelect = (pct: number) => {
     setPercent(pct);
     if (side === "BUY") {
-      const budget = availableUsd * (pct / 100);
-      const effectivePrice = type === "Market" ? currentPrice : priceNum;
+      const budget = (hasAlpaca && alpacaAccount ? parseFloat(alpacaAccount.buying_power || "0") : availableUsd) * (pct / 100);
       if (effectivePrice > 0) {
         const amt = budget / effectivePrice;
         setAmountInput(amt < 1 ? amt.toFixed(4) : amt.toFixed(2));
@@ -83,18 +166,37 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
     }
   };
 
+  // TP / SL Calculations
+  const tpNum = parseFloat(tpInput) || 0;
+  const slNum = parseFloat(slInput) || 0;
+
+  let tpProfit = 0;
+  let tpPct = 0;
+  if (tpEnabled && tpNum > 0 && effectivePrice > 0) {
+    tpProfit = Math.abs(tpNum - effectivePrice) * amountNum;
+    tpPct = ((tpNum - effectivePrice) / effectivePrice) * 100 * (side === "BUY" ? 1 : -1);
+  }
+
+  let slLoss = 0;
+  let slPct = 0;
+  if (slEnabled && slNum > 0 && effectivePrice > 0) {
+    slLoss = Math.abs(effectivePrice - slNum) * amountNum;
+    slPct = ((effectivePrice - slNum) / effectivePrice) * 100 * (side === "BUY" ? 1 : -1);
+  }
+
+  const riskReward = slLoss > 0 && tpProfit > 0 ? (tpProfit / slLoss).toFixed(2) : null;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
 
-    const effPrice = type === "Market" ? currentPrice : priceNum;
     if (amountNum <= 0) {
       setMessage({ text: "Please enter a valid amount", tone: "down" });
       return;
     }
 
-    const tpPrice = tpEnabled ? parseFloat(tpInput) : undefined;
-    const slPrice = slEnabled ? parseFloat(slInput) : undefined;
+    const tpPrice = tpEnabled && tpNum > 0 ? tpNum : undefined;
+    const slPrice = slEnabled && slNum > 0 ? slNum : undefined;
 
     // If Alpaca keys configured, submit to Alpaca API
     if (hasAlpaca) {
@@ -104,7 +206,7 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
         qty: amountNum,
         side: side === "BUY" ? "buy" : "sell",
         type: alpacaType,
-        limitPrice: type === "Limit" ? effPrice : undefined,
+        limitPrice: type === "Limit" ? effectivePrice : undefined,
         takeProfitPrice: tpPrice,
         stopLossPrice: slPrice,
         timeInForce: tif.toLowerCase() as any,
@@ -112,11 +214,16 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
 
       if (!alpacaRes.ok) {
         console.warn("[trade-pro] Alpaca order fallback to local simulation:", alpacaRes.error);
-        // Inform user and also record locally
         setMessage({
           text: `Alpaca: ${alpacaRes.error || "Order rejected"} (simulated locally)`,
           tone: "down",
         });
+      } else {
+        setMessage({
+          text: `Alpaca: ${side} ${amountNum} ${coin} placed! Status: ${alpacaRes.order?.status || "accepted"}`,
+          tone: "up",
+        });
+        void refreshAlpaca();
       }
     }
 
@@ -126,18 +233,23 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
       pair: `${coin}/USD`,
       type,
       side,
-      price: effPrice,
+      price: effectivePrice,
       amount: amountNum,
       trigger: slPrice ? `SL $${slPrice}` : tpPrice ? `TP $${tpPrice}` : "-",
     });
 
-    if (!res.ok) {
+    if (!res.ok && !hasAlpaca) {
       setMessage({ text: res.error || "Order failed", tone: "down" });
-    } else {
+    } else if (!hasAlpaca) {
       setMessage({
-        text: `${side} ${amountNum} ${coin} placed @ $${effPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}${tpPrice ? ` [TP: $${tpPrice}]` : ""}${slPrice ? ` [SL: $${slPrice}]` : ""}`,
+        text: `${side} ${amountNum} ${coin} placed @ $${effectivePrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}${tpPrice ? ` [TP: $${tpPrice}]` : ""}${slPrice ? ` [SL: $${slPrice}]` : ""}`,
         tone: "up",
       });
+      setAmountInput("");
+      setPercent(null);
+      onOrderPlaced?.();
+      setTimeout(() => setMessage(null), 4500);
+    } else {
       setAmountInput("");
       setPercent(null);
       onOrderPlaced?.();
@@ -162,9 +274,18 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
           </button>
         </div>
         <div className="op-badges">
-          <span className="op-vip">VIP 0</span>
+          <span className="op-vip">{hasAlpaca ? "Alpaca API" : "Sim Mode"}</span>
         </div>
       </div>
+
+      {/* Alpaca Live Quote Banner (if Alpaca configured) */}
+      {hasAlpaca && alpacaQuote && (
+        <div className="op-alpaca-quote-banner">
+          <span className="op-aqb-title">Alpaca BBO:</span>
+          <span className="op-aqb-bid">Bid ${alpacaQuote.bp?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+          <span className="op-aqb-ask">Ask ${alpacaQuote.ap?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+        </div>
+      )}
 
       {/* Buy / Sell toggle switch */}
       <div className="op-side-switch">
@@ -206,19 +327,34 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
         ))}
       </div>
 
-      {/* Available Balance */}
+      {/* Available Balance Row */}
       <div className="op-balance-row">
         <span className="op-bal-icon">💼</span>
+        <span className="op-bal-label">
+          {hasAlpaca && alpacaAccount ? "Alpaca Power:" : "Available:"}
+        </span>
         <span className="op-bal-val">
-          {side === "BUY"
-            ? `${availableUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`
+          {hasAlpaca && alpacaAccount
+            ? `$${parseFloat(alpacaAccount.buying_power || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+            : side === "BUY"
+            ? `${availableUsd.toLocaleString(undefined, { minimumFractionDigits: 2 })} USD`
             : `${availableCoin.toFixed(4)} ${coin}`}
         </span>
+        {hasAlpaca && (
+          <button
+            type="button"
+            className="op-bal-refresh-btn"
+            title="Refresh Alpaca Balance"
+            onClick={() => void refreshAlpaca()}
+          >
+            {loadingAlpaca ? "…" : "↻"}
+          </button>
+        )}
       </div>
 
       {/* Inputs Form */}
       <form className="op-form" onSubmit={handleSubmit}>
-        {/* Price Input */}
+        {/* Price Input with +/- micro steppers */}
         <div className="op-field">
           <span className="op-field-label">Price</span>
           {type === "Market" ? (
@@ -229,23 +365,29 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
               disabled
             />
           ) : (
-            <input
-              type="number"
-              step="any"
-              className="op-input"
-              value={priceInput}
-              onChange={(e) => {
-                setPriceInput(e.target.value);
-                setPercent(null);
-              }}
-              placeholder="0.00"
-              required
-            />
+            <>
+              <input
+                type="number"
+                step="any"
+                className="op-input"
+                value={priceInput}
+                onChange={(e) => {
+                  setPriceInput(e.target.value);
+                  setPercent(null);
+                }}
+                placeholder="0.00"
+                required
+              />
+              <div className="op-field-steppers">
+                <button type="button" onClick={() => handleStepPrice(-0.005)} title="-0.5%">-</button>
+                <button type="button" onClick={() => handleStepPrice(0.005)} title="+0.5%">+</button>
+              </div>
+            </>
           )}
           <span className="op-unit">USD</span>
         </div>
 
-        {/* Amount Input */}
+        {/* Amount Input with +/- steppers */}
         <div className="op-field">
           <span className="op-field-label">Amount</span>
           <input
@@ -260,7 +402,26 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
             placeholder="0.00"
             required
           />
+          <div className="op-field-steppers">
+            <button type="button" onClick={() => handleStepAmount(-0.01)} title="-0.01">-</button>
+            <button type="button" onClick={() => handleStepAmount(0.01)} title="+0.01">+</button>
+          </div>
           <span className="op-unit">{coin}</span>
+        </div>
+
+        {/* Quick Lot Size Selector Chips */}
+        <div className="op-lot-presets">
+          <span className="op-lot-label">Lot Size:</span>
+          {lotPresets.map((l) => (
+            <button
+              key={l}
+              type="button"
+              className={"op-lot-chip" + (amountNum === l ? " active" : "")}
+              onClick={() => handleLotSelect(l)}
+            >
+              {l}
+            </button>
+          ))}
         </div>
 
         {/* Percentage Selector */}
@@ -286,6 +447,11 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
               onChange={(e) => setTpEnabled(e.target.checked)}
             />
             <span className="op-bracket-tag tp">Take Profit (TP)</span>
+            {tpEnabled && tpProfit > 0 && (
+              <span className="op-bracket-metric up">
+                +${tpProfit.toFixed(2)} (+{tpPct.toFixed(1)}%)
+              </span>
+            )}
           </label>
           {tpEnabled && (
             <div className="op-field mini">
@@ -313,6 +479,11 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
               onChange={(e) => setSlEnabled(e.target.checked)}
             />
             <span className="op-bracket-tag sl">Stop Loss (SL)</span>
+            {slEnabled && slLoss > 0 && (
+              <span className="op-bracket-metric down">
+                -${slLoss.toFixed(2)} (-{slPct.toFixed(1)}%)
+              </span>
+            )}
           </label>
           {slEnabled && (
             <div className="op-field mini">
@@ -331,17 +502,28 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
           )}
         </div>
 
-        {/* Total Input */}
-        <div className="op-field">
-          <span className="op-field-label">Total</span>
-          <input
-            type="text"
-            className="op-input"
-            value={total > 0 ? total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ""}
-            readOnly
-            placeholder="0.00"
-          />
-          <span className="op-unit">USD</span>
+        {/* Risk / Reward Ratio Badge (when both TP and SL are active) */}
+        {riskReward && (
+          <div className="op-rr-badge">
+            <span className="op-rr-label">Risk/Reward Ratio:</span>
+            <span className="op-rr-val">1 : {riskReward}</span>
+          </div>
+        )}
+
+        {/* Fee & Order Breakdown Card */}
+        <div className="op-order-summary">
+          <div className="op-summary-row">
+            <span>Order Value:</span>
+            <span className="val">${total > 0 ? total.toFixed(2) : "0.00"} USD</span>
+          </div>
+          <div className="op-summary-row">
+            <span>Est. Fee ({isMaker ? "0.15% Maker" : "0.25% Taker"}):</span>
+            <span className="val">${estFee > 0 ? estFee.toFixed(2) : "0.00"} USD</span>
+          </div>
+          <div className="op-summary-row total">
+            <span>Est. Net Total:</span>
+            <span className="val">${netTotal > 0 ? netTotal.toFixed(2) : "0.00"} USD</span>
+          </div>
         </div>
 
         {/* Options Row */}
@@ -352,7 +534,7 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
               checked={postOnly}
               onChange={(e) => setPostOnly(e.target.checked)}
             />
-            <span>Post Only</span>
+            <span>Post Only (Maker)</span>
           </label>
           <div className="op-tif-select">
             <span>TIF</span>
@@ -364,7 +546,7 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
           </div>
         </div>
 
-        {/* Action Button */}
+        {/* Submit Action Button */}
         <button
           type="submit"
           className={"op-submit-btn " + (side === "BUY" ? "buy" : "sell")}
@@ -383,7 +565,7 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
       {/* Assets Section */}
       <div className="op-assets-sec">
         <div className="op-assets-head">
-          <span className="op-assets-title">Assets</span>
+          <span className="op-assets-title">Paper Wallet Assets</span>
           <div className="op-assets-actions">
             <button
               type="button"
@@ -391,7 +573,7 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
               onClick={() => depositAsset("USD", 10000)}
               title="Add paper funds ($10,000 USD)"
             >
-              + Deposit
+              +$10k USD
             </button>
             <button
               type="button"
@@ -399,16 +581,16 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
               onClick={() => depositAsset(coin, 1)}
               title={`Add 1 ${coin}`}
             >
-              + {coin}
+              +1 {coin}
             </button>
           </div>
         </div>
         <div className="op-asset-row">
-          <span className="op-asset-name">{coin} Available:</span>
+          <span className="op-asset-name">{coin} Balance:</span>
           <span className="op-asset-val">{availableCoin.toFixed(4)}</span>
         </div>
         <div className="op-asset-row">
-          <span className="op-asset-name">USD Available:</span>
+          <span className="op-asset-name">USD Balance:</span>
           <span className="op-asset-val">${availableUsd.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
         </div>
       </div>

@@ -28,11 +28,13 @@ import { visibleBarsInRange } from "../lib/marketData";
 
 interface Props {
   ws: VelaWorkspace | null;
-  /** Controlled open state — the topbar button and the panel tab both set it. */
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  /** Controlled open state — optional when embedded inline */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   /** Open the Pine Script editor from this panel's button. */
   onPineOpen: () => void;
+  /** Render embedded inside side panel instead of as a floating window */
+  inline?: boolean;
 }
 
 interface Msg {
@@ -40,7 +42,7 @@ interface Msg {
   text: string;
 }
 
-export function AiPanel({ ws, open, onOpenChange, onPineOpen }: Props) {
+export function AiPanel({ ws, open = true, onOpenChange, onPineOpen, inline = false }: Props) {
   const [log, setLog] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -50,19 +52,17 @@ export function AiPanel({ ws, open, onOpenChange, onPineOpen }: Props) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const drag = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
 
-  // Park the panel on the right side of the chart host when it opens — never
-  // on the left, where Vela's drawing toolbar lives.
+  // Park the panel on the right side of the chart host when it opens (floating only)
   useEffect(() => {
-    if (!open || !panelRef.current) return;
+    if (inline || !open || !panelRef.current) return;
     const host = panelRef.current.closest(".chart-host") as HTMLElement | null;
     if (!host) return;
     const hr = host.getBoundingClientRect();
-    // measure first so width is known
     panelRef.current.style.left = "auto";
     panelRef.current.style.top = "12px";
     panelRef.current.style.right = "12px";
     void hr;
-  }, [open]);
+  }, [open, inline]);
 
   // Dragging by the header. Pure pointer-delta math: the offset from the
   // pointer to the panel's top-left is captured on pointerdown, then the
@@ -180,11 +180,18 @@ export function AiPanel({ ws, open, onOpenChange, onPineOpen }: Props) {
     void respond(v);
   };
 
-  if (!open) return null;
+  if (!open && !inline) return null;
+
+  const quickPrompts = ["mark fvg", "trend line", "ema 200", "support and resistance"];
 
   return (
-    <div className="ai-panel" ref={panelRef} role="dialog" aria-label="AI Assistant">
-      <div className="ai-head" onPointerDown={onHeadDown}>
+    <div
+      className={"ai-panel" + (inline ? " inline" : "")}
+      ref={inline ? undefined : panelRef}
+      role="region"
+      aria-label="AI Assistant"
+    >
+      <div className="ai-head" onPointerDown={inline ? undefined : onHeadDown}>
         <span className="ai-dot" />
         <span className="ai-title">AI Assistant</span>
         <button
@@ -195,13 +202,15 @@ export function AiPanel({ ws, open, onOpenChange, onPineOpen }: Props) {
         >
           ⚙
         </button>
-        <button
-          className="ai-x"
-          onClick={() => onOpenChange(false)}
-          aria-label="Close"
-        >
-          ✕
-        </button>
+        {!inline && onOpenChange && (
+          <button
+            className="ai-x"
+            onClick={() => onOpenChange(false)}
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {showSettings && (
@@ -227,6 +236,24 @@ export function AiPanel({ ws, open, onOpenChange, onPineOpen }: Props) {
         ))}
         {busy && <div className="ai-msg bot ai-thinking">thinking…</div>}
       </div>
+
+      {/* Quick Prompts Bar */}
+      <div className="ai-quick-prompts">
+        {quickPrompts.map((qp) => (
+          <button
+            key={qp}
+            type="button"
+            className="ai-qp-chip"
+            onClick={() => {
+              setLog((l) => [...l, { who: "user", text: qp }]);
+              void respond(qp);
+            }}
+          >
+            {qp}
+          </button>
+        ))}
+      </div>
+
       <div className="ai-input">
         <input
           placeholder="Ask the AI…"

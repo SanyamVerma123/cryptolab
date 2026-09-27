@@ -46,15 +46,22 @@ export function BottomOrdersDrawer({ currentCoin, isOpen, onToggle, onResize }: 
 
   const openCount = displayedOrders.length;
 
-  const handleResizeStart = (e: React.PointerEvent) => {
+  const handleResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
+    e.stopPropagation();
+    const handleEl = e.currentTarget;
     const startY = e.clientY;
     const startH = drawerHeight;
+    try {
+      handleEl.setPointerCapture(e.pointerId);
+    } catch {}
+    document.body.classList.add("resizing-row");
 
     const onPointerMove = (ev: PointerEvent) => {
+      ev.preventDefault();
       const dy = startY - ev.clientY; // dragging up increases height
-      const maxH = Math.round(window.innerHeight * 0.6);
-      const newH = Math.max(120, Math.min(maxH, startH + dy));
+      const maxH = Math.round(window.innerHeight * 0.65);
+      const newH = Math.max(80, Math.min(maxH, startH + dy));
       setDrawerHeight(newH);
       try {
         localStorage.setItem("tradepro_bottom_orders_height", String(newH));
@@ -62,14 +69,20 @@ export function BottomOrdersDrawer({ currentCoin, isOpen, onToggle, onResize }: 
       onResize?.();
     };
 
-    const onPointerUp = () => {
+    const onPointerUp = (ev: PointerEvent) => {
+      try {
+        handleEl.releasePointerCapture(ev.pointerId);
+      } catch {}
+      document.body.classList.remove("resizing-row");
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
       onResize?.();
     };
 
-    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
     window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
   };
 
   return (
