@@ -1,9 +1,13 @@
 /**
- * orderState — Client-side Paper Trading, Order Matching & Alert Store
+ * orderState — Client-side Paper Trading, Order Matching, Position & Alert Store
  *
- * Persists open orders, order history, trade history, price alerts, and user balances in localStorage.
- * Includes a real-time matching engine: Limit orders remain Open until live market price reaches
- * or crosses ("cuts") the limit price, at which point they are filled automatically.
+ * Implements full trading logic:
+ * - Market Orders: Execute immediately and create an Open Trade (TradePosition).
+ * - Limit Orders: Remain Open until live market price reaches/cuts the limit price,
+ *   at which point they fill automatically and become an Open Trade (TradePosition).
+ * - Movable Limit Orders: Can be dragged on the chart to adjust the limit price in real-time.
+ * - Positions: Track active open trades with entry price, size, real-time PnL, TP, SL, and Close.
+ * - Take Profit & Stop Loss: Automatically close positions when target prices are reached.
  */
 import { useEffect, useState } from "react";
 
@@ -23,7 +27,22 @@ export interface Order {
   filled: number; // percentage, e.g. 0 to 100
   total: number;
   trigger: string;
+  takeProfit?: number;
+  stopLoss?: number;
   status: OrderStatus;
+}
+
+export interface TradePosition {
+  id: string;
+  date: string;
+  pair: string;
+  coin: string;
+  side: OrderSide;
+  entryPrice: number;
+  amount: number;
+  total: number;
+  takeProfit?: number;
+  stopLoss?: number;
 }
 
 export interface PriceAlert {
@@ -39,10 +58,11 @@ export interface Balances {
   [asset: string]: number;
 }
 
-const ORDERS_KEY = "tradepro_open_orders_v1";
-const HISTORY_KEY = "tradepro_order_history_v1";
-const BALANCES_KEY = "tradepro_balances_v1";
-const ALERTS_KEY = "tradepro_price_alerts_v1";
+const ORDERS_KEY = "tradepro_open_orders_v2";
+const POSITIONS_KEY = "tradepro_open_positions_v2";
+const HISTORY_KEY = "tradepro_order_history_v2";
+const BALANCES_KEY = "tradepro_balances_v2";
+const ALERTS_KEY = "tradepro_price_alerts_v2";
 
 const DEFAULT_BALANCES: Balances = {
   USD: 50000.0,
@@ -71,6 +91,27 @@ const DEFAULT_ORDERS: Order[] = [
     total: 9630.0,
     trigger: "-",
     status: "Open",
+  },
+];
+
+const DEFAULT_POSITIONS: TradePosition[] = [
+  {
+    id: "pos_101",
+    date: new Date(Date.now() - 3600000 * 3).toLocaleString([], {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }),
+    pair: "BTC/USD",
+    coin: "BTC",
+    side: "BUY",
+    entryPrice: 64500.0,
+    amount: 0.25,
+    total: 16125.0,
+    takeProfit: 68000.0,
+    stopLoss: 62500.0,
   },
 ];
 
@@ -117,6 +158,7 @@ function setStored<T>(key: string, val: T): void {
 
 // Global in-memory cache
 let gOrders: Order[] = getStored<Order[]>(ORDERS_KEY, DEFAULT_ORDERS);
+let gPositions: TradePosition[] = getStored<TradePosition[]>(POSITIONS_KEY, DEFAULT_POSITIONS);
 let gHistory: Order[] = getStored<Order[]>(HISTORY_KEY, DEFAULT_HISTORY);
 let gBalances: Balances = getStored<Balances>(BALANCES_KEY, DEFAULT_BALANCES);
 let gAlerts: PriceAlert[] = getStored<PriceAlert[]>(ALERTS_KEY, []);
@@ -125,6 +167,7 @@ const listeners = new Set<() => void>();
 
 function notify() {
   setStored(ORDERS_KEY, gOrders);
+  setStored(POSITIONS_KEY, gPositions);
   setStored(HISTORY_KEY, gHistory);
   setStored(BALANCES_KEY, gBalances);
   setStored(ALERTS_KEY, gAlerts);
@@ -132,10 +175,10 @@ function notify() {
 }
 
 /**
- * Place a new order.
- * If type === "Market", fills immediately.
- * If type === "Limit", only fills immediately if market price already crosses the limit price;
- * otherwise it stays "Open" until the market price reaches/cuts it.
+ * Place a new order:
+ * - Market: Executes immediately at current market price and creates an Open Trade (TradePosition).
+ * - Limit: If price already crosses currentPrice, executes immediately;
+ *   otherwise stays as an Open Order at that exact price point (movable/draggable on chart).
  */
 export function placeOrder(order: {
   coin: string;
@@ -145,16 +188,19 @@ export function placeOrder(order: {
   price: number;
   amount: number;
   trigger?: string;
+  takeProfit?: number;
+  stopLoss?: number;
   currentPrice?: number;
-}): { ok: boolean; error?: string; order?: Order } {
-  const { coin, type, side, price, amount, trigger = "-", currentPrice } = order;
+}): { ok: boolean; error?: string; order?: Order; position?: TradePosition } {
+  const { coin, type, side, price, amount, trigger = "-", takeProfit, stopLoss, currentPrice } = order;
   const pair = order.pair ?? `${coin}/USD`;
-  const total = price * amount;
+  const effectivePrice = type === "Market" && currentPrice && currentPrice > 0 ? currentPrice : price;
+  const total = effectivePrice * amount;
 
   if (amount <= 0) return { ok: false, error: "Amount must be greater than 0" };
-  if (type !== "Market" && price <= 0) return { ok: false, error: "Price must be greater than 0" };
+  if (type !== "Market" && effectivePrice <= 0) return { ok: false, error: "Price must be greater than 0" };
 
-  // Check and lock balance
+  // Balance Check & Escrow
   if (side === "BUY") {
     if ((gBalances.USD ?? 0) < total) {
       return { ok: false, error: `Insufficient USD balance ($${(gBalances.USD ?? 0).toFixed(2)})` };
@@ -179,14 +225,197 @@ export function placeOrder(order: {
   let isInstant = type === "Market";
   if (type === "Limit" && currentPrice && currentPrice > 0) {
     if (side === "BUY" && currentPrice <= price) {
-      isInstant = true; // Limit buy with price >= market price fills immediately
+      isInstant = true;
     } else if (side === "SELL" && currentPrice >= price) {
-      isInstant = true; // Limit sell with price <= market price fills immediately
+      isInstant = true;
     }
   }
 
-  const newOrder: Order = {
-    id: "ord_" + Math.random().toString(36).substring(2, 9),
+  const timestamp = new Date().toLocaleString([], {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+
+  if (isInstant) {
+    // 1. Immediately create an Open Trade (TradePosition)
+    const newPos: TradePosition = {
+      id: "pos_" + Math.random().toString(36).substring(2, 9),
+      date: timestamp,
+      pair,
+      coin,
+      side,
+      entryPrice: effectivePrice,
+      amount,
+      total,
+      takeProfit,
+      stopLoss,
+    };
+    gPositions = [newPos, ...gPositions];
+
+    // 2. Add execution record to History
+    const historyOrder: Order = {
+      id: "ord_" + Math.random().toString(36).substring(2, 9),
+      date: timestamp,
+      pair,
+      coin,
+      type,
+      side,
+      price: effectivePrice,
+      amount,
+      filled: 100,
+      total,
+      trigger,
+      takeProfit,
+      stopLoss,
+      status: "Filled",
+    };
+    gHistory = [historyOrder, ...gHistory];
+
+    notify();
+    return { ok: true, position: newPos, order: historyOrder };
+  } else {
+    // Stays Open as a pending Limit Order until price reaches/cuts it
+    const newOrder: Order = {
+      id: "ord_" + Math.random().toString(36).substring(2, 9),
+      date: timestamp,
+      pair,
+      coin,
+      type,
+      side,
+      price,
+      amount,
+      filled: 0,
+      total,
+      trigger,
+      takeProfit,
+      stopLoss,
+      status: "Open",
+    };
+    gOrders = [newOrder, ...gOrders];
+
+    notify();
+    return { ok: true, order: newOrder };
+  }
+}
+
+/**
+ * Move / Drag a Limit Order on the chart:
+ * Updates the order's limit price. If dragged to cut currentPrice, immediately fills into an Open Trade!
+ */
+export function updateOrderPrice(
+  orderId: string,
+  newPrice: number,
+  currentPrice?: number
+): { ok: boolean; order?: Order; position?: TradePosition } {
+  const ordIndex = gOrders.findIndex((o) => o.id === orderId);
+  if (ordIndex === -1) return { ok: false };
+
+  const ord = gOrders[ordIndex];
+  if (newPrice <= 0) return { ok: false };
+
+  const oldTotal = ord.total;
+  const newTotal = newPrice * ord.amount;
+
+  // Adjust escrowed balance
+  if (ord.side === "BUY") {
+    const diff = newTotal - oldTotal;
+    if (diff > 0 && (gBalances.USD ?? 0) < diff) {
+      return { ok: false }; // Insufficient funds to increase limit price
+    }
+    gBalances = {
+      ...gBalances,
+      USD: Math.max(0, (gBalances.USD ?? 0) - diff),
+    };
+  }
+
+  ord.price = parseFloat(newPrice.toFixed(2));
+  ord.total = parseFloat(newTotal.toFixed(2));
+
+  // If new price now crosses current price, fill it into an Open Trade!
+  let shouldFill = false;
+  if (currentPrice && currentPrice > 0) {
+    if (ord.side === "BUY" && currentPrice <= ord.price) {
+      shouldFill = true;
+    } else if (ord.side === "SELL" && currentPrice >= ord.price) {
+      shouldFill = true;
+    }
+  }
+
+  if (shouldFill) {
+    // Remove from open orders
+    gOrders.splice(ordIndex, 1);
+
+    // Create Open Trade (TradePosition)
+    const newPos: TradePosition = {
+      id: "pos_" + Math.random().toString(36).substring(2, 9),
+      date: new Date().toLocaleString([], {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
+      pair: ord.pair,
+      coin: ord.coin,
+      side: ord.side,
+      entryPrice: ord.price,
+      amount: ord.amount,
+      total: ord.total,
+      takeProfit: ord.takeProfit,
+      stopLoss: ord.stopLoss,
+    };
+    gPositions = [newPos, ...gPositions];
+
+    // Add to History
+    gHistory = [{ ...ord, status: "Filled", filled: 100 }, ...gHistory];
+
+    notify();
+    return { ok: true, position: newPos };
+  } else {
+    notify();
+    return { ok: true, order: ord };
+  }
+}
+
+/**
+ * Close an Open Trade (Position):
+ * Calculates realized PnL, settles balances, and moves to Trade History.
+ */
+export function closePosition(
+  positionId: string,
+  exitPrice?: number
+): { ok: boolean; pnl?: number } {
+  const posIndex = gPositions.findIndex((p) => p.id === positionId);
+  if (posIndex === -1) return { ok: false };
+
+  const pos = gPositions[posIndex];
+  const finalPrice = exitPrice && exitPrice > 0 ? exitPrice : pos.entryPrice;
+
+  // Realized PnL
+  const diff = pos.side === "BUY" ? finalPrice - pos.entryPrice : pos.entryPrice - finalPrice;
+  const pnlVal = diff * pos.amount;
+
+  // Return principal + PnL
+  if (pos.side === "BUY") {
+    gBalances = {
+      ...gBalances,
+      USD: Math.max(0, (gBalances.USD ?? 0) + pos.total + pnlVal),
+    };
+  } else {
+    // SELL
+    gBalances = {
+      ...gBalances,
+      [pos.coin]: Math.max(0, (gBalances[pos.coin] ?? 0) + pos.amount),
+      USD: Math.max(0, (gBalances.USD ?? 0) + pnlVal),
+    };
+  }
+
+  // Add Close record to History
+  const closeRecord: Order = {
+    id: "close_" + Math.random().toString(36).substring(2, 9),
     date: new Date().toLocaleString([], {
       month: "2-digit",
       day: "2-digit",
@@ -194,49 +423,46 @@ export function placeOrder(order: {
       minute: "2-digit",
       second: "2-digit",
     }),
-    pair,
-    coin,
-    type,
-    side,
-    price,
-    amount,
-    filled: isInstant ? 100 : 0,
-    total,
-    trigger,
-    status: isInstant ? "Filled" : "Open",
+    pair: pos.pair,
+    coin: pos.coin,
+    type: "Market",
+    side: pos.side === "BUY" ? "SELL" : "BUY",
+    price: finalPrice,
+    amount: pos.amount,
+    filled: 100,
+    total: finalPrice * pos.amount,
+    trigger: `Closed [PnL: ${pnlVal >= 0 ? "+" : ""}$${pnlVal.toFixed(2)}]`,
+    status: "Filled",
   };
+  gHistory = [closeRecord, ...gHistory];
 
-  if (isInstant) {
-    // Immediately executed -> deliver asset
-    if (side === "BUY") {
-      gBalances = { ...gBalances, [coin]: (gBalances[coin] ?? 0) + amount };
-    } else {
-      gBalances = { ...gBalances, USD: (gBalances.USD ?? 0) + total };
-    }
-    gHistory = [newOrder, ...gHistory];
-  } else {
-    // Stays Open until price reaches/cuts it
-    gOrders = [newOrder, ...gOrders];
-  }
-
+  // Remove from open positions
+  gPositions.splice(posIndex, 1);
   notify();
-  return { ok: true, order: newOrder };
+
+  return { ok: true, pnl: pnlVal };
 }
 
 /**
- * Limit Order Matching Engine & Alert Checker
- * Called whenever the live market price ticks.
- * If live price reaches or cuts the limit order price, the order is filled automatically!
+ * Limit Order Matching Engine, TP/SL Auto-Execution & Alert Checker:
+ * Called continuously as live market prices stream in.
  */
 export function checkPriceTriggers(
   coin: string,
   currentPrice: number
-): { filledOrders: Order[]; triggeredAlerts: PriceAlert[] } {
-  if (!currentPrice || currentPrice <= 0) return { filledOrders: [], triggeredAlerts: [] };
+): {
+  filledOrders: Order[];
+  closedPositions: { position: TradePosition; reason: "TP" | "SL"; pnl: number }[];
+  triggeredAlerts: PriceAlert[];
+} {
+  if (!currentPrice || currentPrice <= 0) {
+    return { filledOrders: [], closedPositions: [], triggeredAlerts: [] };
+  }
 
   const filledOrders: Order[] = [];
   const remainingOrders: Order[] = [];
 
+  // 1. Check Pending Limit Orders
   for (const ord of gOrders) {
     if (ord.coin !== coin && ord.pair !== `${coin}/USD`) {
       remainingOrders.push(ord);
@@ -244,12 +470,11 @@ export function checkPriceTriggers(
     }
 
     let shouldFill = false;
-
-    // BUY Limit: fills when currentPrice <= ord.price (market drops to/below limit price)
+    // BUY Limit: fills when currentPrice <= ord.price (market reaches/cuts down)
     if (ord.side === "BUY" && currentPrice <= ord.price) {
       shouldFill = true;
     }
-    // SELL Limit: fills when currentPrice >= ord.price (market rises to/above limit price)
+    // SELL Limit: fills when currentPrice >= ord.price (market reaches/cuts up)
     else if (ord.side === "SELL" && currentPrice >= ord.price) {
       shouldFill = true;
     }
@@ -269,18 +494,99 @@ export function checkPriceTriggers(
       };
       filledOrders.push(filledOrder);
 
-      // Deliver acquired asset
-      if (ord.side === "BUY") {
-        gBalances = { ...gBalances, [coin]: (gBalances[coin] ?? 0) + ord.amount };
-      } else {
-        gBalances = { ...gBalances, USD: (gBalances.USD ?? 0) + ord.total };
-      }
+      // Transition to Open Trade (TradePosition)!
+      const newPos: TradePosition = {
+        id: "pos_" + Math.random().toString(36).substring(2, 9),
+        date: filledOrder.date,
+        pair: ord.pair,
+        coin: ord.coin,
+        side: ord.side,
+        entryPrice: ord.price,
+        amount: ord.amount,
+        total: ord.total,
+        takeProfit: ord.takeProfit,
+        stopLoss: ord.stopLoss,
+      };
+      gPositions = [newPos, ...gPositions];
     } else {
       remainingOrders.push(ord);
     }
   }
 
-  // Check Price Alerts
+  // 2. Check Open Positions for TP & SL
+  const closedPositions: { position: TradePosition; reason: "TP" | "SL"; pnl: number }[] = [];
+  const remainingPositions: TradePosition[] = [];
+
+  for (const pos of gPositions) {
+    if (pos.coin !== coin && pos.pair !== `${coin}/USD`) {
+      remainingPositions.push(pos);
+      continue;
+    }
+
+    let closeReason: "TP" | "SL" | null = null;
+
+    // Check Take Profit
+    if (pos.takeProfit && pos.takeProfit > 0) {
+      if (pos.side === "BUY" && currentPrice >= pos.takeProfit) closeReason = "TP";
+      if (pos.side === "SELL" && currentPrice <= pos.takeProfit) closeReason = "TP";
+    }
+
+    // Check Stop Loss
+    if (!closeReason && pos.stopLoss && pos.stopLoss > 0) {
+      if (pos.side === "BUY" && currentPrice <= pos.stopLoss) closeReason = "SL";
+      if (pos.side === "SELL" && currentPrice >= pos.stopLoss) closeReason = "SL";
+    }
+
+    if (closeReason) {
+      const diff = pos.side === "BUY" ? currentPrice - pos.entryPrice : pos.entryPrice - currentPrice;
+      const pnlVal = diff * pos.amount;
+
+      // Settle balances
+      if (pos.side === "BUY") {
+        gBalances = {
+          ...gBalances,
+          USD: Math.max(0, (gBalances.USD ?? 0) + pos.total + pnlVal),
+        };
+      } else {
+        gBalances = {
+          ...gBalances,
+          [pos.coin]: Math.max(0, (gBalances[pos.coin] ?? 0) + pos.amount),
+          USD: Math.max(0, (gBalances.USD ?? 0) + pnlVal),
+        };
+      }
+
+      // Add to History
+      gHistory = [
+        {
+          id: "tp_sl_" + Math.random().toString(36).substring(2, 9),
+          date: new Date().toLocaleString([], {
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+          pair: pos.pair,
+          coin: pos.coin,
+          type: "Market",
+          side: pos.side === "BUY" ? "SELL" : "BUY",
+          price: currentPrice,
+          amount: pos.amount,
+          filled: 100,
+          total: currentPrice * pos.amount,
+          trigger: `${closeReason} Hit [PnL: ${pnlVal >= 0 ? "+" : ""}$${pnlVal.toFixed(2)}]`,
+          status: "Filled",
+        },
+        ...gHistory,
+      ];
+
+      closedPositions.push({ position: pos, reason: closeReason, pnl: pnlVal });
+    } else {
+      remainingPositions.push(pos);
+    }
+  }
+
+  // 3. Check Price Alerts
   const triggeredAlerts: PriceAlert[] = [];
   const remainingAlerts: PriceAlert[] = [];
 
@@ -289,8 +595,6 @@ export function checkPriceTriggers(
       remainingAlerts.push(alt);
       continue;
     }
-
-    // Trigger alert if price is within 0.15% or crosses
     const pctDiff = Math.abs(currentPrice - alt.price) / alt.price;
     if (pctDiff < 0.0015) {
       triggeredAlerts.push(alt);
@@ -299,15 +603,15 @@ export function checkPriceTriggers(
     }
   }
 
-  if (filledOrders.length > 0 || triggeredAlerts.length > 0) {
+  if (filledOrders.length > 0 || closedPositions.length > 0 || triggeredAlerts.length > 0) {
     gOrders = remainingOrders;
+    gPositions = remainingPositions;
     if (filledOrders.length > 0) {
       gHistory = [...filledOrders, ...gHistory];
     }
     gAlerts = remainingAlerts;
     notify();
 
-    // Trigger visual/audio feedback for triggered alerts
     if (triggeredAlerts.length > 0 && typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("tradepro-alert-triggered", {
@@ -317,7 +621,7 @@ export function checkPriceTriggers(
     }
   }
 
-  return { filledOrders, triggeredAlerts };
+  return { filledOrders, closedPositions, triggeredAlerts };
 }
 
 export function cancelOrder(id: string): void {
@@ -385,6 +689,7 @@ export function depositAsset(asset: string, amount: number): void {
 
 export function useOrders() {
   const [orders, setOrders] = useState<Order[]>(gOrders);
+  const [positions, setPositions] = useState<TradePosition[]>(gPositions);
   const [history, setHistory] = useState<Order[]>(gHistory);
   const [balances, setBalances] = useState<Balances>(gBalances);
   const [alerts, setAlerts] = useState<PriceAlert[]>(gAlerts);
@@ -392,6 +697,7 @@ export function useOrders() {
   useEffect(() => {
     const update = () => {
       setOrders([...gOrders]);
+      setPositions([...gPositions]);
       setHistory([...gHistory]);
       setBalances({ ...gBalances });
       setAlerts([...gAlerts]);
@@ -404,10 +710,13 @@ export function useOrders() {
 
   return {
     orders,
+    positions,
     history,
     balances,
     alerts,
     placeOrder,
+    updateOrderPrice,
+    closePosition,
     cancelOrder,
     cancelAllOrders,
     depositAsset,

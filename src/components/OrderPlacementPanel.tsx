@@ -236,6 +236,9 @@ export function OrderPlacementPanel({ coin, data, onOrderPlaced, onOpenSettings 
       price: effectivePrice,
       amount: amountNum,
       trigger: slPrice ? `SL $${slPrice}` : tpPrice ? `TP $${tpPrice}` : "-",
+      takeProfit: tpPrice,
+      stopLoss: slPrice,
+      currentPrice,
     });
 
     if (!res.ok && !hasAlpaca) {

@@ -2739,6 +2739,26 @@ body.resizing-col .market-panel {
   border: 1px solid #f6465d;
 }
 
+.ctl-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  cursor: ns-resize;
+  padding: 0 3px;
+  margin-right: 2px;
+  opacity: 0.8;
+  transition: opacity 0.15s, transform 0.15s;
+  user-select: none;
+  touch-action: none;
+}
+
+.ctl-drag-handle:hover,
+.ctl-drag-handle.active {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
 .ctl-side-tag {
   font-size: 9px;
   font-weight: 800;
@@ -2748,8 +2768,19 @@ body.resizing-col .market-panel {
   border-radius: 2px;
 }
 
-.ctl-desc {
+.ctl-price-tag {
+  font-size: 10px;
+  font-weight: 700;
+  font-family: monospace;
+  background: rgba(0, 0, 0, 0.22);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.ctl-amount-tag {
+  font-size: 9.5px;
   font-weight: 600;
+  opacity: 0.88;
 }
 
 .ctl-pnl {
@@ -2766,6 +2797,24 @@ body.resizing-col .market-panel {
 
 .ctl-pnl.down {
   color: #ffccd3;
+}
+
+.ctl-close-pos-btn {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  margin-left: 3px;
+  transition: all 0.15s ease;
+}
+
+.ctl-close-pos-btn:hover {
+  background: rgba(246, 70, 93, 0.7);
+  border-color: #f6465d;
 }
 
 .ctl-cancel-btn {
@@ -2789,6 +2838,37 @@ body.resizing-col .market-panel {
 
 .ctl-cancel-btn:hover {
   background: rgba(0, 0, 0, 0.5);
+}
+
+/* Draggable Ghost State */
+.chart-trade-line.dragging {
+  pointer-events: none;
+}
+
+.chart-trade-line.dragging .ctl-dash {
+  background-image: linear-gradient(to right, #2962ff 50%, rgba(255, 255, 255, 0) 0%);
+  height: 2px;
+  animation: ctl-dash-flow 0.4s linear infinite;
+}
+
+@keyframes ctl-dash-flow {
+  from { background-position-x: 0; }
+  to { background-position-x: 8px; }
+}
+
+.chart-trade-line.dragging .ctl-badge {
+  background: rgba(41, 98, 255, 0.95);
+  border: 1px solid #709bfd;
+  box-shadow: 0 4px 16px rgba(41, 98, 255, 0.5);
+}
+
+.ctl-drag-hint {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #ffef8a;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 1px 5px;
+  border-radius: 2px;
 }
 
 .chart-trade-line.limit.buy .ctl-dash {
@@ -2824,6 +2904,70 @@ body.resizing-col .market-panel {
 .chart-trade-line.alert .ctl-cancel-btn {
   color: #13161b;
   background: rgba(0, 0, 0, 0.15);
+}
+
+/* Bottom Orders Drawer Positions & Side Badges */
+.bod-side-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.3px;
+}
+
+.bod-side-badge.buy {
+  background: rgba(14, 203, 129, 0.15);
+  color: #0ecb81;
+  border: 1px solid rgba(14, 203, 129, 0.35);
+}
+
+.bod-side-badge.sell {
+  background: rgba(246, 70, 93, 0.15);
+  color: #f6465d;
+  border: 1px solid rgba(246, 70, 93, 0.35);
+}
+
+.bod-tp-sl-tag {
+  font-size: 10.5px;
+  font-family: monospace;
+  color: var(--text-dim);
+}
+
+.bod-close-pos-btn {
+  background: rgba(246, 70, 93, 0.12);
+  border: 1px solid rgba(246, 70, 93, 0.35);
+  color: #f6465d;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bod-close-pos-btn:hover {
+  background: #f6465d;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(246, 70, 93, 0.4);
+}
+
+.bod-cancel-all-btn.danger {
+  background: rgba(246, 70, 93, 0.15);
+  border-color: rgba(246, 70, 93, 0.4);
+  color: #f6465d;
+}
+
+.bod-cancel-all-btn.danger:hover {
+  background: #f6465d;
+  color: #ffffff;
+}
+
+.bod-hist-trigger {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: 4px;
 }
 
 /* TradingView-Style Interactive Context Menu on Chart */
