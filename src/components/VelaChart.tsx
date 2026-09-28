@@ -42,6 +42,7 @@ import { restoreLuxIndicators } from "../lib/luxPersist";
 import { restorePineIndicators } from "../lib/pinePersist";
 import { trackSelection } from "../lib/drawingPresets";
 import { mountMarket } from "../lib/marketData";
+import { installBoxInterior } from "../lib/boxInterior";
 
 import { AlpacaProvider } from "../lib/alpacaProvider";
 
@@ -162,6 +163,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     let stopSymbols: (() => void) | undefined;
     let stopIndicators: (() => void) | undefined;
     let stopCrosshair: (() => void) | undefined;
+    let stopBoxInterior: (() => void) | undefined;
 
     // Re-mount this coin's LuxAlgo library indicators once the market is live.
     // Defined before `setupMarket` (which calls it) — a `const` is not hoisted.
@@ -272,6 +274,14 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       } catch {
         /* chart not ready */
       }
+
+      // Box drawing fix: clicking/panning inside a box interior pans the chart
+      // instead of dragging the entire box. Only border touches resize/move.
+      try {
+        stopBoxInterior = installBoxInterior(ws);
+      } catch (e) {
+        console.warn("[trade-pro] box interior fix failed:", e);
+      }
     };
 
     // If the chart is already ready (e.g., initial mount finished), run immediately.
@@ -284,6 +294,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       stopSymbols?.();
       stopIndicators?.();
       stopCrosshair?.();
+      stopBoxInterior?.();
     };
   }, [coin, timeframe]);
 
