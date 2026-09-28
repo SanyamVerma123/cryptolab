@@ -30,6 +30,40 @@ let unsub: (() => void) | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let mounted: { symbol: string; timeframe: string } | null = null;
 
+let currentLivePrice = 0;
+let currentCandleHigh = 0;
+let currentCandleLow = 0;
+const priceListeners = new Set<(price: number, high?: number, low?: number) => void>();
+
+/** Get the latest live market price matching the chart candle ticks */
+export function getLiveMarketPrice(): number {
+  if (currentLivePrice > 0) return currentLivePrice;
+  const last = bars[bars.length - 1];
+  return last?.close || 0;
+}
+
+/** Get the forming candle's price, high, and low */
+export function getLiveCandleRange(): { price: number; high: number; low: number } | null {
+  const last = bars[bars.length - 1];
+  if (!last && currentLivePrice <= 0) return null;
+  const p = currentLivePrice || last?.close || 0;
+  const h = Math.max(currentCandleHigh || p, last?.high || p, p);
+  const l = Math.min(currentCandleLow || p, last?.low || p, p);
+  return { price: p, high: h, low: l };
+}
+
+/** Subscribe to fast live price ticks streamed directly from WebSocket candles */
+export function subscribeLivePrice(listener: (price: number, high?: number, low?: number) => void): () => void {
+  priceListeners.add(listener);
+  const r = getLiveCandleRange();
+  if (r && r.price > 0) {
+    listener(r.price, r.high, r.low);
+  }
+  return () => {
+    priceListeners.delete(listener);
+  };
+}
+
 /** Bars the chart is showing right now (oldest → newest). Empty until loaded. */
 export function liveBars(): OHLCV[] {
   // Debug hook so the chart panel (and this agent's browser checks) can read
@@ -73,6 +107,13 @@ async function loadHistory(symbol: string, timeframe: string): Promise<void> {
     const got = await provider.getBars(symbol, timeframe, range);
     // Newest last — the AI + FVG detection both assume ascending time.
     bars = got.slice().sort((a, b) => a.time - b.time);
+    if (bars.length > 0) {
+      const last = bars[bars.length - 1];
+      currentLivePrice = last.close;
+      currentCandleHigh = last.high;
+      currentCandleLow = last.low;
+      priceListeners.forEach((l) => l(last.close, last.high, last.low));
+    }
   } catch (e) {
     console.warn("[trade-pro] marketData load failed:", e);
     bars = [];
@@ -126,11 +167,19 @@ export function mountMarket(
     }
     mounted = null;
     bars = [];
+    currentLivePrice = 0;
+    currentCandleHigh = 0;
+    currentCandleLow = 0;
   }
 }
 
 /** Merge a live bar into the array (upsert by open time). */
 function pushBar(bar: OHLCV): void {
+  currentLivePrice = bar.close;
+  currentCandleHigh = bar.high;
+  currentCandleLow = bar.low;
+  priceListeners.forEach((l) => l(bar.close, bar.high, bar.low));
+
   const last = bars[bars.length - 1];
   if (last && last.time === bar.time) {
     // The forming bar — replace in place.

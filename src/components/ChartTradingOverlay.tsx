@@ -28,6 +28,11 @@ import {
   type OrderSide,
 } from "../lib/orderState";
 import type { LiveData } from "../lib/useLiveData";
+import {
+  getLiveMarketPrice,
+  getLiveCandleRange,
+  subscribeLivePrice,
+} from "../lib/marketData";
 
 interface Props {
   ws: VelaWorkspace | null;
@@ -217,7 +222,14 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
   const holdDragTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartPos = useRef<{ x: number; y: number; time: number } | null>(null);
 
-  const currentPrice = data.ctx?.markPx || data.ctx?.midPx || 0;
+  const [fastLivePrice, setFastLivePrice] = useState<number>(() => getLiveMarketPrice());
+
+  const currentPrice =
+    fastLivePrice > 0
+      ? fastLivePrice
+      : getLiveMarketPrice() > 0
+      ? getLiveMarketPrice()
+      : data.trades?.[0]?.price || data.book?.mid || data.ctx?.markPx || data.ctx?.midPx || 0;
 
   // Find Vela's exact plot area container (r.plot gives 1:1 pixel parity)
   useEffect(() => {
@@ -242,14 +254,17 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
     return () => clearInterval(interval);
   }, [ws, plotEl]);
 
-  // Run limit order matching engine and TP/SL execution
+  // Run limit order matching engine and TP/SL execution continuously with 0ms latency
   useEffect(() => {
-    if (currentPrice > 0 && tradingMode === "in_app") {
-      const { filledOrders, closedPositions, triggeredAlerts } = checkPriceTriggers(coin, currentPrice);
+    if (tradingMode !== "in_app") return;
+
+    const checkTriggers = (px: number, high?: number, low?: number) => {
+      if (!px || px <= 0) return;
+      const { filledOrders, closedPositions, triggeredAlerts } = checkPriceTriggers(coin, px, high, low);
 
       if (filledOrders.length > 0) {
         setAlertFeedback(
-          `Filled: ${filledOrders[0].side} ${filledOrders[0].amount} ${coin} @ $${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })} (Now Open Position)`
+          `Filled: ${filledOrders[0].side} ${filledOrders[0].amount} ${coin} @ $${px.toLocaleString(undefined, { minimumFractionDigits: 2 })} (Now Open Position)`
         );
         setTimeout(() => setAlertFeedback(null), 4000);
       }
@@ -268,8 +283,36 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
         );
         setTimeout(() => setAlertFeedback(null), 5000);
       }
+    };
+
+    // 1. Initial check with current candle range or price
+    const initRange = getLiveCandleRange();
+    if (initRange && initRange.price > 0) {
+      checkTriggers(initRange.price, initRange.high, initRange.low);
+    } else if (currentPrice > 0) {
+      checkTriggers(currentPrice);
     }
-  }, [currentPrice, coin, tradingMode]);
+
+    // 2. Direct real-time WebSocket candle updates
+    const unsub = subscribeLivePrice((px, high, low) => {
+      setFastLivePrice(px);
+      checkTriggers(px, high, low);
+    });
+
+    // 3. Fast 100ms continuous check safety net
+    const interval = setInterval(() => {
+      const r = getLiveCandleRange();
+      const p = r?.price || getLiveMarketPrice() || data.trades?.[0]?.price || currentPrice;
+      if (p > 0) {
+        checkTriggers(p, r?.high, r?.low);
+      }
+    }, 100);
+
+    return () => {
+      unsub();
+      clearInterval(interval);
+    };
+  }, [coin, tradingMode, currentPrice, data.trades]);
 
   // Project prices to exact pixel Y inside r.plot
   useEffect(() => {
@@ -466,7 +509,8 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
         setAlertLines(nextAlerts);
 
         // 4. Calculate Price Scale Overlap Offsets (Avoid colliding with Current Price Block)
-        const rawCurrentPriceY = currentPrice > 0 ? r.coords.priceToY(currentPrice, pane.scale, pane.bounds) : null;
+        const livePx = fastLivePrice || getLiveMarketPrice() || currentPrice;
+        const rawCurrentPriceY = livePx > 0 ? r.coords.priceToY(livePx, pane.scale, pane.bounds) : null;
         const currentPriceY = rawCurrentPriceY !== null ? rawCurrentPriceY - paneTop : null;
         const chipsToResolve: ScaleChipItem[] = [];
 
@@ -498,7 +542,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
           chipsToResolve.push({ id: "drag_target", price: dragTarget.price, y: dragTarget.currentY });
         }
 
-        const computedOffsets = computeScaleChipOffsets(chipsToResolve, currentPrice, currentPriceY);
+        const computedOffsets = computeScaleChipOffsets(chipsToResolve, livePx, currentPriceY);
         setChipOffsets((prev) => {
           const prevKeys = Object.keys(prev);
           const nextKeys = Object.keys(computedOffsets);

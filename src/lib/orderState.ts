@@ -742,10 +742,14 @@ export function closePosition(
 /**
  * Limit Order Matching Engine, TP/SL Auto-Execution & Alert Checker:
  * Called continuously as live market prices stream in.
+ * Supports tick price as well as active candle's high and low so that
+ * any candle traversing through limit or TP/SL targets executes immediately!
  */
 export function checkPriceTriggers(
   coin: string,
-  currentPrice: number
+  currentPrice: number,
+  candleHigh?: number,
+  candleLow?: number
 ): {
   filledOrders: Order[];
   closedPositions: { position: TradePosition; reason: "TP" | "SL" | "LIQ"; pnl: number }[];
@@ -755,12 +759,18 @@ export function checkPriceTriggers(
     return { filledOrders: [], closedPositions: [], triggeredAlerts: [] };
   }
 
+  const normCoin = coin.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const effectiveHigh = candleHigh !== undefined ? Math.max(candleHigh, currentPrice) : currentPrice;
+  const effectiveLow = candleLow !== undefined ? Math.min(candleLow, currentPrice) : currentPrice;
+
   const filledOrders: Order[] = [];
   const remainingOrders: Order[] = [];
 
   // 1. Check Pending Limit Orders
   for (const ord of gOrders) {
-    if (ord.coin !== coin && ord.pair !== `${coin}/USD`) {
+    const oCoin = (ord.coin || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const oPair = (ord.pair || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (oCoin !== normCoin && !oPair.includes(normCoin)) {
       remainingOrders.push(ord);
       continue;
     }
@@ -768,24 +778,29 @@ export function checkPriceTriggers(
     let shouldFill = false;
     const refPrice = ord.placedAtPrice ?? ord.price;
 
-    // A pending limit order only triggers when live market price actually reaches or cuts into the limit price level:
-    if (ord.price < refPrice) {
-      // Order was placed or moved BELOW market price:
-      // Fills only when market drops to or cuts down through the limit price!
-      if (currentPrice <= ord.price) {
+    // Check if candle traversed right across limit price:
+    if (effectiveLow <= ord.price && effectiveHigh >= ord.price) {
+      // The price cut right through this limit level during this candle!
+      shouldFill = true;
+    } else if (ord.side === "BUY") {
+      // BUY Limit: Buyer wants to buy at or cheaper than limit price
+      if (currentPrice <= ord.price || effectiveLow <= ord.price) {
         shouldFill = true;
-      }
-    } else if (ord.price > refPrice) {
-      // Order was placed or moved ABOVE market price:
-      // Fills only when market rises to or cuts up through the limit price!
-      if (currentPrice >= ord.price) {
+      } else if (ord.price > refPrice && (currentPrice >= ord.price || effectiveHigh >= ord.price)) {
         shouldFill = true;
       }
     } else {
-      // Placed directly at market price: fills when market touches it within 0.05%
-      if (Math.abs(currentPrice - ord.price) / ord.price < 0.0005) {
+      // SELL Limit: Seller wants to sell at or higher than limit price
+      if (currentPrice >= ord.price || effectiveHigh >= ord.price) {
+        shouldFill = true;
+      } else if (ord.price < refPrice && (currentPrice <= ord.price || effectiveLow <= ord.price)) {
         shouldFill = true;
       }
+    }
+
+    // Touch tolerance (within 0.1%)
+    if (!shouldFill && Math.abs(currentPrice - ord.price) / ord.price < 0.001) {
+      shouldFill = true;
     }
 
     if (shouldFill) {
@@ -835,33 +850,54 @@ export function checkPriceTriggers(
   const remainingPositions: TradePosition[] = [];
 
   for (const pos of gPositions) {
-    if (pos.coin !== coin && pos.pair !== `${coin}/USD`) {
+    const pCoin = (pos.coin || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const pPair = (pos.pair || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (pCoin !== normCoin && !pPair.includes(normCoin)) {
       remainingPositions.push(pos);
       continue;
     }
 
     let closeReason: "TP" | "SL" | "LIQ" | null = null;
+    let exitPrice = currentPrice;
 
     // Check Take Profit
     if (pos.takeProfit && pos.takeProfit > 0) {
-      if (pos.side === "BUY" && currentPrice >= pos.takeProfit) closeReason = "TP";
-      if (pos.side === "SELL" && currentPrice <= pos.takeProfit) closeReason = "TP";
+      if (pos.side === "BUY" && (currentPrice >= pos.takeProfit || effectiveHigh >= pos.takeProfit)) {
+        closeReason = "TP";
+        exitPrice = pos.takeProfit;
+      }
+      if (pos.side === "SELL" && (currentPrice <= pos.takeProfit || effectiveLow <= pos.takeProfit)) {
+        closeReason = "TP";
+        exitPrice = pos.takeProfit;
+      }
     }
 
     // Check Stop Loss
     if (!closeReason && pos.stopLoss && pos.stopLoss > 0) {
-      if (pos.side === "BUY" && currentPrice <= pos.stopLoss) closeReason = "SL";
-      if (pos.side === "SELL" && currentPrice >= pos.stopLoss) closeReason = "SL";
+      if (pos.side === "BUY" && (currentPrice <= pos.stopLoss || effectiveLow <= pos.stopLoss)) {
+        closeReason = "SL";
+        exitPrice = pos.stopLoss;
+      }
+      if (pos.side === "SELL" && (currentPrice >= pos.stopLoss || effectiveHigh >= pos.stopLoss)) {
+        closeReason = "SL";
+        exitPrice = pos.stopLoss;
+      }
     }
 
     // Check Liquidation
     if (!closeReason && pos.liquidationPrice && pos.liquidationPrice > 0) {
-      if (pos.side === "BUY" && currentPrice <= pos.liquidationPrice) closeReason = "LIQ";
-      if (pos.side === "SELL" && currentPrice >= pos.liquidationPrice) closeReason = "LIQ";
+      if (pos.side === "BUY" && (currentPrice <= pos.liquidationPrice || effectiveLow <= pos.liquidationPrice)) {
+        closeReason = "LIQ";
+        exitPrice = pos.liquidationPrice;
+      }
+      if (pos.side === "SELL" && (currentPrice >= pos.liquidationPrice || effectiveHigh >= pos.liquidationPrice)) {
+        closeReason = "LIQ";
+        exitPrice = pos.liquidationPrice;
+      }
     }
 
     if (closeReason) {
-      const diff = pos.side === "BUY" ? currentPrice - pos.entryPrice : pos.entryPrice - currentPrice;
+      const diff = pos.side === "BUY" ? exitPrice - pos.entryPrice : pos.entryPrice - exitPrice;
       const pnlVal = diff * pos.amount;
       const returned = closeReason === "LIQ" ? 0 : Math.max(0, (pos.margin || pos.total) + pnlVal);
 
@@ -884,10 +920,10 @@ export function checkPriceTriggers(
           coin: pos.coin,
           type: "Market",
           side: pos.side === "BUY" ? "SELL" : "BUY",
-          price: currentPrice,
+          price: exitPrice,
           amount: pos.amount,
           filled: 100,
-          total: currentPrice * pos.amount,
+          total: exitPrice * pos.amount,
           trigger: `${closeReason} Hit [PnL: ${pnlVal >= 0 ? "+" : ""}$${pnlVal.toFixed(2)}]`,
           status: "Filled",
           leverage: pos.leverage,
@@ -906,12 +942,15 @@ export function checkPriceTriggers(
   const remainingAlerts: PriceAlert[] = [];
 
   for (const alt of gAlerts) {
-    if (alt.coin !== coin && alt.pair !== `${coin}/USD`) {
+    const aCoin = (alt.coin || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const aPair = (alt.pair || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (aCoin !== normCoin && !aPair.includes(normCoin)) {
       remainingAlerts.push(alt);
       continue;
     }
+    const hitByRange = effectiveLow <= alt.price && effectiveHigh >= alt.price;
     const pctDiff = Math.abs(currentPrice - alt.price) / alt.price;
-    if (pctDiff < 0.0015) {
+    if (hitByRange || pctDiff < 0.002) {
       triggeredAlerts.push(alt);
     } else {
       remainingAlerts.push(alt);

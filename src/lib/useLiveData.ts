@@ -54,6 +54,8 @@ export interface LiveData {
   maxLeverage: number;
   /** Derived analytics: CVD, buy/sell pressure, whales, imbalance, walls. */
   metrics: DerivedMetrics | null;
+  /** Real-time last trade / mid price updated on every trade tick */
+  livePrice: number;
 }
 
 const EMPTY_BOOK: BookState = {
@@ -97,6 +99,7 @@ export function useLiveData(socket: HyperliquidSocket | null, coin: string): Liv
   const [ctx, setCtx] = useState<AssetCtx | null>(null);
   const [maxLeverage, setMaxLeverage] = useState(0);
   const [metrics, setMetrics] = useState<DerivedMetrics | null>(null);
+  const [livePrice, setLivePrice] = useState<number>(0);
 
   const bookRef = useRef<L2Book | null>(null);
   const tradesRef = useRef<Trade[]>([]);
@@ -154,6 +157,9 @@ export function useLiveData(socket: HyperliquidSocket | null, coin: string): Liv
       } else if (channel === "trades") {
         const arr = Array.isArray(data) ? data : [data];
         const incoming = arr.map(wsTradeToTrade);
+        if (incoming.length > 0 && incoming[0].price > 0) {
+          setLivePrice(incoming[0].price);
+        }
         // newest first, cap at 100
         tradesRef.current = [...incoming.reverse(), ...tradesRef.current].slice(0, 100);
         tradesDirty.current = true;
@@ -171,6 +177,8 @@ export function useLiveData(socket: HyperliquidSocket | null, coin: string): Liv
       } else if (channel === "activeAssetCtx") {
         const c = data?.ctx;
         if (c) {
+          const mp = Number(c.markPx ?? c.midPx ?? 0);
+          if (mp > 0) setLivePrice((prev) => (prev > 0 ? prev : mp));
           setCtx({
             funding: Number(c.funding ?? 0),
             openInterest: Number(c.openInterest ?? 0),
@@ -190,7 +198,11 @@ export function useLiveData(socket: HyperliquidSocket | null, coin: string): Liv
     const bookTimer = window.setInterval(() => {
       if (bookDirty.current && bookRef.current) {
         bookDirty.current = false;
-        setBook(withTotals(bookRef.current));
+        const b = withTotals(bookRef.current);
+        setBook(b);
+        if (b.mid > 0) {
+          setLivePrice((prev) => (prev > 0 ? prev : b.mid));
+        }
       }
     }, 250);
     const tradeTimer = window.setInterval(() => {
@@ -223,7 +235,8 @@ export function useLiveData(socket: HyperliquidSocket | null, coin: string): Liv
     winRef.current = newWindowState();
     pendingBig.current = [];
     setMetrics(null);
+    setLivePrice(0);
   }, [coin]);
 
-  return { book: book ?? (coin ? EMPTY_BOOK : null), trades, ctx, maxLeverage, metrics };
+  return { book: book ?? (coin ? EMPTY_BOOK : null), trades, ctx, maxLeverage, metrics, livePrice };
 }
