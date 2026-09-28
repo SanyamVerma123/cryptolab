@@ -258,9 +258,9 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
   useEffect(() => {
     if (tradingMode !== "in_app") return;
 
-    const checkTriggers = (px: number, high?: number, low?: number) => {
+    const checkTriggers = (px: number) => {
       if (!px || px <= 0) return;
-      const { filledOrders, closedPositions, triggeredAlerts } = checkPriceTriggers(coin, px, high, low);
+      const { filledOrders, closedPositions, triggeredAlerts } = checkPriceTriggers(coin, px);
 
       if (filledOrders.length > 0) {
         setAlertFeedback(
@@ -285,34 +285,53 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
       }
     };
 
-    // 1. Initial check with current candle range or price
-    const initRange = getLiveCandleRange();
-    if (initRange && initRange.price > 0) {
-      checkTriggers(initRange.price, initRange.high, initRange.low);
-    } else if (currentPrice > 0) {
-      checkTriggers(currentPrice);
+    // 1. Initial check with current market price
+    const initPx = getLiveMarketPrice() || (currentPrice > 0 ? currentPrice : 0);
+    if (initPx > 0) {
+      checkTriggers(initPx);
     }
 
     // 2. Direct real-time WebSocket candle updates
-    const unsub = subscribeLivePrice((px, high, low) => {
+    const unsub = subscribeLivePrice((px) => {
       setFastLivePrice(px);
-      checkTriggers(px, high, low);
+      checkTriggers(px);
     });
 
-    // 3. Fast 100ms continuous check safety net
+    // 3. Fast 50ms continuous check safety net
     const interval = setInterval(() => {
-      const r = getLiveCandleRange();
-      const p = r?.price || getLiveMarketPrice() || data.trades?.[0]?.price || currentPrice;
+      const p = getLiveMarketPrice() || data.livePrice || data.trades?.[0]?.price || fastLivePrice;
       if (p > 0) {
-        checkTriggers(p, r?.high, r?.low);
+        checkTriggers(p);
       }
-    }, 100);
+    }, 50);
 
     return () => {
       unsub();
       clearInterval(interval);
     };
-  }, [coin, tradingMode, currentPrice, data.trades]);
+  }, [coin, tradingMode]);
+
+  // Real-time execution for direct trade tape ticks from WebSocket
+  useEffect(() => {
+    if (tradingMode !== "in_app") return;
+    const px = data.livePrice || data.trades?.[0]?.price;
+    if (px && px > 0) {
+      const { filledOrders, closedPositions } = checkPriceTriggers(coin, px);
+      if (filledOrders.length > 0) {
+        setAlertFeedback(
+          `Filled: ${filledOrders[0].side} ${filledOrders[0].amount} ${coin} @ $${px.toLocaleString(undefined, { minimumFractionDigits: 2 })} (Now Open Position)`
+        );
+        setTimeout(() => setAlertFeedback(null), 4000);
+      }
+      if (closedPositions.length > 0) {
+        const cp = closedPositions[0];
+        setAlertFeedback(
+          `${cp.reason} Executed: Closed ${cp.position.side} ${cp.position.amount} ${coin} [PnL: ${cp.pnl >= 0 ? "+" : ""}$${cp.pnl.toFixed(2)}]`
+        );
+        setTimeout(() => setAlertFeedback(null), 4500);
+      }
+    }
+  }, [coin, tradingMode, data.livePrice, data.trades]);
 
   // Project prices to exact pixel Y inside r.plot
   useEffect(() => {
