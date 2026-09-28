@@ -3,6 +3,7 @@
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { Analytics } from "@vercel/analytics/react";
 import App from "./App";
 import "@getcandlekit/charts/styles.css";
 import "./styles/app.css";
@@ -12,5 +13,6 @@ if (!el) throw new Error("#root missing in index.html");
 createRoot(el).render(
   <StrictMode>
     <App />
+    <Analytics />
   </StrictMode>
 );
