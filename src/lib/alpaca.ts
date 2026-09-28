@@ -185,9 +185,13 @@ export async function getAlpacaOrders(): Promise<{ ok: boolean; orders?: AlpacaO
   return { ok: true, orders: res.data ?? [] };
 }
 
-export function formatAlpacaCryptoSymbol(raw: string): string {
-  let clean = raw.replace("CRYPTO:", "").trim().toUpperCase();
+export function formatAlpacaSymbol(raw: string): string {
+  let clean = raw.replace(/^ALPACA:/i, "").replace(/^CRYPTO:/i, "").trim().toUpperCase();
   if (clean.includes("/")) return clean;
+  // US Equity tickers e.g. "AAPL", "TSLA", "NVDA", "SPY", "QQQ"
+  if (clean.length <= 5 && !clean.endsWith("USD") && !clean.endsWith("USDT")) {
+    return clean;
+  }
   if (clean.endsWith("USD") && clean.length > 3) {
     return `${clean.slice(0, -3)}/USD`;
   }
@@ -197,9 +201,11 @@ export function formatAlpacaCryptoSymbol(raw: string): string {
   return `${clean}/USD`;
 }
 
+export const formatAlpacaCryptoSymbol = formatAlpacaSymbol;
+
 /** Place order with Alpaca Trading API (Paper or Live) */
 export async function submitAlpacaOrder(params: {
-  symbol: string; // e.g. "BTC/USD", "BTCUSD", "CRYPTO:BTCUSD"
+  symbol: string; // e.g. "AAPL", "TSLA", "BTC/USD", "BTCUSD"
   qty: number;
   side: "buy" | "sell";
   type: "market" | "limit" | "stop_limit";
@@ -210,15 +216,16 @@ export async function submitAlpacaOrder(params: {
 }): Promise<{ ok: boolean; order?: AlpacaOrder; error?: string }> {
   const { symbol, qty, side, type, limitPrice, takeProfitPrice, stopLossPrice, timeInForce = "gtc" } = params;
 
-  // Format symbol (Alpaca crypto format is BTC/USD)
-  const formattedSymbol = formatAlpacaCryptoSymbol(symbol);
+  // Format symbol (stocks: "AAPL", crypto: "BTC/USD")
+  const formattedSymbol = formatAlpacaSymbol(symbol);
+  const isStock = !formattedSymbol.includes("/");
 
-  // Alpaca crypto only supports 'gtc' and 'ioc' time_in_force
-  const validTif = timeInForce === "day" ? "gtc" : timeInForce;
+  // Crypto only supports 'gtc' and 'ioc'; stocks support 'day' and 'gtc'
+  const validTif = isStock ? (timeInForce || "day") : (timeInForce === "day" ? "gtc" : timeInForce);
 
   const payload: any = {
     symbol: formattedSymbol,
-    qty: String(parseFloat(qty.toFixed(6))),
+    qty: isStock ? String(Math.floor(qty) || 1) : String(parseFloat(qty.toFixed(6))),
     side,
     type,
     time_in_force: validTif,
@@ -228,11 +235,8 @@ export async function submitAlpacaOrder(params: {
     payload.limit_price = String(parseFloat(limitPrice.toFixed(2)));
   }
 
-  // NOTE: Alpaca Crypto Trading API DOES NOT support order_class: "bracket".
-  // Trying to pass order_class: "bracket" on crypto causes 422 Unprocessable Entity.
-  // We only send order_class bracket if not crypto or if supported.
-  const isCrypto = formattedSymbol.includes("/") || formattedSymbol.endsWith("USD") || formattedSymbol.endsWith("USDT");
-  if (!isCrypto && (takeProfitPrice || stopLossPrice)) {
+  // Stock orders support order_class: "bracket" with TP and SL
+  if (isStock && (takeProfitPrice || stopLossPrice)) {
     payload.order_class = "bracket";
     if (takeProfitPrice) {
       payload.take_profit = { limit_price: String(parseFloat(takeProfitPrice.toFixed(2))) };
@@ -439,3 +443,84 @@ export async function getAlpacaHistoricalBars(
   const list = res.data?.bars?.[formattedSymbol] || [];
   return { ok: true, bars: list };
 }
+
+/** Get historical stock bars from Alpaca Equities Market Data API (v2) with public fallback */
+export async function getAlpacaStockBars(
+  symbol: string,
+  timeframe = "1Day",
+  limit = 500,
+  feed = "iex"
+): Promise<{ ok: boolean; bars?: AlpacaBar[]; error?: string }> {
+  const clean = symbol.replace(/^ALPACA:/i, "").trim().toUpperCase();
+  const symParam = encodeURIComponent(clean);
+  const cfg = getAlpacaConfig();
+
+  // 1. If user has Alpaca API keys configured, fetch from official Alpaca Market Data v2
+  if (cfg.keyId && cfg.secretKey) {
+    const res = await alpacaFetch<{ bars: AlpacaBar[] } | { bars: Record<string, AlpacaBar[]> }>(
+      `/v2/stocks/${symParam}/bars?timeframe=${timeframe}&limit=${limit}&feed=${feed}&adjustment=all`,
+      {},
+      ALPACA_DATA_URL
+    );
+    if (res.ok && res.data) {
+      const rawBars = Array.isArray((res.data as any).bars)
+        ? (res.data as any).bars
+        : (res.data as any).bars?.[clean] || [];
+      if (rawBars.length > 0) {
+        return { ok: true, bars: rawBars };
+      }
+    }
+  }
+
+  // 2. Fallback: fetch real market history via proxy from Yahoo Finance public chart endpoint
+  try {
+    const yTfMap: Record<string, { interval: string; range: string }> = {
+      "1Min": { interval: "1m", range: "2d" },
+      "5Min": { interval: "5m", range: "5d" },
+      "15Min": { interval: "15m", range: "1mo" },
+      "30Min": { interval: "30m", range: "1mo" },
+      "1Hour": { interval: "1h", range: "3mo" },
+      "2Hour": { interval: "1h", range: "6mo" },
+      "4Hour": { interval: "1h", range: "1y" },
+      "1Day": { interval: "1d", range: "2y" },
+      "1Week": { interval: "1wk", range: "5y" },
+      "1Month": { interval: "1mo", range: "10y" },
+    };
+    const { interval, range } = yTfMap[timeframe] || { interval: "1d", range: "2y" };
+    const proxyRes = await fetch("/alpaca/proxy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: `https://query1.finance.yahoo.com/v8/finance/chart/${symParam}?interval=${interval}&range=${range}`,
+        method: "GET",
+      }),
+    });
+    if (proxyRes.ok) {
+      const data = await proxyRes.json();
+      const res0 = data?.chart?.result?.[0];
+      const timestamps = res0?.timestamp || [];
+      const quote = res0?.indicators?.quote?.[0] || {};
+      const fallbackBars: AlpacaBar[] = [];
+      for (let i = 0; i < timestamps.length; i++) {
+        if (quote.open?.[i] != null && quote.close?.[i] != null) {
+          fallbackBars.push({
+            t: new Date(timestamps[i] * 1000).toISOString(),
+            o: quote.open[i],
+            h: quote.high[i],
+            l: quote.low[i],
+            c: quote.close[i],
+            v: quote.volume[i] || 0,
+          });
+        }
+      }
+      if (fallbackBars.length > 0) {
+        return { ok: true, bars: fallbackBars };
+      }
+    }
+  } catch (err: any) {
+    console.warn("[trade-pro] stock history fallback failed:", err);
+  }
+
+  return { ok: false, error: "Failed to fetch stock history" };
+}
+

@@ -18,10 +18,12 @@
  *   // later: stop()
  */
 import { HyperliquidProvider } from "@luxalgo/vela/providers/hyperliquid";
+import { AlpacaProvider, isAlpacaEquity } from "./alpacaProvider";
 // OHLCV/BarRange are re-exported through the package root's types.
 import type { OHLCV, BarRange } from "@luxalgo/vela";
 
 const provider = new HyperliquidProvider();
+const alpacaProvider = new AlpacaProvider();
 
 /** The live bar array — replaced wholesale on each refresh (stable reference
  *  for the AI's context, so React closures don't go stale). */
@@ -104,7 +106,9 @@ export function visibleBarsInRange(
 async function loadHistory(symbol: string, timeframe: string): Promise<void> {
   try {
     const range: BarRange = { limit: 1500 };
-    const got = await provider.getBars(symbol, timeframe, range);
+    const got = isAlpacaEquity(symbol)
+      ? await alpacaProvider.getBars(symbol, timeframe, range)
+      : await provider.getBars(symbol, timeframe, range);
     // Newest last — the AI + FVG detection both assume ascending time.
     bars = got.slice().sort((a, b) => a.time - b.time);
     if (bars.length > 0) {
@@ -137,9 +141,13 @@ export function mountMarket(
 
   // Live ticks: the forming bar updates and each closed bar is appended.
   try {
-    unsub = provider.subscribe(symbol, timeframe, (bar) => {
-      pushBar(bar);
-    });
+    unsub = isAlpacaEquity(symbol)
+      ? alpacaProvider.subscribe(symbol, timeframe, (bar) => {
+          pushBar(bar);
+        })
+      : provider.subscribe(symbol, timeframe, (bar) => {
+          pushBar(bar);
+        });
   } catch (e) {
     console.warn("[trade-pro] live subscribe failed, polling instead:", e);
   }

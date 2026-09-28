@@ -33,6 +33,8 @@ import {
   type AlpacaAccount,
 } from "../lib/alpaca";
 import type { LiveData } from "../lib/useLiveData";
+import { getLiveMarketPrice } from "../lib/marketData";
+import { isAlpacaEquity } from "../lib/alpacaProvider";
 
 interface Props {
   coin: string;
@@ -61,7 +63,13 @@ export function OrderPlacementPanel({
   const [side, setSide] = useState<OrderSide>("BUY");
   const [type, setType] = useState<OrderType>("Limit");
 
-  const currentPrice = data.ctx?.markPx || data.ctx?.midPx || 65000;
+  const liveMktPx = getLiveMarketPrice();
+  const currentPrice =
+    data.livePrice > 0
+      ? data.livePrice
+      : liveMktPx > 0
+      ? liveMktPx
+      : data.ctx?.markPx || data.ctx?.midPx || (isAlpacaEquity(coin) ? 150 : 65000);
 
   // Form inputs
   const [priceInput, setPriceInput] = useState<string>("");

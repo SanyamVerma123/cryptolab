@@ -43,6 +43,8 @@ import { restorePineIndicators } from "../lib/pinePersist";
 import { trackSelection } from "../lib/drawingPresets";
 import { mountMarket } from "../lib/marketData";
 
+import { AlpacaProvider } from "../lib/alpacaProvider";
+
 interface Props {
   coin: string;
   /** Vela timeframe id ('1','5','15','30','60','240','D','W'…). */
@@ -92,8 +94,11 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       autofocus: true,
       // Persist market, style, timezone, drawings and indicators to localStorage.
       persist: true,
-      // Hyperliquid perp/spot universe. No key, no server, no auth.
-      providers: { hyperliquid: () => new HyperliquidProvider() },
+      // Multi-provider feed: Hyperliquid (crypto) + Alpaca (US stocks & equities)
+      providers: {
+        hyperliquid: () => new HyperliquidProvider(),
+        alpaca: () => new AlpacaProvider(),
+      },
       drawings: true, // the full 84-tool surface with the shared toolbar
     });
     wsRef.current = ws;
