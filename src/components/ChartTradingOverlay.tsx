@@ -88,6 +88,95 @@ interface DragTargetState {
   isPosition?: boolean;
 }
 
+interface ScaleChipItem {
+  id: string;
+  price: number;
+  y: number;
+}
+
+/**
+ * Price Scale Overlap Avoidance (TradingView Replica):
+ * Detects if a price scale chip collides with the current market price block (~34px tall)
+ * or with adjacent price chips on the price scale, and calculates a vertical translateY offset
+ * so the chip sits cleanly stacked above or below without overlapping.
+ */
+function computeScaleChipOffsets(
+  items: ScaleChipItem[],
+  currentPrice: number,
+  currentPriceY: number | null
+): Record<string, number> {
+  const offsets: Record<string, number> = {};
+  if (!items.length) return offsets;
+
+  const CHIP_H = 20;
+  const HALF_CHIP = CHIP_H / 2; // 10px
+  const CP_HALF_H = 17; // half-height of current price block with countdown
+  const minDist = CHIP_H + 1; // 21px minimum clearance
+
+  const resolved = new Map<string, number>();
+
+  if (currentPriceY !== null) {
+    const topObstacle = currentPriceY - CP_HALF_H - HALF_CHIP; // e.g. currentPriceY - 27
+    const bottomObstacle = currentPriceY + CP_HALF_H + HALF_CHIP; // e.g. currentPriceY + 27
+
+    // Above market: price >= currentPrice, screen Y is smaller (closer to 0)
+    const aboveItems = items
+      .filter((it) => it.price >= currentPrice)
+      .sort((a, b) => a.price - b.price); // closest to current price first
+
+    let currentTopLimit = topObstacle;
+    for (const it of aboveItems) {
+      if (it.y > topObstacle) {
+        // Collides with or sits inside current price block -> stack above
+        resolved.set(it.id, currentTopLimit);
+        currentTopLimit -= minDist;
+      } else if (it.y > currentTopLimit) {
+        // Collides with previously stacked chip
+        resolved.set(it.id, currentTopLimit);
+        currentTopLimit -= minDist;
+      } else {
+        resolved.set(it.id, it.y);
+        currentTopLimit = it.y - minDist;
+      }
+    }
+
+    // Below market: price < currentPrice, screen Y is larger
+    const belowItems = items
+      .filter((it) => it.price < currentPrice)
+      .sort((a, b) => b.price - a.price); // closest to current price first
+
+    let currentBottomLimit = bottomObstacle;
+    for (const it of belowItems) {
+      if (it.y < bottomObstacle) {
+        // Collides with or sits inside current price block -> stack below
+        resolved.set(it.id, currentBottomLimit);
+        currentBottomLimit += minDist;
+      } else if (it.y < currentBottomLimit) {
+        // Collides with previously stacked chip
+        resolved.set(it.id, currentBottomLimit);
+        currentBottomLimit += minDist;
+      } else {
+        resolved.set(it.id, it.y);
+        currentBottomLimit = it.y + minDist;
+      }
+    }
+  } else {
+    for (const it of items) {
+      resolved.set(it.id, it.y);
+    }
+  }
+
+  for (const it of items) {
+    const targetY = resolved.get(it.id) ?? it.y;
+    const diff = targetY - it.y;
+    if (Math.abs(diff) >= 1) {
+      offsets[it.id] = Math.round(diff);
+    }
+  }
+
+  return offsets;
+}
+
 export function ChartTradingOverlay({ ws, coin, data }: Props) {
   const {
     tradingMode,
@@ -112,6 +201,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
   const [menu, setMenu] = useState<{ visible: boolean; x: number; y: number; price: number } | null>(null);
   const [alertFeedback, setAlertFeedback] = useState<string | null>(null);
   const [dragTarget, setDragTarget] = useState<DragTargetState | null>(null);
+  const [chipOffsets, setChipOffsets] = useState<Record<string, number>>({});
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const touchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -310,6 +400,49 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
           }
         }
         setAlertLines(nextAlerts);
+
+        // 4. Calculate Price Scale Overlap Offsets (Avoid colliding with Current Price Block)
+        const currentPriceY = currentPrice > 0 ? r.coords.priceToY(currentPrice, pane.scale, pane.bounds) : null;
+        const chipsToResolve: ScaleChipItem[] = [];
+
+        for (const pos of nextPositions) {
+          chipsToResolve.push({ id: `pos_${pos.id}`, price: pos.entryPrice, y: pos.y });
+          if (pos.tp && pos.tpY !== undefined) {
+            chipsToResolve.push({ id: `pos_tp_${pos.id}`, price: pos.tp, y: pos.tpY });
+          }
+          if (pos.sl && pos.slY !== undefined) {
+            chipsToResolve.push({ id: `pos_sl_${pos.id}`, price: pos.sl, y: pos.slY });
+          }
+        }
+
+        for (const ord of nextOrders) {
+          chipsToResolve.push({ id: `ord_${ord.id}`, price: ord.price, y: ord.y });
+          if (ord.tp && ord.tpY !== undefined) {
+            chipsToResolve.push({ id: `ord_tp_${ord.id}`, price: ord.tp, y: ord.tpY });
+          }
+          if (ord.sl && ord.slY !== undefined) {
+            chipsToResolve.push({ id: `ord_sl_${ord.id}`, price: ord.sl, y: ord.slY });
+          }
+        }
+
+        for (const alt of nextAlerts) {
+          chipsToResolve.push({ id: `alt_${alt.id}`, price: alt.price, y: alt.y });
+        }
+
+        if (dragTarget) {
+          chipsToResolve.push({ id: "drag_target", price: dragTarget.price, y: dragTarget.currentY });
+        }
+
+        const computedOffsets = computeScaleChipOffsets(chipsToResolve, currentPrice, currentPriceY);
+        setChipOffsets((prev) => {
+          const prevKeys = Object.keys(prev);
+          const nextKeys = Object.keys(computedOffsets);
+          if (prevKeys.length !== nextKeys.length) return computedOffsets;
+          for (const k of nextKeys) {
+            if (prev[k] !== computedOffsets[k]) return computedOffsets;
+          }
+          return prev;
+        });
       } catch {}
     };
 
@@ -488,15 +621,18 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
       });
     };
 
-    // Hold 850ms to activate drag
-    holdDragTimer.current = setTimeout(startDrag, 850);
+    // Hold 100ms to activate drag quickly (user request: 100ms out of 1000ms)
+    holdDragTimer.current = setTimeout(startDrag, 100);
 
     const onMove = (ev: PointerEvent) => {
       if (!dragActive) {
         const dist = Math.hypot(ev.clientX - startX, ev.clientY - startY);
-        if (dist > 8 && holdDragTimer.current) {
-          clearTimeout(holdDragTimer.current);
-          holdDragTimer.current = null;
+        if (dist > 4) {
+          if (holdDragTimer.current) {
+            clearTimeout(holdDragTimer.current);
+            holdDragTimer.current = null;
+          }
+          startDrag();
         }
         return;
       }
@@ -589,14 +725,18 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
       });
     };
 
-    holdDragTimer.current = setTimeout(startDrag, 850);
+    // Hold 100ms to activate bracket drag quickly without interfering with tap/cut
+    holdDragTimer.current = setTimeout(startDrag, 100);
 
     const onMove = (ev: PointerEvent) => {
       if (!dragActive) {
         const dist = Math.hypot(ev.clientX - startX, ev.clientY - startY);
-        if (dist > 8 && holdDragTimer.current) {
-          clearTimeout(holdDragTimer.current);
-          holdDragTimer.current = null;
+        if (dist > 4) {
+          if (holdDragTimer.current) {
+            clearTimeout(holdDragTimer.current);
+            holdDragTimer.current = null;
+          }
+          startDrag();
         }
         return;
       }
@@ -736,7 +876,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
                   title="Drag to add / adjust take profit"
                   onPointerDown={(e) => handleBracketPointerDown(e, pos.id, "tp", pos.side, true)}
                 >
-                  TP{pos.tp ? ` $${pos.tp.toLocaleString()}` : ""}
+                  TP
                 </span>
 
                 {/* [ SL ] Badge */}
@@ -745,11 +885,11 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
                   title="Drag to add / adjust stop loss"
                   onPointerDown={(e) => handleBracketPointerDown(e, pos.id, "sl", pos.side, true)}
                 >
-                  SL{pos.sl ? ` $${pos.sl.toLocaleString()}` : ""}
+                  SL
                 </span>
 
-                {/* [ 1 │ + 2.81 USD │ ✕ ] Main Position Pill (Image 1 & 5) */}
-                <div className={`tv-segmented-pill ${toneClass}`}>
+                {/* [ 1 │ + 19.88 USD │ ✕ ] Main Position Pill (Image 2 Replica) */}
+                <div className={`tv-segmented-pill position ${toneClass}`}>
                   <span className="tv-seg-qty">{pos.amount}</span>
                   <span className="tv-seg-divider" />
                   <span className={`tv-seg-pnl ${pos.pnlTone}`}>{pos.pnlStr}</span>
@@ -775,8 +915,15 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
                 </div>
               </div>
 
-              {/* Price Axis Entry Label (Image 1 & 5) */}
-              <div className={`tv-scale-price-chip ${toneClass}`}>
+              {/* Price Axis Entry Label (Image 2) */}
+              <div
+                className={`tv-scale-price-chip ${toneClass}`}
+                style={
+                  chipOffsets[`pos_${pos.id}`]
+                    ? { transform: `translateY(${chipOffsets[`pos_${pos.id}`]}px)` }
+                    : undefined
+                }
+              >
                 {pos.entryPrice.toLocaleString(undefined, {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
@@ -784,7 +931,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
               </div>
             </div>
 
-            {/* Separate Take Profit (Target) Line (Image 1: Green line with [ 1 │ + 47.42 USD │ ✕ ]) */}
+            {/* Separate Take Profit (Target) Line */}
             {pos.tp && pos.tpY !== undefined && (
               <div
                 className="tv-trade-line tp-target"
@@ -819,7 +966,14 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
                     </button>
                   </div>
                 </div>
-                <div className="tv-scale-price-chip tp">
+                <div
+                  className="tv-scale-price-chip tp"
+                  style={
+                    chipOffsets[`pos_tp_${pos.id}`]
+                      ? { transform: `translateY(${chipOffsets[`pos_tp_${pos.id}`]}px)` }
+                      : undefined
+                  }
+                >
                   {pos.tp.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
@@ -828,7 +982,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
               </div>
             )}
 
-            {/* Separate Stop Loss Line (Image 1: Orange line with [ 1 │ - 27.94 USD │ ✕ ]) */}
+            {/* Separate Stop Loss Line */}
             {pos.sl && pos.slY !== undefined && (
               <div
                 className="tv-trade-line sl-stop"
@@ -863,7 +1017,14 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
                     </button>
                   </div>
                 </div>
-                <div className="tv-scale-price-chip sl">
+                <div
+                  className="tv-scale-price-chip sl"
+                  style={
+                    chipOffsets[`pos_sl_${pos.id}`]
+                      ? { transform: `translateY(${chipOffsets[`pos_sl_${pos.id}`]}px)` }
+                      : undefined
+                  }
+                >
                   {pos.sl.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
@@ -898,7 +1059,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
                   title="Drag to add take profit"
                   onPointerDown={(e) => handleBracketPointerDown(e, ord.id, "tp", ord.side, false)}
                 >
-                  TP{ord.tp ? ` $${ord.tp.toLocaleString()}` : ""}
+                  TP
                 </span>
 
                 {/* [ SL ] dashed box */}
@@ -907,7 +1068,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
                   title="Drag to add stop loss"
                   onPointerDown={(e) => handleBracketPointerDown(e, ord.id, "sl", ord.side, false)}
                 >
-                  SL{ord.sl ? ` $${ord.sl.toLocaleString()}` : ""}
+                  SL
                 </span>
 
                 <div className="tv-bracket-connector" />
@@ -948,7 +1109,14 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
               </div>
 
               {/* Exact Limit Price on Axis */}
-              <div className={`tv-scale-price-chip ${toneClass}`}>
+              <div
+                className={`tv-scale-price-chip ${toneClass}`}
+                style={
+                  chipOffsets[`ord_${ord.id}`]
+                    ? { transform: `translateY(${chipOffsets[`ord_${ord.id}`]}px)` }
+                    : undefined
+                }
+              >
                 {ord.price.toLocaleString(undefined, {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
@@ -984,7 +1152,16 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
                     </button>
                   </div>
                 </div>
-                <div className="tv-scale-price-chip tp">{ord.tp.toFixed(2)}</div>
+                <div
+                  className="tv-scale-price-chip tp"
+                  style={
+                    chipOffsets[`ord_tp_${ord.id}`]
+                      ? { transform: `translateY(${chipOffsets[`ord_tp_${ord.id}`]}px)` }
+                      : undefined
+                  }
+                >
+                  {ord.tp.toFixed(2)}
+                </div>
               </div>
             )}
 
@@ -1016,7 +1193,16 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
                     </button>
                   </div>
                 </div>
-                <div className="tv-scale-price-chip sl">{ord.sl.toFixed(2)}</div>
+                <div
+                  className="tv-scale-price-chip sl"
+                  style={
+                    chipOffsets[`ord_sl_${ord.id}`]
+                      ? { transform: `translateY(${chipOffsets[`ord_sl_${ord.id}`]}px)` }
+                      : undefined
+                  }
+                >
+                  {ord.sl.toFixed(2)}
+                </div>
               </div>
             )}
           </div>
@@ -1045,7 +1231,14 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
               </button>
             </div>
           </div>
-          <div className="tv-scale-price-chip alert">
+          <div
+            className="tv-scale-price-chip alert"
+            style={
+              chipOffsets[`alt_${alt.id}`]
+                ? { transform: `translateY(${chipOffsets[`alt_${alt.id}`]}px)` }
+                : undefined
+            }
+          >
             {alt.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </div>
         </div>
@@ -1074,7 +1267,14 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
               <span className="tv-drag-sub">Release to set</span>
             </div>
           </div>
-          <div className="tv-scale-price-chip active">
+          <div
+            className="tv-scale-price-chip active"
+            style={
+              chipOffsets["drag_target"]
+                ? { transform: `translateY(${chipOffsets["drag_target"]}px)` }
+                : undefined
+            }
+          >
             {dragTarget.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </div>
         </div>

@@ -3088,11 +3088,25 @@ body.resizing-col .market-panel {
 .tv-line-solid {
   flex: 1 1 auto;
   height: 1.5px;
-  background: #089981;
+  background: #2962ff;
+}
+
+.tv-trade-line.position.long .tv-line-solid {
+  background: #2962ff;
 }
 
 .tv-trade-line.position.short .tv-line-solid {
   background: #f23645;
+}
+
+.tv-trade-line.tp-target .tv-line-solid,
+.tv-trade-line.tp-target .tv-line-solid.tp {
+  background: #089981;
+}
+
+.tv-trade-line.sl-stop .tv-line-solid,
+.tv-trade-line.sl-stop .tv-line-solid.sl {
+  background: #ff9800;
 }
 
 .tv-line-dashed {
@@ -3155,6 +3169,26 @@ body.resizing-col .market-panel {
   background: #2a2e39;
   color: #ffffff;
   border-color: #505664;
+}
+
+.tv-trade-line.position.long .tv-btn-reverse {
+  border-color: rgba(41, 98, 255, 0.6);
+  color: #2962ff;
+}
+
+.tv-trade-line.position.long .tv-btn-reverse:hover {
+  background: rgba(41, 98, 255, 0.2);
+  color: #ffffff;
+}
+
+.tv-trade-line.position.short .tv-btn-reverse {
+  border-color: rgba(242, 54, 69, 0.6);
+  color: #f23645;
+}
+
+.tv-trade-line.position.short .tv-btn-reverse:hover {
+  background: rgba(242, 54, 69, 0.2);
+  color: #ffffff;
 }
 
 /* [ TP ] & [ SL ] Brackets (Images 1, 2, 5) */
@@ -3224,6 +3258,65 @@ body.resizing-col .market-panel {
 
 .tv-segmented-pill.sell {
   border: 1px solid #f23645;
+}
+
+/* Position Pill: [ 1 | + 19.88 USD | ✕ ] - Full TradingView Replica (Image 2) */
+.tv-segmented-pill.position,
+.tv-segmented-pill.long {
+  background: #2962ff;
+  border: 1px solid #2962ff;
+  color: #ffffff;
+}
+
+.tv-segmented-pill.position.short,
+.tv-segmented-pill.short {
+  background: #f23645;
+  border: 1px solid #f23645;
+  color: #ffffff;
+}
+
+.tv-segmented-pill.long .tv-seg-qty,
+.tv-segmented-pill.position.long .tv-seg-qty {
+  background: rgba(0, 0, 0, 0.22);
+  color: #ffffff;
+  border-radius: 3px 0 0 3px;
+  line-height: 20px;
+}
+
+.tv-segmented-pill.short .tv-seg-qty,
+.tv-segmented-pill.position.short .tv-seg-qty {
+  background: rgba(0, 0, 0, 0.22);
+  color: #ffffff;
+  border-radius: 3px 0 0 3px;
+  line-height: 20px;
+}
+
+.tv-segmented-pill.long .tv-seg-pnl,
+.tv-segmented-pill.short .tv-seg-pnl {
+  color: #ffffff;
+  font-weight: 700;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.tv-segmented-pill.long .tv-seg-cancel,
+.tv-segmented-pill.short .tv-seg-cancel {
+  color: rgba(255, 255, 255, 0.88);
+  padding: 0 6px;
+  line-height: 20px;
+}
+
+.tv-segmented-pill.long .tv-seg-cancel:hover,
+.tv-segmented-pill.short .tv-seg-cancel:hover {
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.tv-segmented-pill.long .tv-seg-divider,
+.tv-segmented-pill.short .tv-seg-divider {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .tv-segmented-pill:hover {
@@ -3392,6 +3485,7 @@ body.resizing-col .market-panel {
   color: #ffffff;
   border-radius: 2px 0 0 2px;
   z-index: 20;
+  transition: transform 0.08s ease-out;
 }
 
 .tv-scale-price-chip.buy,
