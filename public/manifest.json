@@ -1,0 +1,19 @@
+{
+  "name": "Trade Pro — Crypto Trading Platform",
+  "short_name": "Trade Pro",
+  "description": "Professional Web-based Crypto Trading & Charting Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#131722",
+  "theme_color": "#131722",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512 any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "productivity"]
+}

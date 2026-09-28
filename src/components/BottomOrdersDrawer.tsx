@@ -85,15 +85,39 @@ export function BottomOrdersDrawer({
 
   // Real-time Unrealized PnL per position
   const getPosPnl = (pos: {
+    coin?: string;
     side: "BUY" | "SELL";
     entryPrice: number;
     amount: number;
+    currentPrice?: number;
+    unrealizedPl?: number;
+    unrealizedPlpc?: number;
   }) => {
-    if (!currentPrice || currentPrice <= 0 || !pos.entryPrice) return null;
+    // If Alpaca provided official authoritative unrealized PnL, use it when not on current coin chart
+    if (pos.unrealizedPl !== undefined && pos.unrealizedPlpc !== undefined && (pos.coin !== currentCoin || !currentPrice)) {
+      const pnlVal = pos.unrealizedPl;
+      const pnlPct = pos.unrealizedPlpc;
+      return {
+        val: pnlVal,
+        pct: pnlPct,
+        tone: pnlVal >= 0 ? "up" : "down",
+        strVal: `${pnlVal >= 0 ? "+" : ""}${pnlVal.toFixed(2)} USD`,
+        strPct: `${pnlVal >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%`,
+      };
+    }
+
+    const effectivePx =
+      pos.coin === currentCoin && currentPrice > 0
+        ? currentPrice
+        : pos.currentPrice && pos.currentPrice > 0
+        ? pos.currentPrice
+        : pos.entryPrice;
+
+    if (!effectivePx || !pos.entryPrice) return null;
     const diff =
       pos.side === "BUY"
-        ? currentPrice - pos.entryPrice
-        : pos.entryPrice - currentPrice;
+        ? effectivePx - pos.entryPrice
+        : pos.entryPrice - effectivePx;
     const pnlVal = diff * pos.amount;
     const pnlPct = (diff / pos.entryPrice) * 100;
     return {
@@ -408,8 +432,15 @@ export function BottomOrdersDrawer({
                     {displayedPositions.map((pos) => {
                       const pnl = getPosPnl(pos);
                       const isLong = pos.side === "BUY";
+                      const posCurrentPrice =
+                        pos.coin === currentCoin && currentPrice > 0
+                          ? currentPrice
+                          : pos.currentPrice && pos.currentPrice > 0
+                          ? pos.currentPrice
+                          : pos.entryPrice;
+
                       const tradeVal = pos.entryPrice * pos.amount;
-                      const mktVal = (currentPrice || pos.entryPrice) * pos.amount;
+                      const mktVal = pos.marketValue && pos.marketValue > 0 ? pos.marketValue : posCurrentPrice * pos.amount;
                       const lev = pos.leverage || 10;
                       const marginVal = pos.margin || tradeVal / lev;
 
@@ -442,7 +473,7 @@ export function BottomOrdersDrawer({
                               : "—"}
                           </td>
                           <td>
-                            {currentPrice.toLocaleString(undefined, {
+                            {posCurrentPrice.toLocaleString(undefined, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
                             })}

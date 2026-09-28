@@ -63,6 +63,44 @@ export default function App() {
     }
   });
 
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [isInstalled, setIsInstalled] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+    window.addEventListener("appinstalled", () => {
+      setIsInstalled(true);
+      setInstallPrompt(null);
+    });
+
+    if (window.matchMedia("(display-mode: standalone)").matches) {
+      setIsInstalled(true);
+    }
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (installPrompt) {
+      installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      if (outcome === "accepted") {
+        setIsInstalled(true);
+      }
+      setInstallPrompt(null);
+    } else {
+      alert(
+        "To install Trade Pro from Chrome:\n\n1. In Chrome, click the Install icon in the address bar (or Menu ⋮ -> 'Save and share' -> 'Install Trade Pro')\n2. Click 'Install' to add Trade Pro to your desktop or mobile home screen as a standalone app!\n3. Launch Trade Pro directly anytime with 1 click."
+      );
+    }
+  };
+
   const handlePanelResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -259,6 +297,18 @@ export default function App() {
             <span className="ctl-ico" aria-hidden="true">⚙</span>
             <span className="ctl-text">Settings</span>
           </button>
+
+          {/* PWA Install / Download App button */}
+          {!isInstalled && (
+            <button
+              className="series-select pwa-install-btn"
+              title="Install Trade Pro app to your desktop or mobile home screen"
+              onClick={handleInstallApp}
+            >
+              <span className="ctl-ico" aria-hidden="true">📥</span>
+              <span className="ctl-text">Install App</span>
+            </button>
+          )}
         </div>
       </header>
 

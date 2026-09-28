@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#131722"/>
+      <stop offset="100%" stop-color="#0b0e14"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2962ff"/>
+      <stop offset="100%" stop-color="#0039cb"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0ecb81"/>
+      <stop offset="100%" stop-color="#089981"/>
+    </linearGradient>
+  </defs>
+  <!-- Background with rounded corners -->
+  <rect width="512" height="512" rx="110" fill="url(#bgGrad)" stroke="#2962ff" stroke-width="8" stroke-opacity="0.3"/>
+  <!-- Candle 1 (Green Bullish) -->
+  <line x1="160" y1="140" x2="160" y2="380" stroke="#089981" stroke-width="6" stroke-linecap="round"/>
+  <rect x="142" y="190" width="36" height="140" rx="6" fill="url(#greenGrad)"/>
+  <!-- Candle 2 (Center Blue Main) -->
+  <line x1="256" y1="90" x2="256" y2="420" stroke="#2962ff" stroke-width="8" stroke-linecap="round"/>
+  <rect x="232" y="150" width="48" height="200" rx="8" fill="url(#accentGrad)" filter="drop-shadow(0 4px 12px rgba(41,98,255,0.5))"/>
+  <!-- Candle 3 (Red/Green Small) -->
+  <line x1="352" y1="180" x2="352" y2="350" stroke="#089981" stroke-width="6" stroke-linecap="round"/>
+  <rect x="334" y="220" width="36" height="90" rx="6" fill="url(#greenGrad)"/>
+  <!-- Brand text badge -->
+  <text x="256" y="465" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="34" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="4">TRADE PRO</text>
+</svg>

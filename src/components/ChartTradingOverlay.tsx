@@ -42,15 +42,19 @@ interface ProjectedPositionLine {
   amount: number;
   coin: string;
   y: number;
+  entryVisible: boolean;
   position: TradePosition;
   pnlStr: string;
   pnlTone: "up" | "down";
   tp?: number;
   tpY?: number;
   tpProfitStr?: string;
+  tpVisible?: boolean;
   sl?: number;
   slY?: number;
   slLossStr?: string;
+  slVisible?: boolean;
+  slTone?: "up" | "down";
 }
 
 interface ProjectedOrderLine {
@@ -61,13 +65,17 @@ interface ProjectedOrderLine {
   amount: number;
   coin: string;
   y: number;
+  entryVisible: boolean;
   order: Order;
   tp?: number;
   tpY?: number;
   tpProfitStr?: string;
+  tpVisible?: boolean;
   sl?: number;
   slY?: number;
   slLossStr?: string;
+  slVisible?: boolean;
+  slTone?: "up" | "down";
 }
 
 interface ProjectedAlertLine {
@@ -195,6 +203,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
   } = useOrders();
 
   const [plotEl, setPlotEl] = useState<HTMLElement | null>(null);
+  const [paneBounds, setPaneBounds] = useState<{ top: number; height: number }>({ top: 0, height: 400 });
   const [orderLines, setOrderLines] = useState<ProjectedOrderLine[]>([]);
   const [positionLines, setPositionLines] = useState<ProjectedPositionLine[]>([]);
   const [alertLines, setAlertLines] = useState<ProjectedAlertLine[]>([]);
@@ -281,45 +290,70 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
         let pane = r.scene.panes.get("price") || [...r.scene.panes.values()][0];
         if (!pane?.scale || !pane?.bounds) return;
 
-        const dataH = r.coords.height || 400;
-        const currentPair = `${coin}/USD`;
+        const paneTop = pane.bounds.top ?? 0;
+        const paneH = pane.bounds.height ?? 400;
+        const paneBottom = paneTop + paneH;
 
-        // 1. Open Positions (Active Trades)
-        const activePositions = positions.filter(
-          (p) => p.pair === currentPair || p.coin === coin
-        );
+        setPaneBounds((prev) => (prev.top === paneTop && prev.height === paneH ? prev : { top: paneTop, height: paneH }));
+
+        const normCoin = coin.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+        // 1. Open Positions (Active Trades) - normalize symbol matching
+        const activePositions = positions.filter((p) => {
+          const pCoin = (p.coin || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+          const pPair = (p.pair || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+          return pCoin === normCoin || pPair.includes(normCoin);
+        });
         const nextPositions: ProjectedPositionLine[] = [];
 
         for (const pos of activePositions) {
-          const y = r.coords.priceToY(pos.entryPrice, pane.scale, pane.bounds);
-          if (y >= 0 && y <= dataH) {
-            let pnlStr = "--";
-            let tone: "up" | "down" = "up";
-            if (currentPrice > 0) {
-              const diff = pos.side === "BUY" ? currentPrice - pos.entryPrice : pos.entryPrice - currentPrice;
-              const pnlVal = diff * pos.amount;
-              tone = pnlVal >= 0 ? "up" : "down";
-              pnlStr = `${pnlVal >= 0 ? "+" : ""}${pnlVal.toFixed(2)} USD`;
-            }
+          const rawY = r.coords.priceToY(pos.entryPrice, pane.scale, pane.bounds);
+          const y = rawY - paneTop;
+          const entryVisible = rawY >= paneTop && rawY <= paneBottom;
 
-            // Take Profit Line
-            let tpY: number | undefined;
-            let tpProfitStr: string | undefined;
-            if (pos.takeProfit && pos.takeProfit > 0) {
-              tpY = r.coords.priceToY(pos.takeProfit, pane.scale, pane.bounds);
-              const tpDiff = Math.abs(pos.takeProfit - pos.entryPrice);
-              tpProfitStr = `+ ${(tpDiff * pos.amount).toFixed(2)} USD`;
-            }
+          let pnlStr = "--";
+          let tone: "up" | "down" = "up";
+          if (currentPrice > 0) {
+            const diff = pos.side === "BUY" ? currentPrice - pos.entryPrice : pos.entryPrice - currentPrice;
+            const pnlVal = diff * pos.amount;
+            tone = pnlVal >= 0 ? "up" : "down";
+            pnlStr = `${pnlVal >= 0 ? "+" : ""}${pnlVal.toFixed(2)} USD`;
+          }
 
-            // Stop Loss Line
-            let slY: number | undefined;
-            let slLossStr: string | undefined;
-            if (pos.stopLoss && pos.stopLoss > 0) {
-              slY = r.coords.priceToY(pos.stopLoss, pane.scale, pane.bounds);
-              const slDiff = Math.abs(pos.entryPrice - pos.stopLoss);
-              slLossStr = `- ${(slDiff * pos.amount).toFixed(2)} USD`;
-            }
+          // Take Profit Line
+          let tpY: number | undefined;
+          let tpProfitStr: string | undefined;
+          let tpVisible = false;
+          if (pos.takeProfit && pos.takeProfit > 0) {
+            const rawTpY = r.coords.priceToY(pos.takeProfit, pane.scale, pane.bounds);
+            tpY = rawTpY - paneTop;
+            tpVisible = rawTpY >= paneTop && rawTpY <= paneBottom;
+            const tpDiff = Math.abs(pos.takeProfit - pos.entryPrice);
+            tpProfitStr = `+ ${(tpDiff * pos.amount).toFixed(2)} USD`;
+          }
 
+          // Stop Loss Line (with Trailing Stop Loss in profit support)
+          let slY: number | undefined;
+          let slLossStr: string | undefined;
+          let slVisible = false;
+          let slTone: "up" | "down" = "down";
+          if (pos.stopLoss && pos.stopLoss > 0) {
+            const rawSlY = r.coords.priceToY(pos.stopLoss, pane.scale, pane.bounds);
+            slY = rawSlY - paneTop;
+            slVisible = rawSlY >= paneTop && rawSlY <= paneBottom;
+            const slDiff = pos.side === "BUY" ? pos.stopLoss - pos.entryPrice : pos.entryPrice - pos.stopLoss;
+            const slVal = slDiff * pos.amount;
+            if (slVal >= 0) {
+              slTone = "up";
+              slLossStr = `+ ${slVal.toFixed(2)} USD`;
+            } else {
+              slTone = "down";
+              slLossStr = `- ${Math.abs(slVal).toFixed(2)} USD`;
+            }
+          }
+
+          // Only skip if entry, TP, and SL are all outside the visible price pane
+          if (entryVisible || tpVisible || slVisible) {
             nextPositions.push({
               id: pos.id,
               side: pos.side,
@@ -327,47 +361,71 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
               amount: pos.amount,
               coin: pos.coin,
               y,
+              entryVisible,
               position: pos,
               pnlStr,
               pnlTone: tone,
               tp: pos.takeProfit,
               tpY,
               tpProfitStr,
+              tpVisible,
               sl: pos.stopLoss,
               slY,
               slLossStr,
+              slVisible,
+              slTone,
             });
           }
         }
         setPositionLines(nextPositions);
 
-        // 2. Open Orders (Pending Limit Orders)
-        const activeOrders = orders.filter(
-          (o) => o.status === "Open" && (o.pair === currentPair || o.coin === coin)
-        );
+        // 2. Open Orders (Pending Limit Orders) - normalize symbol matching
+        const activeOrders = orders.filter((o) => {
+          if (o.status !== "Open") return false;
+          const oCoin = (o.coin || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+          const oPair = (o.pair || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+          return oCoin === normCoin || oPair.includes(normCoin);
+        });
         const nextOrders: ProjectedOrderLine[] = [];
 
         for (const ord of activeOrders) {
           if (dragTarget && dragTarget.id === ord.id && dragTarget.type === "order") continue;
 
-          const y = r.coords.priceToY(ord.price, pane.scale, pane.bounds);
-          if (y >= 0 && y <= dataH) {
-            let tpY: number | undefined;
-            let tpProfitStr: string | undefined;
-            if (ord.takeProfit && ord.takeProfit > 0) {
-              tpY = r.coords.priceToY(ord.takeProfit, pane.scale, pane.bounds);
-              const tpDiff = Math.abs(ord.takeProfit - ord.price);
-              tpProfitStr = `+ ${(tpDiff * ord.amount).toFixed(2)} USD`;
-            }
+          const rawY = r.coords.priceToY(ord.price, pane.scale, pane.bounds);
+          const y = rawY - paneTop;
+          const entryVisible = rawY >= paneTop && rawY <= paneBottom;
 
-            let slY: number | undefined;
-            let slLossStr: string | undefined;
-            if (ord.stopLoss && ord.stopLoss > 0) {
-              slY = r.coords.priceToY(ord.stopLoss, pane.scale, pane.bounds);
-              const slDiff = Math.abs(ord.price - ord.stopLoss);
-              slLossStr = `- ${(slDiff * ord.amount).toFixed(2)} USD`;
-            }
+          let tpY: number | undefined;
+          let tpProfitStr: string | undefined;
+          let tpVisible = false;
+          if (ord.takeProfit && ord.takeProfit > 0) {
+            const rawTpY = r.coords.priceToY(ord.takeProfit, pane.scale, pane.bounds);
+            tpY = rawTpY - paneTop;
+            tpVisible = rawTpY >= paneTop && rawTpY <= paneBottom;
+            const tpDiff = Math.abs(ord.takeProfit - ord.price);
+            tpProfitStr = `+ ${(tpDiff * ord.amount).toFixed(2)} USD`;
+          }
 
+          let slY: number | undefined;
+          let slLossStr: string | undefined;
+          let slVisible = false;
+          let slTone: "up" | "down" = "down";
+          if (ord.stopLoss && ord.stopLoss > 0) {
+            const rawSlY = r.coords.priceToY(ord.stopLoss, pane.scale, pane.bounds);
+            slY = rawSlY - paneTop;
+            slVisible = rawSlY >= paneTop && rawSlY <= paneBottom;
+            const slDiff = ord.side === "BUY" ? ord.stopLoss - ord.price : ord.price - ord.stopLoss;
+            const slVal = slDiff * ord.amount;
+            if (slVal >= 0) {
+              slTone = "up";
+              slLossStr = `+ ${slVal.toFixed(2)} USD`;
+            } else {
+              slTone = "down";
+              slLossStr = `- ${Math.abs(slVal).toFixed(2)} USD`;
+            }
+          }
+
+          if (entryVisible || tpVisible || slVisible) {
             nextOrders.push({
               id: ord.id,
               type: ord.type === "Stop-Limit" ? "stop" : "limit",
@@ -376,51 +434,58 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
               amount: ord.amount,
               coin: ord.coin,
               y,
+              entryVisible,
               order: ord,
               tp: ord.takeProfit,
               tpY,
               tpProfitStr,
+              tpVisible,
               sl: ord.stopLoss,
               slY,
               slLossStr,
+              slVisible,
+              slTone,
             });
           }
         }
         setOrderLines(nextOrders);
 
         // 3. Price Alerts
-        const activeAlerts = alerts.filter(
-          (a) => a.pair === currentPair || a.coin === coin
-        );
+        const activeAlerts = alerts.filter((a) => {
+          const aCoin = (a.coin || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+          const aPair = (a.pair || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+          return aCoin === normCoin || aPair.includes(normCoin);
+        });
         const nextAlerts: ProjectedAlertLine[] = [];
         for (const alt of activeAlerts) {
-          const y = r.coords.priceToY(alt.price, pane.scale, pane.bounds);
-          if (y >= 0 && y <= dataH) {
-            nextAlerts.push({ id: alt.id, price: alt.price, y });
+          const rawY = r.coords.priceToY(alt.price, pane.scale, pane.bounds);
+          if (rawY >= paneTop && rawY <= paneBottom) {
+            nextAlerts.push({ id: alt.id, price: alt.price, y: rawY - paneTop });
           }
         }
         setAlertLines(nextAlerts);
 
         // 4. Calculate Price Scale Overlap Offsets (Avoid colliding with Current Price Block)
-        const currentPriceY = currentPrice > 0 ? r.coords.priceToY(currentPrice, pane.scale, pane.bounds) : null;
+        const rawCurrentPriceY = currentPrice > 0 ? r.coords.priceToY(currentPrice, pane.scale, pane.bounds) : null;
+        const currentPriceY = rawCurrentPriceY !== null ? rawCurrentPriceY - paneTop : null;
         const chipsToResolve: ScaleChipItem[] = [];
 
         for (const pos of nextPositions) {
-          chipsToResolve.push({ id: `pos_${pos.id}`, price: pos.entryPrice, y: pos.y });
-          if (pos.tp && pos.tpY !== undefined) {
+          if (pos.entryVisible) chipsToResolve.push({ id: `pos_${pos.id}`, price: pos.entryPrice, y: pos.y });
+          if (pos.tp && pos.tpY !== undefined && pos.tpVisible) {
             chipsToResolve.push({ id: `pos_tp_${pos.id}`, price: pos.tp, y: pos.tpY });
           }
-          if (pos.sl && pos.slY !== undefined) {
+          if (pos.sl && pos.slY !== undefined && pos.slVisible) {
             chipsToResolve.push({ id: `pos_sl_${pos.id}`, price: pos.sl, y: pos.slY });
           }
         }
 
         for (const ord of nextOrders) {
-          chipsToResolve.push({ id: `ord_${ord.id}`, price: ord.price, y: ord.y });
-          if (ord.tp && ord.tpY !== undefined) {
+          if (ord.entryVisible) chipsToResolve.push({ id: `ord_${ord.id}`, price: ord.price, y: ord.y });
+          if (ord.tp && ord.tpY !== undefined && ord.tpVisible) {
             chipsToResolve.push({ id: `ord_tp_${ord.id}`, price: ord.tp, y: ord.tpY });
           }
-          if (ord.sl && ord.slY !== undefined) {
+          if (ord.sl && ord.slY !== undefined && ord.slVisible) {
             chipsToResolve.push({ id: `ord_sl_${ord.id}`, price: ord.sl, y: ord.slY });
           }
         }
@@ -606,7 +671,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
         if (navigator.vibrate) navigator.vibrate(25);
       } catch {}
 
-      const initY = startY - rect.top;
+      const initY = (startY - rect.top) - paneBounds.top;
       const initPrice = getPriceAtY(startY) ?? ord.price;
 
       setDragTarget({
@@ -638,7 +703,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
       }
 
       ev.preventDefault();
-      const cy = ev.clientY - rect.top;
+      const cy = (ev.clientY - rect.top) - paneBounds.top;
       const px = getPriceAtY(ev.clientY);
       setDragTarget((prev) => {
         if (!prev) return null;
@@ -679,7 +744,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
     window.addEventListener("pointerup", onUp);
   };
 
-  // DRAG TP OR SL BADGE: Requires 850ms hold delay so taps on ✕ never accidentally move
+  // DRAG TP OR SL BADGE: Quick 100ms hold delay so taps on ✕ never accidentally move
   const handleBracketPointerDown = (
     e: React.PointerEvent,
     targetId: string,
@@ -710,7 +775,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
         if (navigator.vibrate) navigator.vibrate(25);
       } catch {}
 
-      const initY = startY - rect.top;
+      const initY = (startY - rect.top) - paneBounds.top;
       const initPrice = getPriceAtY(startY) ?? currentPrice;
 
       setDragTarget({
@@ -742,7 +807,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
       }
 
       ev.preventDefault();
-      const cy = ev.clientY - rect.top;
+      const cy = (ev.clientY - rect.top) - paneBounds.top;
       const px = getPriceAtY(ev.clientY);
       setDragTarget((prev) => {
         if (!prev) return null;
@@ -768,13 +833,33 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
       if (dragActive) {
         const finalPx = getPriceAtY(ev.clientY);
         if (finalPx && finalPx > 0) {
-          const targetPrice = parseFloat(finalPx.toFixed(2));
-          if (bracketType === "tp") {
-            setOrderTP(targetId, targetPrice);
-            setAlertFeedback(`Take Profit set to $${targetPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
+          const rawTarget = parseFloat(finalPx.toFixed(2));
+          let entryPrice = 0;
+          if (isPos) {
+            const p = positions.find((pos) => pos.id === targetId);
+            if (p) entryPrice = p.entryPrice;
           } else {
-            setOrderSL(targetId, targetPrice);
-            setAlertFeedback(`Stop Loss set to $${targetPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
+            const o = orders.find((ord) => ord.id === targetId);
+            if (o) entryPrice = o.price;
+          }
+
+          if (bracketType === "tp") {
+            // Trailing / Target Physics: TP cannot go below entry for BUY, or above entry for SELL
+            let clampedTarget = rawTarget;
+            if (entryPrice > 0) {
+              if (side === "BUY") {
+                clampedTarget = Math.max(entryPrice, rawTarget);
+              } else {
+                clampedTarget = Math.min(entryPrice, rawTarget);
+              }
+            }
+            setOrderTP(targetId, clampedTarget);
+            setAlertFeedback(`Take Profit set to $${clampedTarget.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
+          } else {
+            // Stop Loss can move past entry price into profit (Trailing Stop Loss)
+            setOrderSL(targetId, rawTarget);
+            const isProfit = entryPrice > 0 ? (side === "BUY" ? rawTarget > entryPrice : rawTarget < entryPrice) : false;
+            setAlertFeedback(`Stop Loss ${isProfit ? "(Trailing Profit) " : ""}set to $${rawTarget.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
           }
           setTimeout(() => setAlertFeedback(null), 3500);
         }
@@ -834,7 +919,15 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
   };
 
   const overlayContent = (
-    <div ref={containerRef} className="chart-trading-overlay inside-plot">
+    <div
+      ref={containerRef}
+      className="chart-trading-overlay inside-plot"
+      style={{
+        top: `${paneBounds.top}px`,
+        height: `${paneBounds.height}px`,
+        overflow: "hidden",
+      }}
+    >
       {/* ====================================================================
           1. OPEN TRADES (POSITIONS) — EXACT TRADINGVIEW (IMAGES 1 & 5)
           ==================================================================== */}
@@ -844,95 +937,97 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
 
         return (
           <div key={pos.id}>
-            {/* Position Entry Line */}
-            <div
-              className={`tv-trade-line position ${toneClass}`}
-              style={{ top: `${pos.y}px` }}
-            >
-              <div className="tv-line-solid" />
+            {/* Position Entry Line - conditionally visible independently */}
+            {pos.entryVisible && (
+              <div
+                className={`tv-trade-line position ${toneClass}`}
+                style={{ top: `${pos.y}px` }}
+              >
+                <div className="tv-line-solid" />
 
-              <div className="tv-line-badge-group">
-                {/* [ ⇅ ] Reverse Position Button */}
-                <button
-                  type="button"
-                  className="tv-btn-reverse"
-                  title="Reverse Position"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const res = reversePosition(pos.id, currentPrice);
-                    if (res.ok) {
-                      setAlertFeedback(`Reversed position to ${isLong ? "SHORT" : "LONG"}`);
-                      setTimeout(() => setAlertFeedback(null), 3500);
-                    }
-                  }}
-                >
-                  ⇅
-                </button>
-
-                {/* [ TP ] Badge */}
-                <span
-                  className={`tv-bracket-badge tp ${pos.tp ? "active" : ""}`}
-                  title="Drag to add / adjust take profit"
-                  onPointerDown={(e) => handleBracketPointerDown(e, pos.id, "tp", pos.side, true)}
-                >
-                  TP
-                </span>
-
-                {/* [ SL ] Badge */}
-                <span
-                  className={`tv-bracket-badge sl ${pos.sl ? "active" : ""}`}
-                  title="Drag to add / adjust stop loss"
-                  onPointerDown={(e) => handleBracketPointerDown(e, pos.id, "sl", pos.side, true)}
-                >
-                  SL
-                </span>
-
-                {/* [ 1 │ + 19.88 USD │ ✕ ] Main Position Pill (Image 2 Replica) */}
-                <div className={`tv-segmented-pill position ${toneClass}`}>
-                  <span className="tv-seg-qty">{pos.amount}</span>
-                  <span className="tv-seg-divider" />
-                  <span className={`tv-seg-pnl ${pos.pnlTone}`}>{pos.pnlStr}</span>
-                  <span className="tv-seg-divider" />
+                <div className="tv-line-badge-group">
+                  {/* [ ⇅ ] Reverse Position Button */}
                   <button
                     type="button"
-                    className="tv-seg-cancel"
-                    title="Close position"
+                    className="tv-btn-reverse"
+                    title="Reverse Position"
                     onPointerDown={(e) => e.stopPropagation()}
-                    onPointerUp={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
-                      e.preventDefault();
-                      const res = closePosition(pos.id, currentPrice);
+                      const res = reversePosition(pos.id, currentPrice);
                       if (res.ok) {
-                        setAlertFeedback(`Closed position @ $${currentPrice.toLocaleString()}`);
+                        setAlertFeedback(`Reversed position to ${isLong ? "SHORT" : "LONG"}`);
                         setTimeout(() => setAlertFeedback(null), 3500);
                       }
                     }}
                   >
-                    ✕
+                    ⇅
                   </button>
+
+                  {/* [ TP ] Badge */}
+                  <span
+                    className={`tv-bracket-badge tp ${pos.tp ? "active" : ""}`}
+                    title="Drag to add / adjust take profit"
+                    onPointerDown={(e) => handleBracketPointerDown(e, pos.id, "tp", pos.side, true)}
+                  >
+                    TP
+                  </span>
+
+                  {/* [ SL ] Badge */}
+                  <span
+                    className={`tv-bracket-badge sl ${pos.sl ? "active" : ""}`}
+                    title="Drag to add / adjust stop loss"
+                    onPointerDown={(e) => handleBracketPointerDown(e, pos.id, "sl", pos.side, true)}
+                  >
+                    SL
+                  </span>
+
+                  {/* [ 1 │ + 19.88 USD │ ✕ ] Main Position Pill (Image 2 Replica) */}
+                  <div className={`tv-segmented-pill position ${toneClass}`}>
+                    <span className="tv-seg-qty">{pos.amount}</span>
+                    <span className="tv-seg-divider" />
+                    <span className={`tv-seg-pnl ${pos.pnlTone}`}>{pos.pnlStr}</span>
+                    <span className="tv-seg-divider" />
+                    <button
+                      type="button"
+                      className="tv-seg-cancel"
+                      title="Close position"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onPointerUp={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        const res = closePosition(pos.id, currentPrice);
+                        if (res.ok) {
+                          setAlertFeedback(`Closed position @ $${currentPrice.toLocaleString()}`);
+                          setTimeout(() => setAlertFeedback(null), 3500);
+                        }
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                {/* Price Axis Entry Label (Image 2) */}
+                <div
+                  className={`tv-scale-price-chip ${toneClass}`}
+                  style={
+                    chipOffsets[`pos_${pos.id}`]
+                      ? { transform: `translateY(${chipOffsets[`pos_${pos.id}`]}px)` }
+                      : undefined
+                  }
+                >
+                  {pos.entryPrice.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
                 </div>
               </div>
+            )}
 
-              {/* Price Axis Entry Label (Image 2) */}
-              <div
-                className={`tv-scale-price-chip ${toneClass}`}
-                style={
-                  chipOffsets[`pos_${pos.id}`]
-                    ? { transform: `translateY(${chipOffsets[`pos_${pos.id}`]}px)` }
-                    : undefined
-                }
-              >
-                {pos.entryPrice.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </div>
-            </div>
-
-            {/* Separate Take Profit (Target) Line */}
-            {pos.tp && pos.tpY !== undefined && (
+            {/* Separate Take Profit (Target) Line - independent visibility */}
+            {pos.tp && pos.tpY !== undefined && pos.tpVisible && (
               <div
                 className="tv-trade-line tp-target"
                 style={{ top: `${pos.tpY}px` }}
@@ -982,10 +1077,10 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
               </div>
             )}
 
-            {/* Separate Stop Loss Line */}
-            {pos.sl && pos.slY !== undefined && (
+            {/* Separate Stop Loss Line - independent visibility & trailing profit style */}
+            {pos.sl && pos.slY !== undefined && pos.slVisible && (
               <div
-                className="tv-trade-line sl-stop"
+                className={`tv-trade-line sl-stop ${pos.slTone === "up" ? "trailing-profit" : ""}`}
                 style={{ top: `${pos.slY}px` }}
               >
                 <div className="tv-line-solid sl" />
@@ -1045,87 +1140,89 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
 
         return (
           <div key={ord.id}>
-            {/* Limit Order Line */}
-            <div
-              className={`tv-trade-line limit ${toneClass}`}
-              style={{ top: `${ord.y}px` }}
-            >
-              <div className="tv-line-dashed" />
+            {/* Limit Order Line - independent visibility */}
+            {ord.entryVisible && (
+              <div
+                className={`tv-trade-line limit ${toneClass}`}
+                style={{ top: `${ord.y}px` }}
+              >
+                <div className="tv-line-dashed" />
 
-              <div className="tv-line-badge-group">
-                {/* [ TP ] dashed box */}
-                <span
-                  className={`tv-bracket-badge tp ${ord.tp ? "active" : ""}`}
-                  title="Drag to add take profit"
-                  onPointerDown={(e) => handleBracketPointerDown(e, ord.id, "tp", ord.side, false)}
-                >
-                  TP
-                </span>
-
-                {/* [ SL ] dashed box */}
-                <span
-                  className={`tv-bracket-badge sl ${ord.sl ? "active" : ""}`}
-                  title="Drag to add stop loss"
-                  onPointerDown={(e) => handleBracketPointerDown(e, ord.id, "sl", ord.side, false)}
-                >
-                  SL
-                </span>
-
-                <div className="tv-bracket-connector" />
-
-                {/* Segmented Pill: [ {qty} │ {Buy limit} │ ✕ ] — Move requires hold or drag */}
-                <div
-                  className={`tv-segmented-pill ${toneClass}`}
-                  title="Hold to move limit price"
-                  onPointerDown={(e) => handleOrderPointerDown(e, ord.order)}
-                >
-                  <span className="tv-seg-qty">{ord.amount}</span>
-                  <span className="tv-seg-divider" />
-                  <span className="tv-seg-type">
-                    {ord.type === "stop"
-                      ? "Stop"
-                      : isBuy
-                      ? "Buy limit"
-                      : "Sell limit"}
-                  </span>
-                  <span className="tv-seg-divider" />
-                  <button
-                    type="button"
-                    className="tv-seg-cancel"
-                    title="Cancel order"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onPointerUp={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      cancelOrder(ord.id);
-                      setAlertFeedback(`Canceled ${ord.side} order @ $${ord.price.toLocaleString()}`);
-                      setTimeout(() => setAlertFeedback(null), 3000);
-                    }}
+                <div className="tv-line-badge-group">
+                  {/* [ TP ] dashed box */}
+                  <span
+                    className={`tv-bracket-badge tp ${ord.tp ? "active" : ""}`}
+                    title="Drag to add take profit"
+                    onPointerDown={(e) => handleBracketPointerDown(e, ord.id, "tp", ord.side, false)}
                   >
-                    ✕
-                  </button>
+                    TP
+                  </span>
+
+                  {/* [ SL ] dashed box */}
+                  <span
+                    className={`tv-bracket-badge sl ${ord.sl ? "active" : ""}`}
+                    title="Drag to add stop loss"
+                    onPointerDown={(e) => handleBracketPointerDown(e, ord.id, "sl", ord.side, false)}
+                  >
+                    SL
+                  </span>
+
+                  <div className="tv-bracket-connector" />
+
+                  {/* Segmented Pill: [ {qty} │ {Buy limit} │ ✕ ] — Move requires hold or drag */}
+                  <div
+                    className={`tv-segmented-pill ${toneClass}`}
+                    title="Hold to move limit price"
+                    onPointerDown={(e) => handleOrderPointerDown(e, ord.order)}
+                  >
+                    <span className="tv-seg-qty">{ord.amount}</span>
+                    <span className="tv-seg-divider" />
+                    <span className="tv-seg-type">
+                      {ord.type === "stop"
+                        ? "Stop"
+                        : isBuy
+                        ? "Buy limit"
+                        : "Sell limit"}
+                    </span>
+                    <span className="tv-seg-divider" />
+                    <button
+                      type="button"
+                      className="tv-seg-cancel"
+                      title="Cancel order"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onPointerUp={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        cancelOrder(ord.id);
+                        setAlertFeedback(`Canceled ${ord.side} order @ $${ord.price.toLocaleString()}`);
+                        setTimeout(() => setAlertFeedback(null), 3000);
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                {/* Exact Limit Price on Axis */}
+                <div
+                  className={`tv-scale-price-chip ${toneClass}`}
+                  style={
+                    chipOffsets[`ord_${ord.id}`]
+                      ? { transform: `translateY(${chipOffsets[`ord_${ord.id}`]}px)` }
+                      : undefined
+                  }
+                >
+                  {ord.price.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
                 </div>
               </div>
+            )}
 
-              {/* Exact Limit Price on Axis */}
-              <div
-                className={`tv-scale-price-chip ${toneClass}`}
-                style={
-                  chipOffsets[`ord_${ord.id}`]
-                    ? { transform: `translateY(${chipOffsets[`ord_${ord.id}`]}px)` }
-                    : undefined
-                }
-              >
-                {ord.price.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </div>
-            </div>
-
-            {/* Separate Limit TP Line if set */}
-            {ord.tp && ord.tpY !== undefined && (
+            {/* Separate Limit TP Line if set - independent visibility */}
+            {ord.tp && ord.tpY !== undefined && ord.tpVisible && (
               <div className="tv-trade-line tp-target" style={{ top: `${ord.tpY}px` }}>
                 <div className="tv-line-solid tp" />
                 <div className="tv-line-badge-group">
@@ -1165,9 +1262,12 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
               </div>
             )}
 
-            {/* Separate Limit SL Line if set */}
-            {ord.sl && ord.slY !== undefined && (
-              <div className="tv-trade-line sl-stop" style={{ top: `${ord.slY}px` }}>
+            {/* Separate Limit SL Line if set - independent visibility & trailing profit style */}
+            {ord.sl && ord.slY !== undefined && ord.slVisible && (
+              <div
+                className={`tv-trade-line sl-stop ${ord.slTone === "up" ? "trailing-profit" : ""}`}
+                style={{ top: `${ord.slY}px` }}
+              >
                 <div className="tv-line-solid sl" />
                 <div className="tv-line-badge-group">
                   <div

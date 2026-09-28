@@ -61,6 +61,10 @@ export interface TradePosition {
   margin?: number;
   liquidationPrice?: number;
   isAlpaca?: boolean;
+  currentPrice?: number;
+  unrealizedPl?: number;
+  unrealizedPlpc?: number;
+  marketValue?: number;
 }
 
 export interface PriceAlert {
@@ -221,6 +225,23 @@ export function setTradingMode(mode: TradingMode): void {
   notify();
 }
 
+export function normalizeAlpacaSymbol(symbol: string): { coin: string; pair: string } {
+  const clean = symbol.replace("CRYPTO:", "").trim().toUpperCase();
+  if (clean.includes("/")) {
+    const [c, quote] = clean.split("/");
+    return { coin: c, pair: `${c}/${quote || "USD"}` };
+  }
+  if (clean.endsWith("USD") && clean.length > 3) {
+    const c = clean.slice(0, -3);
+    return { coin: c, pair: `${c}/USD` };
+  }
+  if (clean.endsWith("USDT") && clean.length > 4) {
+    const c = clean.slice(0, -4);
+    return { coin: c, pair: `${c}/USDT` };
+  }
+  return { coin: clean, pair: `${clean}/USD` };
+}
+
 /**
  * Sync with Alpaca API when mode is 'alpaca'
  */
@@ -245,9 +266,13 @@ export async function syncAlpacaTradingState(): Promise<boolean> {
     const posRes = await getAlpacaPositions();
     if (posRes.ok && posRes.positions) {
       gAlpacaPositions = posRes.positions.map((p) => {
-        const coin = p.symbol.split("/")[0];
+        const { coin, pair } = normalizeAlpacaSymbol(p.symbol);
         const entryPrice = parseFloat(p.avg_entry_price || "0");
         const amount = parseFloat(p.qty || "0");
+        const curPx = parseFloat(p.current_price || "0");
+        const upl = parseFloat(p.unrealized_pl || "0");
+        const uplpc = parseFloat(p.unrealized_plpc || "0") * 100;
+        const mktVal = parseFloat(p.market_value || "0");
         return {
           id: p.asset_id || "alpaca_pos_" + p.symbol,
           date: new Date().toLocaleString([], {
@@ -256,13 +281,17 @@ export async function syncAlpacaTradingState(): Promise<boolean> {
             hour: "2-digit",
             minute: "2-digit",
           }),
-          pair: p.symbol,
+          pair,
           coin,
           side: p.side === "long" ? "BUY" : "SELL",
           entryPrice,
           amount,
           total: entryPrice * amount,
           isAlpaca: true,
+          currentPrice: curPx > 0 ? curPx : entryPrice,
+          unrealizedPl: upl,
+          unrealizedPlpc: uplpc,
+          marketValue: mktVal > 0 ? mktVal : (curPx > 0 ? curPx * amount : entryPrice * amount),
         };
       });
     }
@@ -271,7 +300,7 @@ export async function syncAlpacaTradingState(): Promise<boolean> {
     const ordRes = await getAlpacaOrders();
     if (ordRes.ok && ordRes.orders) {
       gAlpacaOrders = ordRes.orders.map((o) => {
-        const coin = o.symbol.split("/")[0];
+        const { coin, pair } = normalizeAlpacaSymbol(o.symbol);
         const price = parseFloat(o.limit_price || o.stop_price || "0");
         const amount = parseFloat(o.qty || "0");
         return {
@@ -282,7 +311,7 @@ export async function syncAlpacaTradingState(): Promise<boolean> {
             hour: "2-digit",
             minute: "2-digit",
           }),
-          pair: o.symbol,
+          pair,
           coin,
           type: o.type === "limit" ? "Limit" : o.type === "market" ? "Market" : "Stop-Limit",
           side: o.side.toUpperCase() as OrderSide,
@@ -293,6 +322,7 @@ export async function syncAlpacaTradingState(): Promise<boolean> {
           trigger: "-",
           status: "Open",
           isAlpaca: true,
+          placedAtPrice: price,
         };
       });
     }
@@ -303,7 +333,7 @@ export async function syncAlpacaTradingState(): Promise<boolean> {
       gAlpacaHistory = histRes.orders
         .filter((o) => o.status !== "new" && o.status !== "open")
         .map((o) => {
-          const coin = o.symbol.split("/")[0];
+          const { coin, pair } = normalizeAlpacaSymbol(o.symbol);
           const price = parseFloat(o.limit_price || "0");
           const amount = parseFloat(o.qty || "0");
           return {
@@ -314,7 +344,7 @@ export async function syncAlpacaTradingState(): Promise<boolean> {
               hour: "2-digit",
               minute: "2-digit",
             }),
-            pair: o.symbol,
+            pair,
             coin,
             type: o.type === "limit" ? "Limit" : o.type === "market" ? "Market" : "Stop-Limit",
             side: o.side.toUpperCase() as OrderSide,

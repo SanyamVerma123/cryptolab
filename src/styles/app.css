@@ -161,6 +161,18 @@ html, body, #root {
   outline: none;
   cursor: pointer;
 }
+.pwa-install-btn {
+  background: rgba(41, 98, 255, 0.12);
+  border-color: rgba(41, 98, 255, 0.4);
+  color: #2962ff;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+.pwa-install-btn:hover {
+  background: #2962ff;
+  border-color: #2962ff;
+  color: #ffffff;
+}
 
 /* ---- Chart area: left rail + canvas column ---- */
 .chart-area { flex: 1; position: relative; min-height: 0; }
@@ -3082,6 +3094,23 @@ body.resizing-col .market-panel {
 .tv-scale-price-chip.sl {
   background: #ff9800;
   color: #ffffff;
+}
+
+/* Trailing Stop Loss in Profit */
+.tv-trade-line.sl-stop.trailing-profit .tv-line-solid.sl {
+  background: #089981;
+}
+
+.tv-trade-line.sl-stop.trailing-profit .tv-segmented-pill.sl {
+  border-color: #089981;
+}
+
+.tv-trade-line.sl-stop.trailing-profit .tv-seg-target-pnl.sl {
+  color: #089981;
+}
+
+.tv-trade-line.sl-stop.trailing-profit .tv-scale-price-chip.sl {
+  background: #089981;
 }
 
 /* 1. Horizontal Lines across chart */

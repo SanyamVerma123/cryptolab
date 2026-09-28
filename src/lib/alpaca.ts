@@ -172,9 +172,21 @@ export async function getAlpacaOrders(): Promise<{ ok: boolean; orders?: AlpacaO
   return { ok: true, orders: res.data ?? [] };
 }
 
-/** Place order with optional Take Profit (TP) and Stop Loss (SL) brackets */
+export function formatAlpacaCryptoSymbol(raw: string): string {
+  let clean = raw.replace("CRYPTO:", "").trim().toUpperCase();
+  if (clean.includes("/")) return clean;
+  if (clean.endsWith("USD") && clean.length > 3) {
+    return `${clean.slice(0, -3)}/USD`;
+  }
+  if (clean.endsWith("USDT") && clean.length > 4) {
+    return `${clean.slice(0, -4)}/USDT`;
+  }
+  return `${clean}/USD`;
+}
+
+/** Place order with Alpaca Trading API (Paper or Live) */
 export async function submitAlpacaOrder(params: {
-  symbol: string; // e.g. "BTC/USD"
+  symbol: string; // e.g. "BTC/USD", "BTCUSD", "CRYPTO:BTCUSD"
   qty: number;
   side: "buy" | "sell";
   type: "market" | "limit" | "stop_limit";
@@ -186,28 +198,34 @@ export async function submitAlpacaOrder(params: {
   const { symbol, qty, side, type, limitPrice, takeProfitPrice, stopLossPrice, timeInForce = "gtc" } = params;
 
   // Format symbol (Alpaca crypto format is BTC/USD)
-  const formattedSymbol = symbol.includes("/") ? symbol : `${symbol}/USD`;
+  const formattedSymbol = formatAlpacaCryptoSymbol(symbol);
+
+  // Alpaca crypto only supports 'gtc' and 'ioc' time_in_force
+  const validTif = timeInForce === "day" ? "gtc" : timeInForce;
 
   const payload: any = {
     symbol: formattedSymbol,
-    qty: String(qty),
+    qty: String(parseFloat(qty.toFixed(6))),
     side,
     type,
-    time_in_force: timeInForce,
+    time_in_force: validTif,
   };
 
-  if (type === "limit" && limitPrice) {
-    payload.limit_price = String(limitPrice);
+  if (type === "limit" && limitPrice && limitPrice > 0) {
+    payload.limit_price = String(parseFloat(limitPrice.toFixed(2)));
   }
 
-  // Bracket orders: Take Profit and/or Stop Loss
-  if (takeProfitPrice || stopLossPrice) {
+  // NOTE: Alpaca Crypto Trading API DOES NOT support order_class: "bracket".
+  // Trying to pass order_class: "bracket" on crypto causes 422 Unprocessable Entity.
+  // We only send order_class bracket if not crypto or if supported.
+  const isCrypto = formattedSymbol.includes("/") || formattedSymbol.endsWith("USD") || formattedSymbol.endsWith("USDT");
+  if (!isCrypto && (takeProfitPrice || stopLossPrice)) {
     payload.order_class = "bracket";
     if (takeProfitPrice) {
-      payload.take_profit = { limit_price: String(takeProfitPrice) };
+      payload.take_profit = { limit_price: String(parseFloat(takeProfitPrice.toFixed(2))) };
     }
     if (stopLossPrice) {
-      payload.stop_loss = { stop_price: String(stopLossPrice) };
+      payload.stop_loss = { stop_price: String(parseFloat(stopLossPrice.toFixed(2))) };
     }
   }
 
@@ -218,6 +236,23 @@ export async function submitAlpacaOrder(params: {
 
   if (!res.ok) return { ok: false, error: res.error };
   return { ok: true, order: res.data };
+}
+
+export interface AlpacaAsset {
+  id: string;
+  class: string;
+  exchange: string;
+  symbol: string;
+  name: string;
+  status: string;
+  tradable: boolean;
+}
+
+/** Get list of tradable crypto assets on Alpaca */
+export async function getAlpacaCryptoAssets(): Promise<{ ok: boolean; assets?: AlpacaAsset[]; error?: string }> {
+  const res = await alpacaFetch<AlpacaAsset[]>("/v2/assets?asset_class=crypto&status=active");
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true, assets: res.data ?? [] };
 }
 
 /** Cancel active Alpaca order */
