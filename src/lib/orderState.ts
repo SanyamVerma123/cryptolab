@@ -16,6 +16,7 @@ import {
   getAlpacaOrders,
   getAlpacaOrderHistory,
   submitAlpacaOrder,
+  replaceAlpacaOrder,
   cancelAlpacaOrder,
   cancelAllAlpacaOrders,
   closeAlpacaPosition,
@@ -549,8 +550,29 @@ export function updateOrderPrice(
   currentPrice?: number
 ): { ok: boolean; order?: Order; position?: TradePosition } {
   if (gTradingMode === "alpaca") {
-    // In Alpaca mode, we re-place or cancel/replace
-    return { ok: true };
+    const ord = gAlpacaOrders.find((o) => o.id === orderId);
+    if (!ord || newPrice <= 0) return { ok: false };
+
+    // Optimistically update order line for instant dragging feedback
+    ord.price = parseFloat(newPrice.toFixed(2));
+    ord.total = parseFloat((newPrice * ord.amount).toFixed(2));
+    if (currentPrice && currentPrice > 0) {
+      ord.placedAtPrice = currentPrice;
+    }
+    notify();
+
+    // Call Alpaca PATCH /v2/orders/{id}
+    void (async () => {
+      const res = await replaceAlpacaOrder(orderId, {
+        limitPrice: newPrice,
+      });
+      if (!res.ok) {
+        console.warn("[trade-pro] Alpaca replace order failed:", res.error);
+      }
+      await syncAlpacaTradingState();
+    })();
+
+    return { ok: true, order: ord };
   }
 
   const ordIndex = gOrders.findIndex((o) => o.id === orderId);
@@ -1023,12 +1045,19 @@ export function useOrders() {
     listeners.add(update);
 
     // Initial Alpaca sync if mode is alpaca
+    let pollInterval: any;
     if (gTradingMode === "alpaca") {
       void syncAlpacaTradingState();
+      pollInterval = setInterval(() => {
+        if (gTradingMode === "alpaca") {
+          void syncAlpacaTradingState();
+        }
+      }, 5000);
     }
 
     return () => {
       listeners.delete(update);
+      if (pollInterval) clearInterval(pollInterval);
     };
   }, []);
 

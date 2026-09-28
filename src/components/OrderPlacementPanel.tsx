@@ -137,10 +137,11 @@ export function OrderPlacementPanel({
   }, [coin, currentPrice, type]);
 
   const priceNum = parseFloat(priceInput) || currentPrice || 0;
+  const effectiveLeverage = tradingMode === "alpaca" ? 1 : leverage;
   const amountNum = parseFloat(amountInput) || 0;
   const effectivePrice = type === "Market" ? currentPrice : priceNum;
   const notionalValue = effectivePrice * amountNum;
-  const initialMargin = notionalValue / leverage;
+  const initialMargin = notionalValue / effectiveLeverage;
 
   // Auto calculate TP & SL prices based on mode
   const calculatedTpPrice = useMemo(() => {
@@ -192,16 +193,16 @@ export function OrderPlacementPanel({
     return (tpDist / slDist).toFixed(2);
   }, [calculatedTpPrice, calculatedSlPrice, effectivePrice]);
 
-  // Estimated Liquidation Price
+  // Estimated Liquidation Price (N/A for Spot trading)
   const estimatedLiqPrice = useMemo(() => {
-    if (effectivePrice <= 0 || leverage <= 1) return null;
+    if (tradingMode === "alpaca" || effectivePrice <= 0 || effectiveLeverage <= 1) return null;
     const maintenanceMargin = 0.005; // 0.5% standard maintenance margin
     if (side === "BUY") {
-      return Math.max(0, effectivePrice * (1 - 1 / leverage + maintenanceMargin));
+      return Math.max(0, effectivePrice * (1 - 1 / effectiveLeverage + maintenanceMargin));
     } else {
-      return effectivePrice * (1 + 1 / leverage - maintenanceMargin);
+      return effectivePrice * (1 + 1 / effectiveLeverage - maintenanceMargin);
     }
-  }, [effectivePrice, leverage, side]);
+  }, [effectivePrice, effectiveLeverage, side, tradingMode]);
 
   // Fee Calculation as per Hyperliquid specs
   // Maker: 0.015% (0.00015), Taker: 0.035% (0.00035)
@@ -373,39 +374,49 @@ export function OrderPlacementPanel({
       )}
 
       {/* 2. Margin Mode & Leverage Selector */}
-      <div className="op-leverage-bar">
-        <div className="op-margin-switch">
-          <button
-            type="button"
-            className={"op-ms-btn" + (marginMode === "cross" ? " active" : "")}
-            onClick={() => setMarginMode("cross")}
-            title="Cross Margin: Shared margin pool across all positions"
-          >
-            Cross
-          </button>
-          <button
-            type="button"
-            className={"op-ms-btn" + (marginMode === "isolated" ? " active" : "")}
-            onClick={() => setMarginMode("isolated")}
-            title="Isolated Margin: Risk strictly limited to this position's margin"
-          >
-            Isolated
-          </button>
+      {tradingMode === "alpaca" ? (
+        <div className="op-leverage-bar alpaca-spot">
+          <div className="op-alpaca-spot-badge">
+            <span className="op-spot-dot">●</span>
+            <b>1x Spot</b>
+            <span className="op-spot-sub">Alpaca Crypto Spot (No Margin)</span>
+          </div>
         </div>
-
-        <div className="op-leverage-chips">
-          {[1, 2, 5, 10, 20, 50].map((lev) => (
+      ) : (
+        <div className="op-leverage-bar">
+          <div className="op-margin-switch">
             <button
-              key={lev}
               type="button"
-              className={"op-lev-chip" + (leverage === lev ? " active" : "")}
-              onClick={() => setLeverage(lev)}
+              className={"op-ms-btn" + (marginMode === "cross" ? " active" : "")}
+              onClick={() => setMarginMode("cross")}
+              title="Cross Margin: Shared margin pool across all positions"
             >
-              {lev}x
+              Cross
             </button>
-          ))}
+            <button
+              type="button"
+              className={"op-ms-btn" + (marginMode === "isolated" ? " active" : "")}
+              onClick={() => setMarginMode("isolated")}
+              title="Isolated Margin: Risk strictly limited to this position's margin"
+            >
+              Isolated
+            </button>
+          </div>
+
+          <div className="op-leverage-chips">
+            {[1, 2, 5, 10, 20, 50].map((lev) => (
+              <button
+                key={lev}
+                type="button"
+                className={"op-lev-chip" + (leverage === lev ? " active" : "")}
+                onClick={() => setLeverage(lev)}
+              >
+                {lev}x
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 3. Buy (Long) / Sell (Short) Switch */}
       <div className="op-side-switch">
@@ -743,8 +754,8 @@ export function OrderPlacementPanel({
 
           <div className="op-charge-row">
             <span className="k">
-              Initial Margin ({leverage}x)
-              <span className="op-info-icon" title="Required collateral locked for this leveraged position">ℹ</span>
+              Initial Margin ({effectiveLeverage}x)
+              <span className="op-info-icon" title="Required collateral locked for this position">ℹ</span>
             </span>
             <span className="v bold text-accent">${initialMargin.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>

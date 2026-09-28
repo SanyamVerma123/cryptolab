@@ -157,9 +157,14 @@ export function BottomOrdersDrawer({
     return acc + ord.total / (ord.leverage || 1);
   }, 0);
 
-  const accountBalance = balances.USD ?? 50000;
-  const equity = accountBalance + totalUnrealizedPnl;
-  const availableFunds = Math.max(0, accountBalance - totalAccountMargin - totalOrdersMargin);
+  const isAlpaca = tradingMode === "alpaca";
+  const accountBalance = balances.USD ?? (isAlpaca ? 0 : 50000);
+  const equity = isAlpaca && balances.PORTFOLIO !== undefined && balances.PORTFOLIO > 0
+    ? balances.PORTFOLIO
+    : accountBalance + totalUnrealizedPnl;
+  const availableFunds = isAlpaca && balances.BUYING_POWER !== undefined
+    ? balances.BUYING_POWER
+    : Math.max(0, accountBalance - totalAccountMargin - totalOrdersMargin);
   const marginBuffer = equity > 0 ? ((availableFunds / equity) * 100).toFixed(2) : "100.00";
 
   // Drag resizer

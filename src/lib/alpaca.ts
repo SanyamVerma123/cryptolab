@@ -116,18 +116,20 @@ export async function alpacaFetch<T = any>(
       headers,
     });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      let parsed = errText;
-      try {
-        const j = JSON.parse(errText);
-        parsed = j.message || j.error || errText;
-      } catch {}
-      return { ok: false, error: parsed };
+    const errText = await res.text();
+    let parsed: any;
+    try {
+      parsed = JSON.parse(errText);
+    } catch {
+      parsed = errText;
     }
 
-    const data = await res.json();
-    return { ok: true, data };
+    if (!res.ok) {
+      const msg = parsed?.message || parsed?.error || (typeof parsed === "string" ? parsed : `Alpaca request failed (${res.status})`);
+      return { ok: false, error: msg };
+    }
+
+    return { ok: true, data: parsed };
   } catch (err: any) {
     // If browser CORS prevents direct fetch, try backend proxy fallback
     try {
@@ -141,13 +143,24 @@ export async function alpacaFetch<T = any>(
           body: options.body,
         }),
       });
-      if (proxyRes.ok) {
-        const data = await proxyRes.json();
-        return { ok: true, data };
-      }
-    } catch {}
 
-    return { ok: false, error: err?.message || "Network request to Alpaca failed (CORS/Offline)" };
+      const proxyText = await proxyRes.text();
+      let proxyParsed: any;
+      try {
+        proxyParsed = JSON.parse(proxyText);
+      } catch {
+        proxyParsed = proxyText;
+      }
+
+      if (!proxyRes.ok) {
+        const msg = proxyParsed?.message || proxyParsed?.error || (typeof proxyParsed === "string" ? proxyParsed : `Alpaca proxy request failed (${proxyRes.status})`);
+        return { ok: false, error: msg };
+      }
+
+      return { ok: true, data: proxyParsed };
+    } catch (proxyErr: any) {
+      return { ok: false, error: proxyErr?.message || err?.message || "Alpaca API connection failed" };
+    }
   }
 }
 
@@ -255,6 +268,43 @@ export async function getAlpacaCryptoAssets(): Promise<{ ok: boolean; assets?: A
   return { ok: true, assets: res.data ?? [] };
 }
 
+/** Replace (PATCH) an existing open order in Alpaca (e.g. for drag to move limit price) */
+export async function replaceAlpacaOrder(
+  orderId: string,
+  params: {
+    limitPrice?: number;
+    qty?: number;
+    stopPrice?: number;
+    timeInForce?: "gtc" | "day" | "ioc";
+    clientOrderId?: string;
+  }
+): Promise<{ ok: boolean; order?: AlpacaOrder; error?: string }> {
+  const payload: any = {};
+  if (params.limitPrice !== undefined && params.limitPrice > 0) {
+    payload.limit_price = String(parseFloat(params.limitPrice.toFixed(2)));
+  }
+  if (params.qty !== undefined && params.qty > 0) {
+    payload.qty = String(parseFloat(params.qty.toFixed(6)));
+  }
+  if (params.stopPrice !== undefined && params.stopPrice > 0) {
+    payload.stop_price = String(parseFloat(params.stopPrice.toFixed(2)));
+  }
+  if (params.timeInForce) {
+    payload.time_in_force = params.timeInForce;
+  }
+  if (params.clientOrderId) {
+    payload.client_order_id = params.clientOrderId;
+  }
+
+  const res = await alpacaFetch<AlpacaOrder>(`/v2/orders/${orderId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true, order: res.data };
+}
+
 /** Cancel active Alpaca order */
 export async function cancelAlpacaOrder(orderId: string): Promise<{ ok: boolean; error?: string }> {
   const res = await alpacaFetch(`/v2/orders/${orderId}`, {
@@ -263,10 +313,27 @@ export async function cancelAlpacaOrder(orderId: string): Promise<{ ok: boolean;
   return { ok: res.ok, error: res.error };
 }
 
-/** Close active Alpaca position */
-export async function closeAlpacaPosition(symbol: string): Promise<{ ok: boolean; error?: string }> {
-  const formattedSymbol = symbol.includes("/") ? symbol.replace("/", "%2F") : `${symbol}%2FUSD`;
-  const res = await alpacaFetch(`/v2/positions/${formattedSymbol}`, {
+/** Close active Alpaca position (supports full or partial close by percentage or qty) */
+export async function closeAlpacaPosition(
+  symbol: string,
+  options?: { qty?: number; percentage?: number }
+): Promise<{ ok: boolean; error?: string }> {
+  const clean = formatAlpacaCryptoSymbol(symbol);
+  const formattedSymbol = encodeURIComponent(clean);
+  let path = `/v2/positions/${formattedSymbol}`;
+
+  const queryParams: string[] = [];
+  if (options?.percentage && options.percentage > 0 && options.percentage <= 100) {
+    queryParams.push(`percentage=${options.percentage}`);
+  } else if (options?.qty && options.qty > 0) {
+    queryParams.push(`qty=${options.qty}`);
+  }
+
+  if (queryParams.length > 0) {
+    path += `?${queryParams.join("&")}`;
+  }
+
+  const res = await alpacaFetch(path, {
     method: "DELETE",
   });
   return { ok: res.ok, error: res.error };
@@ -297,22 +364,24 @@ export interface AlpacaQuote {
 }
 
 export interface AlpacaBar {
-  c: number;
-  h: number;
-  l: number;
-  o: number;
-  v: number;
-  t: string;
+  c: number; // close
+  h: number; // high
+  l: number; // low
+  o: number; // open
+  v: number; // volume
+  t: string; // timestamp
+  n?: number; // trade count
+  vw?: number; // volume-weighted avg price
 }
 
-/** Get latest quote from Alpaca Crypto Market Data API */
+/** Get latest quote from Alpaca Crypto Market Data API (v1beta3) */
 export async function getAlpacaLatestQuote(
   symbol: string
 ): Promise<{ ok: boolean; quote?: AlpacaQuote; error?: string }> {
-  const formattedSymbol = symbol.includes("/") ? symbol : `${symbol}/USD`;
+  const formattedSymbol = formatAlpacaCryptoSymbol(symbol);
   const symParam = encodeURIComponent(formattedSymbol);
   const res = await alpacaFetch<{ quotes: Record<string, AlpacaQuote> }>(
-    `/v2/crypto/latest/quotes?symbols=${symParam}`,
+    `/v1beta3/crypto/us/latest/quotes?symbols=${symParam}`,
     {},
     ALPACA_DATA_URL
   );
@@ -321,13 +390,14 @@ export async function getAlpacaLatestQuote(
   return { ok: true, quote: q };
 }
 
-/** Get latest orderbook from Alpaca Crypto Market Data API */
+/** Get latest orderbook from Alpaca Crypto Market Data API (v1beta3) */
 export async function getAlpacaLatestOrderBook(
   symbol: string
 ): Promise<{ ok: boolean; orderbook?: { b: { p: number; s: number }[]; a: { p: number; s: number }[] }; error?: string }> {
-  const formattedSymbol = symbol.includes("/") ? symbol : `${symbol}/USD`;
+  const formattedSymbol = formatAlpacaCryptoSymbol(symbol);
+  const symParam = encodeURIComponent(formattedSymbol);
   const res = await alpacaFetch<{ orderbooks: Record<string, { b: any[]; a: any[] }> }>(
-    `/v2/crypto/latest/orderbooks?symbols=${encodeURIComponent(formattedSymbol)}`,
+    `/v1beta3/crypto/us/latest/orderbooks?symbols=${symParam}`,
     {},
     ALPACA_DATA_URL
   );
@@ -336,18 +406,36 @@ export async function getAlpacaLatestOrderBook(
   return { ok: true, orderbook: ob };
 }
 
-/** Get latest 1-min bars from Alpaca Crypto Market Data API */
+/** Get latest 1-min bars from Alpaca Crypto Market Data API (v1beta3) */
 export async function getAlpacaLatestBars(
   symbol: string
 ): Promise<{ ok: boolean; bar?: AlpacaBar; error?: string }> {
-  const formattedSymbol = symbol.includes("/") ? symbol : `${symbol}/USD`;
+  const formattedSymbol = formatAlpacaCryptoSymbol(symbol);
   const symParam = encodeURIComponent(formattedSymbol);
   const res = await alpacaFetch<{ bars: Record<string, AlpacaBar> }>(
-    `/v2/crypto/latest/bars?symbols=${symParam}`,
+    `/v1beta3/crypto/us/latest/bars?symbols=${symParam}`,
     {},
     ALPACA_DATA_URL
   );
   if (!res.ok) return { ok: false, error: res.error };
   const b = res.data?.bars?.[formattedSymbol];
   return { ok: true, bar: b };
+}
+
+/** Get historical crypto bars from Alpaca Crypto Market Data API (v1beta3) */
+export async function getAlpacaHistoricalBars(
+  symbol: string,
+  timeframe = "1Hour",
+  limit = 100
+): Promise<{ ok: boolean; bars?: AlpacaBar[]; error?: string }> {
+  const formattedSymbol = formatAlpacaCryptoSymbol(symbol);
+  const symParam = encodeURIComponent(formattedSymbol);
+  const res = await alpacaFetch<{ bars: Record<string, AlpacaBar[]> }>(
+    `/v1beta3/crypto/us/bars?symbols=${symParam}&timeframe=${timeframe}&limit=${limit}`,
+    {},
+    ALPACA_DATA_URL
+  );
+  if (!res.ok) return { ok: false, error: res.error };
+  const list = res.data?.bars?.[formattedSymbol] || [];
+  return { ok: true, bars: list };
 }
