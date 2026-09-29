@@ -208,7 +208,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
   } = useOrders();
 
   const [plotEl, setPlotEl] = useState<HTMLElement | null>(null);
-  const [paneBounds, setPaneBounds] = useState<{ top: number; height: number; left: number; width: number }>({ top: 0, height: 400, left: 0, width: 0 });
+  const [paneBounds, setPaneBounds] = useState<{ top: number; height: number }>({ top: 0, height: 400 });
   const [orderLines, setOrderLines] = useState<ProjectedOrderLine[]>([]);
   const [positionLines, setPositionLines] = useState<ProjectedPositionLine[]>([]);
   const [alertLines, setAlertLines] = useState<ProjectedAlertLine[]>([]);
@@ -355,14 +355,8 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
         const paneTop = pane.bounds.top ?? 0;
         const paneH = pane.bounds.height ?? 400;
         const paneBottom = paneTop + paneH;
-        const paneLeft = pane.bounds.left ?? 0;
-        const paneW = pane.bounds.width ?? 0;
 
-        setPaneBounds((prev) =>
-          prev.top === paneTop && prev.height === paneH && prev.left === paneLeft && prev.width === paneW
-            ? prev
-            : { top: paneTop, height: paneH, left: paneLeft, width: paneW }
-        );
+        setPaneBounds((prev) => (prev.top === paneTop && prev.height === paneH ? prev : { top: paneTop, height: paneH }));
 
         const normCoin = coin.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
@@ -994,9 +988,6 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
       style={{
         top: `${paneBounds.top}px`,
         height: `${paneBounds.height}px`,
-        left: paneBounds.left > 0 ? `${paneBounds.left}px` : '0',
-        right: '0',
-        width: paneBounds.width > 0 ? `${paneBounds.width}px` : undefined,
         overflow: "hidden",
       }}
     >

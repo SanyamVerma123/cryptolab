@@ -1,13 +1,14 @@
 {
   "name": "trade-pro",
   "private": true,
-  "version": "2.0.1",
+  "version": "2.0.0",
   "type": "module",
   "description": "TradingView-style trading dashboard on Hyperliquid (perp + spot) with drawing tools and indicators",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.0.0"
   },
   "scripts": {
+    "prebuild": "npm update",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",

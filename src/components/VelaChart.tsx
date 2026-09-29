@@ -42,7 +42,7 @@ import { restoreLuxIndicators } from "../lib/luxPersist";
 import { restorePineIndicators } from "../lib/pinePersist";
 import { trackSelection } from "../lib/drawingPresets";
 import { mountMarket } from "../lib/marketData";
-import { installBoxInterior } from "../lib/boxInterior";
+import { installDrawingIsolation } from "../lib/drawingInteractions";
 
 import { AlpacaProvider } from "../lib/alpacaProvider";
 
@@ -136,6 +136,13 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
         } catch (e) {
           console.warn("[trade-pro] tool defaults install failed:", e);
         }
+        // Protect Price/Date axes and oscillator indicator panes from drawing
+        // interception, and enforce border-only hit testing for Box drawings.
+        try {
+          installDrawingIsolation(ws);
+        } catch (e) {
+          console.warn("[trade-pro] drawing isolation install failed:", e);
+        }
         onReadyRef.current?.(ws);
       })
       .catch((e) => console.error("[trade-pro] vela ready failed", e));
@@ -163,7 +170,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     let stopSymbols: (() => void) | undefined;
     let stopIndicators: (() => void) | undefined;
     let stopCrosshair: (() => void) | undefined;
-    let stopBoxInterior: (() => void) | undefined;
+    let stopIsolation: (() => void) | undefined;
 
     // Re-mount this coin's LuxAlgo library indicators once the market is live.
     // Defined before `setupMarket` (which calls it) — a `const` is not hoisted.
@@ -275,12 +282,11 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
         /* chart not ready */
       }
 
-      // Box drawing fix: clicking/panning inside a box interior pans the chart
-      // instead of dragging the entire box. Only border touches resize/move.
+      // Drawing isolation: axes (price/time) & oscillator panes protection + Box border hit-testing
       try {
-        stopBoxInterior = installBoxInterior(ws);
+        stopIsolation = installDrawingIsolation(ws);
       } catch (e) {
-        console.warn("[trade-pro] box interior fix failed:", e);
+        console.warn("[trade-pro] drawing isolation re-install failed:", e);
       }
     };
 
@@ -294,7 +300,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       stopSymbols?.();
       stopIndicators?.();
       stopCrosshair?.();
-      stopBoxInterior?.();
+      stopIsolation?.();
     };
   }, [coin, timeframe]);
 

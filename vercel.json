@@ -1,6 +1,6 @@
 {
   "framework": "vite",
-  "installCommand": "npm install",
+  "installCommand": "npm update && npm install",
   "buildCommand": "npm run build",
   "rewrites": [
     {

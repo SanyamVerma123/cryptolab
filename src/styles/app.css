@@ -3034,7 +3034,7 @@ body.resizing-col .market-panel {
   bottom: 0;
   pointer-events: none;
   z-index: 12;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .tv-trade-line {
