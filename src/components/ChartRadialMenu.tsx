@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
 
-interface RadialTool {
+export interface RadialTool {
   id: string;
   type: string;
   label: string;
@@ -9,7 +9,7 @@ interface RadialTool {
   svg: string;
 }
 
-const RADIAL_TOOLS: RadialTool[] = [
+export const RADIAL_TOOLS: RadialTool[] = [
   {
     id: "hray",
     type: "hray",
@@ -82,15 +82,16 @@ interface Props {
 export function ChartRadialMenu({ ws }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [center, setCenter] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [selectedIndex, setSelectedIndex] = useState<number>(6); // default to ABCD Pattern or middle
+  const [selectedIndex, setSelectedIndex] = useState<number>(6); // Default: ABCD Pattern (bottom-left)
   const mousePos = useRef<{ x: number; y: number }>({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const isOpenRef = useRef(false);
   const selectedIndexRef = useRef(selectedIndex);
   selectedIndexRef.current = selectedIndex;
 
-  const R_IN = 70;
-  const R_OUT = 185;
-  const SIZE = 400;
+  const R_IN = 74;
+  const R_OUT = 180;
+  const R_MID = 126;
+  const SIZE = 380;
   const CX = SIZE / 2;
   const CY = SIZE / 2;
   const NUM_SLICES = RADIAL_TOOLS.length;
@@ -146,11 +147,12 @@ export function ChartRadialMenu({ ws }: Props) {
       if (e.key === "Alt") {
         if (!isOpenRef.current) {
           e.preventDefault();
-          // Clamp center so wheel doesn't overflow viewport edges
-          const pad = 210;
+          // Clamp center so wheel stays fully visible inside viewport
+          const pad = 200;
           const cx = Math.max(pad, Math.min(window.innerWidth - pad, mousePos.current.x));
           const cy = Math.max(pad, Math.min(window.innerHeight - pad, mousePos.current.y));
           setCenter({ x: cx, y: cy });
+          setSelectedIndex(6); // Default highlight ABCD Pattern like in reference image
           setIsOpen(true);
           isOpenRef.current = true;
         }
@@ -184,12 +186,12 @@ export function ChartRadialMenu({ ws }: Props) {
 
   if (!isOpen) return null;
 
-  const activeTool = RADIAL_TOOLS[selectedIndex] || RADIAL_TOOLS[0];
+  const activeTool = RADIAL_TOOLS[selectedIndex] || RADIAL_TOOLS[6];
 
   // Helper to create donut wedge path
   const makeWedgePath = (index: number) => {
-    const a1 = START_OFFSET + index * SLICE_ANGLE + 0.015;
-    const a2 = START_OFFSET + (index + 1) * SLICE_ANGLE - 0.015;
+    const a1 = START_OFFSET + index * SLICE_ANGLE + 0.012;
+    const a2 = START_OFFSET + (index + 1) * SLICE_ANGLE - 0.012;
 
     const x1Out = CX + R_OUT * Math.cos(a1);
     const y1Out = CY + R_OUT * Math.sin(a1);
@@ -210,11 +212,19 @@ export function ChartRadialMenu({ ws }: Props) {
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 99999,
+        zIndex: 999999,
+        background: "rgba(0, 0, 0, 0.45)",
+        backdropFilter: "blur(2px)",
         pointerEvents: "auto",
         userSelect: "none",
       }}
       onContextMenu={(e) => e.preventDefault()}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          setIsOpen(false);
+          isOpenRef.current = false;
+        }
+      }}
     >
       <div
         className="radial-menu-container"
@@ -224,96 +234,132 @@ export function ChartRadialMenu({ ws }: Props) {
           top: `${center.y - CY}px`,
           width: `${SIZE}px`,
           height: `${SIZE}px`,
+          pointerEvents: "auto",
         }}
       >
         <svg
           width={SIZE}
           height={SIZE}
           viewBox={`0 0 ${SIZE} ${SIZE}`}
-          style={{ overflow: "visible", filter: "drop-shadow(0 12px 36px rgba(0, 0, 0, 0.75))" }}
+          style={{
+            overflow: "visible",
+            filter: "drop-shadow(0 16px 40px rgba(0, 0, 0, 0.85))",
+          }}
         >
-          {/* Wheel wedges */}
+          {/* Wheel wedges background paths */}
           {RADIAL_TOOLS.map((tool, idx) => {
             const isSelected = idx === selectedIndex;
-            const midAngle = START_OFFSET + (idx + 0.5) * SLICE_ANGLE;
-            const rMid = (R_IN + R_OUT) / 2;
-            const iconX = CX + (rMid - 8) * Math.cos(midAngle);
-            const iconY = CY + (rMid - 8) * Math.sin(midAngle);
-            const textX = CX + (rMid + 16) * Math.cos(midAngle);
-            const textY = CY + (rMid + 16) * Math.sin(midAngle);
-
             return (
-              <g
+              <path
                 key={tool.id}
-                className={`radial-slice ${isSelected ? "selected" : ""}`}
+                d={makeWedgePath(idx)}
+                fill={isSelected ? "#2962FF" : "rgba(26, 30, 42, 0.96)"}
+                stroke={isSelected ? "#ffffff" : "rgba(255, 255, 255, 0.12)"}
+                strokeWidth={isSelected ? 2 : 1}
+                style={{
+                  cursor: "pointer",
+                  transition: "fill 80ms ease, stroke 80ms ease",
+                }}
                 onMouseEnter={() => setSelectedIndex(idx)}
                 onClick={() => {
                   armTool(tool);
                   setIsOpen(false);
                   isOpenRef.current = false;
                 }}
-                style={{ cursor: "pointer" }}
-              >
-                {/* Wedge background */}
-                <path
-                  d={makeWedgePath(idx)}
-                  fill={isSelected ? "#2563eb" : "rgba(22, 26, 37, 0.94)"}
-                  stroke={isSelected ? "#ffffff" : "rgba(255, 255, 255, 0.08)"}
-                  strokeWidth={isSelected ? 2 : 1}
-                  style={{
-                    transition: "fill 100ms ease, stroke 100ms ease",
-                  }}
-                />
-
-                {/* Tool Icon */}
-                <g
-                  transform={`translate(${iconX - 11}, ${iconY - 11}) scale(0.9)`}
-                  fill="none"
-                  stroke={isSelected ? "#ffffff" : "rgba(255, 255, 255, 0.75)"}
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  dangerouslySetInnerHTML={{ __html: tool.svg }}
-                />
-
-                {/* Tool Label */}
-                <text
-                  x={textX}
-                  y={textY}
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  fill={isSelected ? "#ffffff" : "rgba(255, 255, 255, 0.65)"}
-                  fontSize="11"
-                  fontWeight={isSelected ? 600 : 500}
-                  letterSpacing="-0.2px"
-                  style={{ pointerEvents: "none" }}
-                >
-                  {tool.shortLabel}
-                </text>
-              </g>
+              />
             );
           })}
 
-          {/* Center Circle Ring */}
+          {/* Center Circle Ring with glowing cyan/blue border */}
           <circle
             cx={CX}
             cy={CY}
             r={R_IN}
             fill="#12151d"
-            stroke="#2563eb"
+            stroke="#2962FF"
             strokeWidth="2.5"
-            style={{ filter: "drop-shadow(0 0 10px rgba(37, 99, 235, 0.5))" }}
+            style={{
+              filter: "drop-shadow(0 0 16px rgba(41, 98, 255, 0.75))",
+            }}
           />
         </svg>
 
-        {/* Center Content overlay */}
+        {/* HTML Labels & Icons positioned at the centroid of each wedge */}
+        {RADIAL_TOOLS.map((tool, idx) => {
+          const isSelected = idx === selectedIndex;
+          const midAngle = START_OFFSET + (idx + 0.5) * SLICE_ANGLE;
+          const nodeX = CX + R_MID * Math.cos(midAngle);
+          const nodeY = CY + R_MID * Math.sin(midAngle);
+
+          return (
+            <div
+              key={`label-${tool.id}`}
+              style={{
+                position: "absolute",
+                left: `${nodeX}px`,
+                top: `${nodeY}px`,
+                transform: "translate(-50%, -50%)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "3px",
+                pointerEvents: "none",
+                width: "78px",
+                textAlign: "center",
+              }}
+            >
+              {/* Tool Icon */}
+              <div
+                style={{
+                  width: "20px",
+                  height: "20px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: isSelected ? "#ffffff" : "#cbd5e1",
+                  transition: "color 80ms ease",
+                }}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  dangerouslySetInnerHTML={{ __html: tool.svg }}
+                />
+              </div>
+
+              {/* Tool Name */}
+              <div
+                style={{
+                  color: isSelected ? "#ffffff" : "#94a3b8",
+                  fontSize: "10.5px",
+                  fontWeight: isSelected ? 700 : 500,
+                  letterSpacing: "-0.2px",
+                  whiteSpace: "nowrap",
+                  textShadow: isSelected ? "0 1px 3px rgba(0,0,0,0.8)" : "none",
+                  transition: "color 80ms ease",
+                }}
+              >
+                {tool.shortLabel}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Center Content overlay matching Image 5 */}
         <div
           style={{
             position: "absolute",
-            top: `${CY - R_IN + 10}px`,
-            left: `${CX - R_IN + 10}px`,
-            width: `${(R_IN - 10) * 2}px`,
-            height: `${(R_IN - 10) * 2}px`,
+            top: `${CY - R_IN + 6}px`,
+            left: `${CX - R_IN + 6}px`,
+            width: `${(R_IN - 6) * 2}px`,
+            height: `${(R_IN - 6) * 2}px`,
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
@@ -322,32 +368,34 @@ export function ChartRadialMenu({ ws }: Props) {
             pointerEvents: "none",
           }}
         >
-          {/* ALT badge */}
+          {/* ALT keycap badge */}
           <div
             style={{
-              padding: "2px 7px",
-              background: "rgba(255, 255, 255, 0.12)",
+              padding: "2px 8px",
+              background: "#262a36",
               border: "1px solid rgba(255, 255, 255, 0.2)",
               borderRadius: "4px",
               fontSize: "10px",
               fontWeight: 700,
-              color: "#e2e8f0",
+              color: "#d1d5db",
               letterSpacing: "0.5px",
-              marginBottom: "6px",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.5)",
+              marginBottom: "5px",
             }}
           >
             ALT
           </div>
 
-          {/* Active Tool Label */}
+          {/* Active Tool Title */}
           <div
             style={{
               color: "#ffffff",
-              fontSize: "14px",
+              fontSize: "15px",
               fontWeight: 700,
               lineHeight: 1.2,
-              padding: "0 6px",
-              textShadow: "0 2px 4px rgba(0,0,0,0.8)",
+              padding: "0 8px",
+              letterSpacing: "-0.2px",
+              textShadow: "0 2px 6px rgba(0,0,0,0.9)",
             }}
           >
             {activeTool.label}
@@ -356,8 +404,8 @@ export function ChartRadialMenu({ ws }: Props) {
           {/* Subtext: Release to arm */}
           <div
             style={{
-              color: "rgba(255, 255, 255, 0.55)",
-              fontSize: "10px",
+              color: "#787f94",
+              fontSize: "10.5px",
               marginTop: "4px",
               letterSpacing: "0.2px",
             }}

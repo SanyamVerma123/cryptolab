@@ -230,91 +230,11 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
           console.warn("[trade-pro] drawing isolation install failed:", e);
         }
 
-        let topbarObserver: MutationObserver | null = null;
-
-        // Attach Replay and Multiple Charts controls directly inside chart topbar
-        const attachTopbarControls = () => {
-          const indBtn = el.querySelector(".vela-widget-indicators");
-          const topbarContainer =
-            indBtn?.parentElement ||
-            el.querySelector(".vela-topbar-left, .vela-widget-topbar, .vela-topbar, [class*='topbar']");
-          if (!topbarContainer) return;
-
-          // 1. Hook native layout button or insert custom layout button
-          const nativeLayoutBtn = el.querySelector<HTMLButtonElement>(
-            ".vela-widget-style[aria-label*='Layout'], button[aria-label*='Layout']"
-          );
-          if (nativeLayoutBtn) {
-            layoutBtnRef.current = nativeLayoutBtn;
-            nativeLayoutBtn.onclick = (e) => {
-              e.stopPropagation();
-              setLayoutOpen((prev) => !prev);
-            };
-          } else if (!topbarContainer.querySelector(".vela-topbar-layout-custom-btn")) {
-            const layoutBtn = document.createElement("button");
-            layoutBtn.className = "vela-widget-style vela-topbar-layout-custom-btn";
-            layoutBtn.title = "Multiple Charts Layout (Max 8)";
-            layoutBtn.setAttribute("aria-label", "Multiple Charts Layout");
-            layoutBtn.innerHTML = `
-              <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3">
-                <rect x="2" y="2" width="5" height="5" rx="1"/>
-                <rect x="9" y="2" width="5" height="5" rx="1"/>
-                <rect x="2" y="9" width="5" height="5" rx="1"/>
-                <rect x="9" y="9" width="5" height="5" rx="1"/>
-              </svg>
-            `;
-            layoutBtn.addEventListener("click", (e) => {
-              e.stopPropagation();
-              setLayoutOpen((prev) => !prev);
-            });
-            layoutBtnRef.current = layoutBtn;
-            if (indBtn) {
-              topbarContainer.insertBefore(layoutBtn, indBtn);
-            } else {
-              topbarContainer.appendChild(layoutBtn);
-            }
-          }
-
-          // 2. Insert Replay button into topbar (Image 1 & 2 design: ◂◂ Replay)
-          if (!topbarContainer.querySelector(".vela-topbar-replay-btn")) {
-            const replayBtn = document.createElement("button");
-            replayBtn.className = "vela-widget-action-left vela-topbar-replay-btn";
-            replayBtn.title = "Bar Replay (Practice strategies with historical cuts)";
-            replayBtn.setAttribute("aria-label", "Bar Replay");
-            replayBtn.innerHTML = `
-              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" style="margin-right: 4px; vertical-align: -1px;">
-                <path d="M7 4.5v7l-5-3.5 5-3.5zm7 0v7l-5-3.5 5-3.5z"/>
-              </svg>
-              <span>Replay</span>
-            `;
-            replayBtn.addEventListener("click", () => {
-              setReplayActive((prev) => !prev);
-            });
-
-            if (indBtn && indBtn.nextSibling) {
-              topbarContainer.insertBefore(replayBtn, indBtn.nextSibling);
-            } else {
-              topbarContainer.appendChild(replayBtn);
-            }
-          }
-        };
-
-        attachTopbarControls();
-
-        // Keep controls attached when topbar renders/updates
-        topbarObserver = new MutationObserver(() => {
-          if (!el.querySelector(".vela-topbar-replay-btn")) {
-            attachTopbarControls();
-          }
-        });
-        topbarObserver.observe(el, { childList: true, subtree: true });
-
         onReadyRef.current?.(ws);
       })
       .catch((e) => console.error("[trade-pro] vela ready failed", e));
 
     return () => {
-      topbarObserver?.disconnect();
       try {
         ws.destroy();
       } catch {
@@ -472,18 +392,106 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     };
   }, [coin, timeframe]);
 
-  // Sync replay active status with the topbar replay button styling
+  // Dedicated topbar buttons manager: guarantees Replay and Multiple Charts buttons
+  // are ALWAYS attached to the chart topbar (.vela-widget-topbar) beside Indicators.
   useEffect(() => {
-    const replayBtn = ref.current?.querySelector(".vela-topbar-replay-btn");
-    if (replayBtn) {
-      if (replayActive) {
-        replayBtn.classList.add("active");
-        replayBtn.setAttribute("data-active", "true");
-      } else {
-        replayBtn.classList.remove("active");
-        replayBtn.removeAttribute("data-active");
+    let active = true;
+
+    const attach = () => {
+      if (!active) return;
+      const topbar =
+        (document.querySelector(".vela-widget-topbar") as HTMLElement | null) ||
+        (ref.current?.querySelector(".vela-widget-topbar") as HTMLElement | null);
+      if (!topbar) return;
+
+      const indBtn = topbar.querySelector(".vela-widget-indicators") as HTMLElement | null;
+      if (!indBtn) return;
+
+      // 1. Multiple Charts Layout Button (4-square grid icon, Image 1)
+      let layoutBtn = topbar.querySelector(".vela-topbar-layout-custom-btn") as HTMLButtonElement | null;
+      const nativeLayoutBtn = topbar.querySelector<HTMLButtonElement>(
+        ".vela-widget-style[aria-label*='Layout'], button[aria-label*='Layout']"
+      );
+      if (nativeLayoutBtn) {
+        layoutBtnRef.current = nativeLayoutBtn;
+        nativeLayoutBtn.onclick = (e) => {
+          e.stopPropagation();
+          setLayoutOpen((prev) => !prev);
+        };
+      } else if (!layoutBtn) {
+        layoutBtn = document.createElement("button");
+        layoutBtn.className = "vela-widget-style vela-topbar-layout-custom-btn";
+        layoutBtn.title = "Multiple Charts Layout (Max 8)";
+        layoutBtn.setAttribute("aria-label", "Multiple Charts Layout");
+        layoutBtn.innerHTML = `
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3">
+            <rect x="2" y="2" width="5" height="5" rx="1"/>
+            <rect x="9" y="2" width="5" height="5" rx="1"/>
+            <rect x="2" y="9" width="5" height="5" rx="1"/>
+            <rect x="9" y="9" width="5" height="5" rx="1"/>
+          </svg>
+        `;
+        layoutBtn.onclick = (e) => {
+          e.stopPropagation();
+          setLayoutOpen((prev) => !prev);
+        };
+        layoutBtnRef.current = layoutBtn;
+        topbar.insertBefore(layoutBtn, indBtn);
       }
-    }
+
+      // 2. Bar Replay Button (◂◂ Replay, Images 1 & 2)
+      let replayBtn = topbar.querySelector(".vela-topbar-replay-btn") as HTMLButtonElement | null;
+      if (!replayBtn) {
+        replayBtn = document.createElement("button");
+        replayBtn.className = "vela-widget-action-left vela-topbar-replay-btn";
+        replayBtn.title = "Bar Replay (Practice strategies with historical cuts)";
+        replayBtn.setAttribute("aria-label", "Bar Replay");
+        replayBtn.innerHTML = `
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style="margin-right: 5px; vertical-align: -1px;">
+            <path d="M7 4.5v7l-5-3.5 5-3.5zm7 0v7l-5-3.5 5-3.5z"/>
+          </svg>
+          <span>Replay</span>
+        `;
+        replayBtn.onclick = (e) => {
+          e.stopPropagation();
+          setReplayActive((prev) => !prev);
+        };
+
+        if (indBtn.nextSibling) {
+          topbar.insertBefore(replayBtn, indBtn.nextSibling);
+        } else {
+          topbar.appendChild(replayBtn);
+        }
+      }
+
+      // Keep active state synchronized
+      if (replayBtn) {
+        if (replayActive) {
+          replayBtn.classList.add("active");
+          replayBtn.setAttribute("data-active", "true");
+        } else {
+          replayBtn.classList.remove("active");
+          replayBtn.removeAttribute("data-active");
+        }
+      }
+    };
+
+    // Attach immediately and monitor with interval + MutationObserver
+    attach();
+    const intervalId = setInterval(attach, 200);
+
+    const observer = new MutationObserver(attach);
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    const handleCustomToggle = () => setReplayActive((prev) => !prev);
+    window.addEventListener("tradepro:toggle-replay", handleCustomToggle);
+
+    return () => {
+      active = false;
+      clearInterval(intervalId);
+      observer.disconnect();
+      window.removeEventListener("tradepro:toggle-replay", handleCustomToggle);
+    };
   }, [replayActive]);
 
   return (
