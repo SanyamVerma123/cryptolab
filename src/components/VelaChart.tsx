@@ -29,8 +29,9 @@
  *     explicitly allows ("You may restyle or reposition this mark to fit your
  *     design"). See styles/app.css `.vela-attribution`.
  */
-import { useEffect, useRef } from "react";
-import { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { useEffect, useRef, useState } from "react";
+import { VelaWorkspace, registerLayout, layoutForGrid, ensureLayout } from "@luxalgo/vela/workspace";
+import { registerIcon } from "@luxalgo/vela";
 import { HyperliquidProvider } from "@luxalgo/vela/providers/hyperliquid";
 import { PineEngine } from "@luxalgo/vela-pinets";
 import { syncCustomLibrary } from "./PineEditor";
@@ -43,8 +44,61 @@ import { restorePineIndicators } from "../lib/pinePersist";
 import { trackSelection } from "../lib/drawingPresets";
 import { mountMarket } from "../lib/marketData";
 import { installDrawingIsolation } from "../lib/drawingInteractions";
-
 import { AlpacaProvider } from "../lib/alpacaProvider";
+import { ChartBarReplay } from "./ChartBarReplay";
+import { ChartMultiLayout } from "./ChartMultiLayout";
+import { ChartRadialMenu } from "./ChartRadialMenu";
+
+// Register custom layout presets (up to 8 charts max)
+try {
+  registerLayout({
+    id: "3h",
+    label: "3 side-by-side",
+    cols: [1, 1, 1],
+    rows: [1],
+    cells: [{ id: "c1" }, { id: "c2" }, { id: "c3" }],
+  });
+  registerLayout({
+    id: "3v",
+    label: "3 stacked",
+    cols: [1],
+    rows: [1, 1, 1],
+    cells: [{ id: "c1" }, { id: "c2" }, { id: "c3" }],
+  });
+  registerLayout({
+    id: "6h",
+    label: "6 grid (2×3)",
+    cols: [1, 1, 1],
+    rows: [1, 1],
+    cells: Array.from({ length: 6 }, (_, i) => ({ id: `c${i + 1}` })),
+  });
+  registerLayout({
+    id: "6v",
+    label: "6 grid (3×2)",
+    cols: [1, 1],
+    rows: [1, 1, 1],
+    cells: Array.from({ length: 6 }, (_, i) => ({ id: `c${i + 1}` })),
+  });
+  registerLayout({
+    id: "8v",
+    label: "8 grid (4×2)",
+    cols: [1, 1],
+    rows: [1, 1, 1, 1],
+    cells: Array.from({ length: 8 }, (_, i) => ({ id: `c${i + 1}` })),
+  });
+} catch {
+  // layouts already registered
+}
+
+// Register replay icon in Vela icon registry
+try {
+  registerIcon(
+    "replay",
+    `<svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8a5.5 5.5 0 1 1 1.6 3.9l-1.4 1.4M2.5 8H6M2.5 8V4.5"/><polygon points="7,8 10,6 10,10" fill="currentColor"/></svg>`
+  );
+} catch {
+  // icon already registered
+}
 
 interface Props {
   coin: string;
@@ -80,13 +134,21 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
 
+  const [wsInstance, setWsInstance] = useState<VelaWorkspace | null>(null);
+  const [replayActive, setReplayActive] = useState<boolean>(false);
+  const [layoutOpen, setLayoutOpen] = useState<boolean>(false);
+  const layoutBtnRef = useRef<HTMLButtonElement | null>(null);
+
   // Mount once. React 19 Strict Mode double-invokes effects in dev, so guard.
   useEffect(() => {
     const el = ref.current;
     if (!el || wsRef.current) return;
 
     const ws = new VelaWorkspace(el, {
-      layout: false, // single chart — no grid picker / sync switches
+      layout: "1", // Single chart initial, layout picker & sync engine active!
+      engines: {
+        pine: () => new PineEngine(),
+      },
       symbol: coin,
       timeframe,
       bars: barsForTf(timeframe),
@@ -101,15 +163,39 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
         alpaca: () => new AlpacaProvider(),
       },
       drawings: true, // the full 84-tool surface with the shared toolbar
+      sync: {
+        crosshair: true,
+        symbol: false,
+        timeframe: false,
+        style: true,
+      },
     });
     wsRef.current = ws;
+    setWsInstance(ws);
 
-    // PineTS — the Pine Script engine Vela's docs point at. Vela ships NO
-    // engine by default (candles + native indicators only); without this the
-    // user cannot run any Pine script. Registering 'pine' makes
-    // chart.addIndicator(source) compile and render real Pine.
-    // Guarded: React 19 Strict Mode mounts, destroys, then re-mounts, so the
-    // first instance is dead by the time this line runs — a dead cell throws.
+    // Enforce strict cap: max 8 charts in setLayout
+    const origSetLayout = ws.setLayout.bind(ws);
+    ws.setLayout = (layout: unknown) => {
+      let def = typeof layout === "string" ? ensureLayout(layout) : layout as { cells?: unknown[] };
+      if (def && def.cells && def.cells.length > 8) {
+        console.warn("[trade-pro] layout exceeds max 8 charts, clamping to 8");
+        const clampedDef = ensureLayout("8") ?? layoutForGrid(2, 4);
+        origSetLayout(clampedDef);
+      } else {
+        origSetLayout(layout as Parameters<typeof origSetLayout>[0]);
+      }
+    };
+
+    // New cells created in multi-chart grid get drawing isolation wired
+    ws.on("cell:created", () => {
+      try {
+        installDrawingIsolation(ws);
+      } catch (e) {
+        console.warn("[trade-pro] cell isolation install failed:", e);
+      }
+    });
+
+    // PineTS engine for initial cell (guarded for Strict Mode)
     try {
       ws.chart.registerEngine("pine", new PineEngine());
     } catch (e) {
@@ -143,17 +229,99 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
         } catch (e) {
           console.warn("[trade-pro] drawing isolation install failed:", e);
         }
+
+        let topbarObserver: MutationObserver | null = null;
+
+        // Attach Replay and Multiple Charts controls directly inside chart topbar
+        const attachTopbarControls = () => {
+          const indBtn = el.querySelector(".vela-widget-indicators");
+          const topbarContainer =
+            indBtn?.parentElement ||
+            el.querySelector(".vela-topbar-left, .vela-widget-topbar, .vela-topbar, [class*='topbar']");
+          if (!topbarContainer) return;
+
+          // 1. Hook native layout button or insert custom layout button
+          const nativeLayoutBtn = el.querySelector<HTMLButtonElement>(
+            ".vela-widget-style[aria-label*='Layout'], button[aria-label*='Layout']"
+          );
+          if (nativeLayoutBtn) {
+            layoutBtnRef.current = nativeLayoutBtn;
+            nativeLayoutBtn.onclick = (e) => {
+              e.stopPropagation();
+              setLayoutOpen((prev) => !prev);
+            };
+          } else if (!topbarContainer.querySelector(".vela-topbar-layout-custom-btn")) {
+            const layoutBtn = document.createElement("button");
+            layoutBtn.className = "vela-widget-style vela-topbar-layout-custom-btn";
+            layoutBtn.title = "Multiple Charts Layout (Max 8)";
+            layoutBtn.setAttribute("aria-label", "Multiple Charts Layout");
+            layoutBtn.innerHTML = `
+              <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3">
+                <rect x="2" y="2" width="5" height="5" rx="1"/>
+                <rect x="9" y="2" width="5" height="5" rx="1"/>
+                <rect x="2" y="9" width="5" height="5" rx="1"/>
+                <rect x="9" y="9" width="5" height="5" rx="1"/>
+              </svg>
+            `;
+            layoutBtn.addEventListener("click", (e) => {
+              e.stopPropagation();
+              setLayoutOpen((prev) => !prev);
+            });
+            layoutBtnRef.current = layoutBtn;
+            if (indBtn) {
+              topbarContainer.insertBefore(layoutBtn, indBtn);
+            } else {
+              topbarContainer.appendChild(layoutBtn);
+            }
+          }
+
+          // 2. Insert Replay button into topbar (Image 1 & 2 design: ◂◂ Replay)
+          if (!topbarContainer.querySelector(".vela-topbar-replay-btn")) {
+            const replayBtn = document.createElement("button");
+            replayBtn.className = "vela-widget-action-left vela-topbar-replay-btn";
+            replayBtn.title = "Bar Replay (Practice strategies with historical cuts)";
+            replayBtn.setAttribute("aria-label", "Bar Replay");
+            replayBtn.innerHTML = `
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" style="margin-right: 4px; vertical-align: -1px;">
+                <path d="M7 4.5v7l-5-3.5 5-3.5zm7 0v7l-5-3.5 5-3.5z"/>
+              </svg>
+              <span>Replay</span>
+            `;
+            replayBtn.addEventListener("click", () => {
+              setReplayActive((prev) => !prev);
+            });
+
+            if (indBtn && indBtn.nextSibling) {
+              topbarContainer.insertBefore(replayBtn, indBtn.nextSibling);
+            } else {
+              topbarContainer.appendChild(replayBtn);
+            }
+          }
+        };
+
+        attachTopbarControls();
+
+        // Keep controls attached when topbar renders/updates
+        topbarObserver = new MutationObserver(() => {
+          if (!el.querySelector(".vela-topbar-replay-btn")) {
+            attachTopbarControls();
+          }
+        });
+        topbarObserver.observe(el, { childList: true, subtree: true });
+
         onReadyRef.current?.(ws);
       })
       .catch((e) => console.error("[trade-pro] vela ready failed", e));
 
     return () => {
+      topbarObserver?.disconnect();
       try {
         ws.destroy();
       } catch {
         /* already gone */
       }
       wsRef.current = null;
+      setWsInstance(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -304,5 +472,41 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     };
   }, [coin, timeframe]);
 
-  return <div ref={ref} className="vela-host" />;
+  // Sync replay active status with the topbar replay button styling
+  useEffect(() => {
+    const replayBtn = ref.current?.querySelector(".vela-topbar-replay-btn");
+    if (replayBtn) {
+      if (replayActive) {
+        replayBtn.classList.add("active");
+        replayBtn.setAttribute("data-active", "true");
+      } else {
+        replayBtn.classList.remove("active");
+        replayBtn.removeAttribute("data-active");
+      }
+    }
+  }, [replayActive]);
+
+  return (
+    <div
+      className="vela-chart-container"
+      style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}
+    >
+      <div ref={ref} className="vela-host" />
+      <ChartBarReplay
+        ws={wsInstance}
+        coin={coin}
+        timeframe={timeframe}
+        active={replayActive}
+        onClose={() => setReplayActive(false)}
+      />
+      <ChartMultiLayout
+        ws={wsInstance}
+        isOpen={layoutOpen}
+        onClose={() => setLayoutOpen(false)}
+        triggerRef={layoutBtnRef}
+      />
+      <ChartRadialMenu ws={wsInstance} />
+    </div>
+  );
 }
+

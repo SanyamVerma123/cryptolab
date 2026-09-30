@@ -221,6 +221,8 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
   const touchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdDragTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartPos = useRef<{ x: number; y: number; time: number } | null>(null);
+  const lastTapRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const lastRightClickRef = useRef<{ x: number; y: number; time: number } | null>(null);
 
   const [fastLivePrice, setFastLivePrice] = useState<number>(() => getLiveMarketPrice());
 
@@ -637,7 +639,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
     [getPriceAtY, plotEl, ws]
   );
 
-  // Double-click on chart or Long-press on mobile touch opens context menu
+  // Trade shortcut menu: Mobile = Double-tap ONLY (no long-press). Desktop = Double right-click ONLY (no double left-click).
   useEffect(() => {
     const host =
       plotEl ||
@@ -647,63 +649,72 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
 
     const onPointerDown = (e: PointerEvent) => {
       if ((e.target as HTMLElement).closest(".tv-trade-line, .chart-ctx-menu, button, .mobile-draw-hud, .mobile-draw-cancel-btn")) return;
-      const startX = e.clientX;
-      const startY = e.clientY;
-      touchStartPos.current = { x: startX, y: startY, time: performance.now() };
-
-      if (e.pointerType === "touch" || window.matchMedia("(pointer: coarse)").matches) {
-        if (touchTimer.current) clearTimeout(touchTimer.current);
-        touchTimer.current = setTimeout(() => {
-          try {
-            if (navigator.vibrate) navigator.vibrate(30);
-          } catch {}
-          triggerMenuAt(startX, startY);
-          touchStartPos.current = null;
-        }, 450);
-      }
+      touchStartPos.current = { x: e.clientX, y: e.clientY, time: performance.now() };
     };
 
     const onPointerMove = (e: PointerEvent) => {
       if (!touchStartPos.current) return;
       const dist = Math.hypot(e.clientX - touchStartPos.current.x, e.clientY - touchStartPos.current.y);
-      if (dist > 8) {
-        if (touchTimer.current) {
-          clearTimeout(touchTimer.current);
-          touchTimer.current = null;
-        }
+      if (dist > 12) {
+        touchStartPos.current = null;
       }
     };
 
-    const onPointerUp = () => {
-      if (touchTimer.current) {
-        clearTimeout(touchTimer.current);
-        touchTimer.current = null;
+    const onPointerUp = (e: PointerEvent) => {
+      const isTouch = e.pointerType === "touch" || window.matchMedia("(pointer: coarse)").matches;
+      if (isTouch && touchStartPos.current) {
+        const dist = Math.hypot(e.clientX - touchStartPos.current.x, e.clientY - touchStartPos.current.y);
+        const elapsed = performance.now() - touchStartPos.current.time;
+        // Check if this was a quick stationary tap
+        if (dist < 15 && elapsed < 400) {
+          const now = performance.now();
+          if (
+            lastTapRef.current &&
+            now - lastTapRef.current.time < 380 &&
+            Math.hypot(e.clientX - lastTapRef.current.x, e.clientY - lastTapRef.current.y) < 25
+          ) {
+            // Mobile Double-Tap detected!
+            lastTapRef.current = null;
+            try {
+              if (navigator.vibrate) navigator.vibrate(25);
+            } catch {}
+            triggerMenuAt(e.clientX, e.clientY);
+          } else {
+            lastTapRef.current = { x: e.clientX, y: e.clientY, time: now };
+          }
+        }
       }
       touchStartPos.current = null;
     };
 
-    const onDblClick = (e: MouseEvent) => {
-      if ((e.target as HTMLElement).closest(".tv-trade-line, .chart-ctx-menu, button, .mobile-draw-hud, .mobile-draw-cancel-btn")) return;
-      triggerMenuAt(e.clientX, e.clientY);
-    };
-
+    // Computer / Desktop: Double right-click opens the trade shortcut menu (double left-click is disabled)
     const onContextMenu = (e: MouseEvent) => {
       if ((e.target as HTMLElement).closest(".tv-trade-line, .chart-ctx-menu, button")) return;
       e.preventDefault();
-      triggerMenuAt(e.clientX, e.clientY);
+
+      const now = performance.now();
+      if (
+        lastRightClickRef.current &&
+        now - lastRightClickRef.current.time < 450 &&
+        Math.hypot(e.clientX - lastRightClickRef.current.x, e.clientY - lastRightClickRef.current.y) < 25
+      ) {
+        // Desktop Double Right-Click detected!
+        lastRightClickRef.current = null;
+        triggerMenuAt(e.clientX, e.clientY);
+      } else {
+        lastRightClickRef.current = { x: e.clientX, y: e.clientY, time: now };
+      }
     };
 
     host.addEventListener("pointerdown", onPointerDown, { capture: true });
     window.addEventListener("pointermove", onPointerMove, { capture: true });
     window.addEventListener("pointerup", onPointerUp, { capture: true });
-    host.addEventListener("dblclick", onDblClick, { capture: true });
     host.addEventListener("contextmenu", onContextMenu, { capture: true });
 
     return () => {
       host.removeEventListener("pointerdown", onPointerDown, { capture: true });
       window.removeEventListener("pointermove", onPointerMove, { capture: true });
       window.removeEventListener("pointerup", onPointerUp, { capture: true });
-      host.removeEventListener("dblclick", onDblClick, { capture: true });
       host.removeEventListener("contextmenu", onContextMenu, { capture: true });
     };
   }, [triggerMenuAt, plotEl, ws]);

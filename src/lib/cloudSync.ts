@@ -286,25 +286,94 @@ export async function pullFromCloud(): Promise<boolean> {
 }
 
 /**
- * Schedule a debounced push to cloud whenever local settings or trades change.
+ * Schedule a fast push to cloud whenever local settings or trades change.
+ * Fast 150ms debounce ensures sub-second updates to peer devices without flooding.
  */
-export function scheduleCloudPush(delayMs = 1500): void {
+export function scheduleCloudPush(delayMs = 150): void {
   if (pushTimer) clearTimeout(pushTimer);
   pushTimer = setTimeout(() => {
     void pushToCloud();
   }, delayMs);
 }
 
+let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+
 /**
- * Initialize cloud sync event listeners across the application.
+ * Setup Realtime WebSocket subscription for instant multi-device sync
+ */
+function setupRealtimeSubscription(userId: string) {
+  if (realtimeChannel) {
+    try {
+      supabase.removeChannel(realtimeChannel);
+    } catch {}
+    realtimeChannel = null;
+  }
+
+  realtimeChannel = supabase
+    .channel(`realtime-user-sync-${userId}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "user_sync",
+        filter: `user_id=eq.${userId}`,
+      },
+      (payload) => {
+        if (payload.new) {
+          // Received real-time push from another connected device:
+          applyCloudData(payload.new as any);
+        }
+      }
+    )
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "trades",
+        filter: `user_id=eq.${userId}`,
+      },
+      () => {
+        // Trades updated on another device: trigger pull
+        void pullFromCloud();
+      }
+    )
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        console.log("[cloudSync] Connected to Realtime multi-device sync stream.");
+      }
+    });
+}
+
+/**
+ * Initialize cloud sync event listeners and Realtime channels across the application.
  */
 let initialized = false;
 export function initCloudSync(): () => void {
   if (initialized) return () => {};
   initialized = true;
 
-  // Initial pull if already logged in
-  void pullFromCloud();
+  // Initial pull and realtime setup if already logged in
+  void getCurrentUser().then((user) => {
+    if (user) {
+      void pullFromCloud();
+      setupRealtimeSubscription(user.id);
+    }
+  });
+
+  // Re-subscribe when auth state changes (sign in, token refresh, sign out)
+  const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+    if (session?.user) {
+      void pullFromCloud();
+      setupRealtimeSubscription(session.user.id);
+    } else {
+      if (realtimeChannel) {
+        supabase.removeChannel(realtimeChannel);
+        realtimeChannel = null;
+      }
+    }
+  });
 
   // Listen to local application events that modify state
   const handleLocalChange = () => {
@@ -320,6 +389,11 @@ export function initCloudSync(): () => void {
   });
 
   return () => {
+    authListener.subscription.unsubscribe();
+    if (realtimeChannel) {
+      supabase.removeChannel(realtimeChannel);
+      realtimeChannel = null;
+    }
     window.removeEventListener("alpaca-config-changed", handleLocalChange);
     window.removeEventListener("order-state-changed", handleLocalChange);
     window.removeEventListener("pine-lib-changed", handleLocalChange);

@@ -214,6 +214,34 @@ function notify() {
   listeners.forEach((l) => l());
 }
 
+/**
+ * Reload in-memory orders, positions, and balances from localStorage.
+ * Triggered automatically when Supabase Realtime delivers updates from other devices.
+ */
+export function reloadOrdersFromStorage(): void {
+  gTradingMode = getStored<TradingMode>(TRADING_MODE_KEY, "in_app");
+  gOrders = getStored<Order[]>(ORDERS_KEY, DEFAULT_ORDERS);
+  gPositions = getStored<TradePosition[]>(POSITIONS_KEY, DEFAULT_POSITIONS);
+  gHistory = getStored<Order[]>(HISTORY_KEY, DEFAULT_HISTORY);
+  gBalances = getStored<Balances>(BALANCES_KEY, DEFAULT_BALANCES);
+  gAlerts = getStored<PriceAlert[]>(ALERTS_KEY, []);
+  listeners.forEach((l) => l());
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("tradepro-cloud-data-applied", reloadOrdersFromStorage);
+  window.addEventListener("storage", (e) => {
+    if (
+      e.key === ORDERS_KEY ||
+      e.key === POSITIONS_KEY ||
+      e.key === BALANCES_KEY ||
+      e.key === HISTORY_KEY
+    ) {
+      reloadOrdersFromStorage();
+    }
+  });
+}
+
 export function getTradingMode(): TradingMode {
   return gTradingMode;
 }
@@ -777,9 +805,13 @@ export function checkPriceTriggers(
   const prevPrice = lastPriceByCoin.get(normCoin);
   lastPriceByCoin.set(normCoin, currentPrice);
 
-  // If initial tick (no prior tick recorded yet), save baseline and return early
-  // so no existing order executes prematurely upon initial component mount or symbol switch
-  if (prevPrice === undefined || prevPrice <= 0) {
+  // If initial tick or price jump anomaly (> 30% jump in one tick, e.g. from coin switch),
+  // record baseline and return early so no order triggers falsely!
+  if (
+    prevPrice === undefined ||
+    prevPrice <= 0 ||
+    Math.abs(currentPrice - prevPrice) / prevPrice > 0.3
+  ) {
     return { filledOrders: [], closedPositions: [], triggeredAlerts: [] };
   }
 
@@ -791,7 +823,7 @@ export function checkPriceTriggers(
   for (const ord of gOrders) {
     const oCoin = (ord.coin || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
     const oPair = (ord.pair || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-    if (oCoin !== normCoin && !oPair.includes(normCoin)) {
+    if (oCoin !== normCoin && !oPair.startsWith(normCoin) && !oPair.includes(normCoin)) {
       remainingOrders.push(ord);
       continue;
     }
@@ -803,23 +835,36 @@ export function checkPriceTriggers(
     }
 
     const L = ord.price;
-    const refPrice = ord.placedAtPrice ?? ord.price;
-
-    // Symmetrical Price Cut Conditions (Applies evenly to both BUY and SELL):
-    const cutUp = (prevPrice < L && currentPrice >= L) || (prevPrice <= L && currentPrice > L);
-    const cutDown = (prevPrice > L && currentPrice <= L) || (prevPrice >= L && currentPrice < L);
-
     let shouldFill = false;
 
-    if (cutUp || cutDown) {
-      // Direct live price cut/cross through the limit line
-      shouldFill = true;
-    } else if (refPrice > L && currentPrice <= L) {
-      // Order was placed/dragged below market: market dropped to or through limit
-      shouldFill = true;
-    } else if (refPrice < L && currentPrice >= L) {
-      // Order was placed/dragged above market: market climbed to or through limit
-      shouldFill = true;
+    if (ord.side === "BUY") {
+      // BUY Limit order: can ONLY execute when market price is at or below the limit price L!
+      // It can NEVER execute if market price is above L.
+      if (currentPrice <= L) {
+        // Did price cut down through L, or touch L from above?
+        const cutDown = prevPrice > L && currentPrice <= L;
+        const touchedLow = _candleLow !== undefined && _candleLow <= L && prevPrice >= L;
+        const refPrice = ord.placedAtPrice ?? prevPrice;
+        const placedAbove = refPrice >= L && currentPrice <= L;
+
+        if (cutDown || touchedLow || placedAbove) {
+          shouldFill = true;
+        }
+      }
+    } else if (ord.side === "SELL") {
+      // SELL Limit order: can ONLY execute when market price is at or above the limit price L!
+      // It can NEVER execute if market price is below L.
+      if (currentPrice >= L) {
+        // Did price cut up through L, or touch L from below?
+        const cutUp = prevPrice < L && currentPrice >= L;
+        const touchedHigh = _candleHigh !== undefined && _candleHigh >= L && prevPrice <= L;
+        const refPrice = ord.placedAtPrice ?? prevPrice;
+        const placedBelow = refPrice <= L && currentPrice >= L;
+
+        if (cutUp || touchedHigh || placedBelow) {
+          shouldFill = true;
+        }
+      }
     }
 
     if (shouldFill) {

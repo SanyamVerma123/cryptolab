@@ -116,8 +116,13 @@ export function patchBoxHitTest(): void {
 function isAxisZone(x: number, y: number, proj: any, coords: any): boolean {
   const w = proj?.width ?? coords?.width ?? 0;
   const h = proj?.height ?? coords?.height ?? 0;
-  if (w > 0 && x >= w - 1) return true; // Price bar (Y-axis)
-  if (h > 0 && y >= h - 1) return true; // Time/date bar (X-axis)
+  // Guard the full price scale strip on the right (typical 65-85px)
+  const priceAxisWidth = Math.max(proj?.priceAxisWidth ?? coords?.priceAxisWidth ?? 0, 75);
+  // Guard the full time/date scale strip at the bottom (typical 28-36px)
+  const timeAxisHeight = Math.max(proj?.timeAxisHeight ?? coords?.timeAxisHeight ?? 0, 32);
+
+  if (w > 0 && x >= w - priceAxisWidth) return true; // Price bar (Y-axis)
+  if (h > 0 && y >= h - timeAxisHeight) return true; // Time/date bar (X-axis)
   if (x < 0 || y < 0) return true;
   return false;
 }
@@ -139,13 +144,17 @@ function safeTopDrawingAt(
 
   const currentPaneId = proj.paneIdAtY ? proj.paneIdAtY(y) : "price";
 
+  // OSCILLATOR INDICATOR PANE HARD ISOLATION:
+  // If pointer or touch is inside an oscillator pane (e.g. pane_1, pane_2, rsi, macd),
+  // drawings belonging to the main price chart can NEVER be touched, hovered, or selected!
+  if (currentPaneId && currentPaneId !== "price" && !currentPaneId.includes("main")) {
+    return null;
+  }
+
   for (let i = drawings.length - 1; i >= 0; i -= 1) {
     const d = drawings[i];
     if (!d || !d.visible) continue;
 
-    // OSCILLATOR PANE ISOLATION:
-    // If pointer is inside an oscillator pane, drawings belonging to the main price pane
-    // (or any other pane) must NEVER be touched or functional!
     if (d.paneId && currentPaneId && d.paneId !== currentPaneId) {
       continue;
     }
