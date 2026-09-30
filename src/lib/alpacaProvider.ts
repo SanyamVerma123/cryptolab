@@ -31,6 +31,7 @@ export interface SymbolInfo {
   pricescale: number;
   timezone: string;
   session: string;
+  [key: string]: any;
 }
 
 // 150+ Curated US Equities & ETFs for instant search bar auto-completion
@@ -267,8 +268,9 @@ export class AlpacaProvider {
   /**
    * Symbol icon resolver for stocks
    */
-  resolveSymbolIcon(symbol: string): string {
-    const clean = symbol.replace(/^ALPACA:/i, "").trim().toUpperCase();
+  resolveSymbolIcon(symbol: any): string {
+    const raw = typeof symbol === "string" ? symbol : symbol?.ticker ?? "";
+    const clean = raw.replace(/^ALPACA:/i, "").trim().toUpperCase();
     // Return SVG data URI badge for stock symbol
     return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="4" fill="%232563EB"/><text x="12" y="16" fill="white" font-family="sans-serif" font-size="10" font-weight="bold" text-anchor="middle">${clean.slice(0, 3)}</text></svg>`;
   }

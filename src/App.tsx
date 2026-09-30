@@ -28,6 +28,9 @@ import { ChartTradingOverlay } from "./components/ChartTradingOverlay";
 import { LuxAlgoPanel } from "./components/LuxAlgoPanel";
 import { OrderPlacementPanel } from "./components/OrderPlacementPanel";
 import { BottomOrdersDrawer } from "./components/BottomOrdersDrawer";
+import { UserMenu } from "./components/UserMenu";
+import { AuthModal } from "./components/AuthModal";
+import { initCloudSync } from "./lib/cloudSync";
 import { HyperliquidSocket } from "./lib/hyperliquid";
 import { useLiveData } from "./lib/useLiveData";
 import "./styles/app.css";
@@ -53,6 +56,12 @@ export default function App() {
   const [indOpen, setIndOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [luxOpen, setLuxOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+
+  useEffect(() => {
+    const cleanup = initCloudSync();
+    return () => cleanup();
+  }, []);
   const [panelWidth, setPanelWidth] = useState<number>(() => {
     try {
       const saved = localStorage.getItem("tradepro_right_panel_width");
@@ -255,58 +264,61 @@ export default function App() {
 
         <div className="controls">
           <button
-            className={"series-select" + (pineOpen ? " on" : "")}
-            title="Open the Pine Script editor"
+            className={"series-select icon-only-btn" + (pineOpen ? " on" : "")}
+            title="Pine Script Editor"
             onClick={() => setPineOpen((v) => !v)}
+            aria-label="Pine Script Editor"
           >
             <span className="ctl-ico" aria-hidden="true">
               {/* The real Pine Script mark, matching the Pine branding. */}
               <img
                 src="/pine-logo.svg"
-                alt=""
-                width={15}
-                height={15}
+                alt="Pine"
+                width={16}
+                height={16}
                 style={{ verticalAlign: "-2px", borderRadius: 3 }}
               />
             </span>
-            <span className="ctl-text">Pine</span>
           </button>
           <button
-            className={"series-select" + (luxOpen ? " on" : "")}
-            title="Browse the LuxAlgo indicator library and add one to the chart"
+            className={"series-select icon-only-btn" + (luxOpen ? " on" : "")}
+            title="LuxAlgo Indicator Library"
             onClick={() => setLuxOpen((v) => !v)}
+            aria-label="LuxAlgo Indicator Library"
           >
             <span className="ctl-ico" aria-hidden="true">✥</span>
-            <span className="ctl-text">LuxAlgo</span>
           </button>
           <button
-            className={"series-select" + (panelOpen ? " on" : "")}
-            title="Toggle market panel"
+            className={"series-select icon-only-btn" + (panelOpen ? " on" : "")}
+            title={panelOpen ? "Hide Market Panel" : "Show Market Panel"}
             onClick={() => setPanelOpen((v) => !v)}
+            aria-label={panelOpen ? "Hide Market Panel" : "Show Market Panel"}
           >
             <span className="ctl-ico" aria-hidden="true">{panelOpen ? "◧" : "▦"}</span>
-            <span className="ctl-text">{panelOpen ? "Hide panel" : "Show panel"}</span>
           </button>
 
           {/* Settings modal (Alpaca API Keys & Trading Preferences) */}
           <button
-            className={"series-select" + (settingsOpen ? " on" : "")}
+            className={"series-select icon-only-btn" + (settingsOpen ? " on" : "")}
             title="Alpaca Trading & App Settings"
             onClick={() => setSettingsOpen(true)}
+            aria-label="Settings"
           >
             <span className="ctl-ico" aria-hidden="true">⚙</span>
-            <span className="ctl-text">Settings</span>
           </button>
+
+          {/* User Account & Supabase Cloud Sync */}
+          <UserMenu onOpenAuth={() => setAuthOpen(true)} />
 
           {/* PWA Install / Download App button */}
           {!isInstalled && (
             <button
-              className="series-select pwa-install-btn"
-              title="Install Trade Pro app to your desktop or mobile home screen"
+              className="series-select icon-only-btn pwa-install-btn"
+              title="Install Trade Pro App"
               onClick={handleInstallApp}
+              aria-label="Install Trade Pro App"
             >
               <span className="ctl-ico" aria-hidden="true">📥</span>
-              <span className="ctl-text">Install App</span>
             </button>
           )}
         </div>
@@ -329,6 +341,7 @@ export default function App() {
             {/* Indicator toggles */}
             <IndicatorToggles ws={ws} open={indOpen} />
             <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+            <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
           </div>
 
           {/* Bottom Orders Drawer with '^' toggle icon at bottom-right corner */}

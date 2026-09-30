@@ -190,21 +190,97 @@ export function installDrawingIsolation(ws: VelaWorkspace): () => void {
 
     const origInteractionHitAt = interaction.hitAt;
     const origInteractionClaim = interaction.claim;
+    const origInteractionDown = interaction.down;
+    const origInteractionCursorAt = interaction.cursorAt;
+    const origInteractionHandleDrawings = interaction.handleDrawings;
     const origUserDrawingsClaim = userDrawings.claim;
     const origUserDrawingsUpdateHover = userDrawings.updateHover;
     const origUserDrawingsDeleteAt = userDrawings.deleteAt;
+    const origPainterPaintAll = userDrawings.painter?.paintAll;
+    const origPainterPaintHighlights = userDrawings.painter?.paintHighlights;
 
-    // 1. Patch interaction.hitAt
+    // 1. Lock userDrawings.hoveredId to ALWAYS be null.
+    // Hovering must NEVER highlight drawings, set hover state, or paint hover handles.
+    try {
+      Object.defineProperty(userDrawings, "hoveredId", {
+        get() {
+          return null;
+        },
+        set(_val) {
+          // Strictly ignore any attempt to store or set hoveredId
+        },
+        configurable: true,
+      });
+    } catch {
+      userDrawings.hoveredId = null;
+    }
+
+    // 2. Patch userDrawings.painter.paintAll & paintHighlights:
+    // Guarantees that only drawings that the user has explicitly tapped and released (selected)
+    // can ever display handles on the canvas.
+    if (userDrawings.painter) {
+      if (typeof origPainterPaintAll === "function") {
+        userDrawings.painter.paintAll = function (
+          ctx: any,
+          drawings: any[],
+          proj: any,
+          theme: any,
+          targets: any = {}
+        ) {
+          const sanitizedTargets = {
+            ...targets,
+            hovered: null, // Zero out hover target
+          };
+          return origPainterPaintAll.call(this, ctx, drawings, proj, theme, sanitizedTargets);
+        };
+      }
+
+      if (typeof origPainterPaintHighlights === "function") {
+        userDrawings.painter.paintHighlights = function (
+          ctx: any,
+          drawings: any[],
+          proj: any,
+          handleIds: Set<string>
+        ) {
+          // Strictly filter handles to drawings currently in selectedIds
+          const selected = userDrawings.selectedIds || new Set<string>();
+          const strictHandleIds = new Set<string>();
+          if (handleIds) {
+            for (const id of handleIds) {
+              if (selected.has(id)) {
+                strictHandleIds.add(id);
+              }
+            }
+          }
+          return origPainterPaintHighlights.call(this, ctx, drawings, proj, strictHandleIds);
+        };
+      }
+    }
+
+    // 3. Patch interaction.handleDrawings:
+    // Only return handles for drawings that are in selectedIds!
+    interaction.handleDrawings = function () {
+      const selected = this.deps.selectedIds ? this.deps.selectedIds() : new Set<string>();
+      const out: any[] = [];
+      for (const id of selected) {
+        const d = this.byId(id);
+        if (d && !d.locked && d.visible) out.push(d);
+      }
+      return out;
+    };
+
+    // 4. Patch interaction.hitAt:
+    // Only check handles on drawings that are ALREADY selected.
     interaction.hitAt = function (x: number, y: number) {
       const proj = this.deps.projector();
       if (!proj) return null;
 
-      // Axis isolation
+      // Axis isolation: drawings never intercept pointer events in axis strips
       if (isAxisZone(x, y, proj, coords)) return null;
 
       const currentPaneId = proj.paneIdAtY ? proj.paneIdAtY(y) : "price";
 
-      // Check handle drawings (selected/hovered) with strict pane isolation
+      // Check handle drawings (STRICTLY SELECTED ONLY) with pane isolation
       if (typeof this.handleDrawings === "function") {
         for (const d of this.handleDrawings()) {
           if (!d) continue;
@@ -222,38 +298,82 @@ export function installDrawingIsolation(ws: VelaWorkspace): () => void {
       return safeTopDrawingAt(this.deps.drawings(), x, y, proj, coords, 6);
     };
 
-    // 2. Patch interaction.claim
+    // 5. Patch interaction.claim:
+    // KEY REQUIREMENT:
+    // "make it until i touch the drawing and tap on it and realease the drawing will not action and move.
+    // Think in detail please and i want to make it on every drawings."
+    //
+    // A drawing CANNOT claim pointer events unless it was ALREADY selected by a prior tap-and-release!
+    // Dragging over any drawing smoothly pans the chart screen.
     interaction.claim = function (x: number, y: number): boolean {
       const proj = this.deps.projector();
-      // Axis isolation: drawings NEVER claim pointer events in the price or time axis strips
       if (isAxisZone(x, y, proj, coords)) return false;
 
-      // In-flight gesture: continue moving
-      if (this.state && this.state.kind !== "idle") return true;
+      // If active tool is currently armed (drawing a new shape from toolbar):
+      if (this.deps.activeTool() != null || this.state?.kind === "placing") {
+        return true;
+      }
 
-      // If active tool is armed:
-      if (this.deps.activeTool() != null) {
+      // In-flight gesture: only continue if state is ALREADY pressed or dragging an already-selected drawing
+      if (this.state && this.state.kind !== "idle") {
+        if (this.state.kind === "pressed") {
+          const selected = this.deps.selectedIds ? this.deps.selectedIds() : new Set<string>();
+          if (!selected.has(this.state.id)) {
+            this.state = { kind: "idle" };
+            return false;
+          }
+        }
         return true;
       }
 
       const hit = this.hitAt(x, y);
       if (!hit) return false;
 
-      // KEY USER REQUIREMENT:
-      // "Can you make that until i click or tap on any drawing, it will not active for atteration or changes.
-      // Like sumtimes i move the screen by click and move finger or mouse the drawing is also moving so make until i fist click or tap then it will ativate to move."
-      //
-      // An unselected drawing does NOT claim pointerdown. This allows any press & drag
-      // over an unselected drawing to PAN THE SCREEN smoothly instead of dragging the drawing!
-      // Only when a drawing is ALREADY SELECTED (or its handles are touched) does it claim the drag.
+      // STRICT TAP-AND-RELEASE ACTIVATION:
+      // If the drawing is NOT already selected, claim returns FALSE!
+      // This routes the pointer event to chart pan (data region).
       const selected = this.deps.selectedIds ? this.deps.selectedIds() : new Set<string>();
-      const isSelected = selected.has(hit.id);
-      const isHandle = typeof hit.hitHandle === "function" && hit.hitHandle(x, y, proj, 6) >= 0;
-
-      return isSelected || isHandle;
+      return selected.has(hit.id);
     };
 
-    // 3. Patch userDrawings.claim
+    // 6. Patch interaction.down:
+    // Prevent unselected drawings from entering state = { kind: "pressed" }
+    interaction.down = function (
+      x: number,
+      y: number,
+      mode = "off",
+      shift2 = false,
+      mod = false
+    ) {
+      if (this.deps.activeTool() != null || this.state?.kind === "placing") {
+        return origInteractionDown.call(this, x, y, mode, shift2, mod);
+      }
+
+      const hit = this.hitAt(x, y);
+      if (hit) {
+        const selected = this.deps.selectedIds ? this.deps.selectedIds() : new Set<string>();
+        // If the drawing is NOT selected, do not press or grab it!
+        // Return immediately so this.state stays { kind: "idle" }.
+        if (!selected.has(hit.id)) {
+          return;
+        }
+      }
+
+      return origInteractionDown.call(this, x, y, mode, shift2, mod);
+    };
+
+    // 7. Patch interaction.cursorAt:
+    // Only show pointer/grab cursor if drawing is ALREADY selected or active tool is armed.
+    interaction.cursorAt = function (x: number, y: number) {
+      if (this.deps.activeTool() != null) return null;
+      const hit = this.hitAt(x, y);
+      if (!hit) return null;
+      const selected = this.deps.selectedIds ? this.deps.selectedIds() : new Set<string>();
+      if (selected.has(hit.id)) return "pointer";
+      return null;
+    };
+
+    // 8. Patch userDrawings.claim
     userDrawings.claim = function (x: number, y: number): boolean {
       const proj = this.deps?.projector ? this.deps.projector() : renderer.drawingProjector?.();
       if (isAxisZone(x, y, proj, coords)) return false;
@@ -264,35 +384,13 @@ export function installDrawingIsolation(ws: VelaWorkspace): () => void {
       return this.interaction.claim(x, y);
     };
 
-    // 4. Patch userDrawings.updateHover
-    userDrawings.updateHover = function (x: number, y: number, mod: boolean = false) {
-      const proj = this.deps?.projector ? this.deps.projector() : renderer.drawingProjector?.();
-      if (isAxisZone(x, y, proj, coords)) {
-        if (this.hoveredId !== null) {
-          this.hoveredId = null;
-          this.render();
-        }
-        return;
-      }
-
-      let id = null;
-      if (
-        !mod &&
-        this.activeTool == null &&
-        !this.interaction.isPlacing() &&
-        !this.interaction.isDragging()
-      ) {
-        const hit = safeTopDrawingAt(this.drawings, x, y, proj, coords, 6);
-        id = hit?.id ?? null;
-      }
-
-      if (id !== this.hoveredId) {
-        this.hoveredId = id;
-        this.render();
-      }
+    // 9. Patch userDrawings.updateHover:
+    // Never activate or highlight drawings on hover
+    userDrawings.updateHover = function (_x: number, _y: number) {
+      // No-op: hover is permanently disabled
     };
 
-    // 5. Patch userDrawings.deleteAt
+    // 10. Patch userDrawings.deleteAt
     if (typeof origUserDrawingsDeleteAt === "function") {
       userDrawings.deleteAt = function (x: number, y: number, withSelection: boolean = false) {
         const proj = this.deps?.projector ? this.deps.projector() : renderer.drawingProjector?.();
@@ -301,9 +399,8 @@ export function installDrawingIsolation(ws: VelaWorkspace): () => void {
       };
     }
 
-    // 6. Wrap input.deps.drawingsClaim for ultimate protection
+    // 11. Wrap input.deps.drawingsClaim for chart pan protection
     if (renderer.input?.deps?.drawingsClaim) {
-      const origInputDrawingsClaim = renderer.input.deps.drawingsClaim;
       renderer.input.deps.drawingsClaim = (x: number, y: number): boolean => {
         const proj = renderer.drawingProjector?.();
         if (isAxisZone(x, y, proj, coords)) return false;
@@ -311,7 +408,8 @@ export function installDrawingIsolation(ws: VelaWorkspace): () => void {
       };
     }
 
-    // 7. Intercept input.deps.onClick so clicking/tapping an unselected drawing activates/selects it
+    // 12. Intercept input.deps.onClick:
+    // A complete tap/click and release gesture (without drag) on a drawing activates it!
     const origInputOnClick = renderer.input?.deps?.onClick;
     if (renderer.input?.deps) {
       renderer.input.deps.onClick = (x: number, y: number) => {
@@ -321,19 +419,26 @@ export function installDrawingIsolation(ws: VelaWorkspace): () => void {
           return;
         }
 
-        const hit = interaction.hitAt(x, y);
+        const hit = safeTopDrawingAt(userDrawings.drawings, x, y, proj, coords, 8);
         if (hit) {
-          // Single tap/click on an unselected drawing: ACTIVATE IT!
-          // Now handles appear and the user can alter, drag, or resize it.
-          if (typeof userDrawings.openSettingsById === "function") {
-            userDrawings.openSettingsById(hit.id, x, y);
-          } else if (typeof userDrawings.setSelection === "function") {
+          // Touch, tap, and release: NOW the drawing becomes actionable!
+          // Handles appear and settings toolbar opens:
+          if (typeof userDrawings.setSelection === "function") {
             userDrawings.setSelection([hit.id]);
           }
+          if (typeof userDrawings.openSettingsById === "function") {
+            userDrawings.openSettingsById(hit.id, x, y);
+          }
+          userDrawings.render();
           return;
         }
 
-        // Tap/click on empty chart space: deselect drawings
+        // Tap/click on empty chart space: deactivate all drawings
+        if (typeof userDrawings.clearSelection === "function") {
+          userDrawings.clearSelection();
+        }
+        userDrawings.popup?.close();
+        userDrawings.render();
         origInputOnClick?.(x, y);
       };
     }
@@ -342,10 +447,15 @@ export function installDrawingIsolation(ws: VelaWorkspace): () => void {
       try {
         interaction.hitAt = origInteractionHitAt;
         interaction.claim = origInteractionClaim;
+        interaction.down = origInteractionDown;
+        interaction.cursorAt = origInteractionCursorAt;
+        interaction.handleDrawings = origInteractionHandleDrawings;
         userDrawings.claim = origUserDrawingsClaim;
         userDrawings.updateHover = origUserDrawingsUpdateHover;
         if (origUserDrawingsDeleteAt) userDrawings.deleteAt = origUserDrawingsDeleteAt;
         if (origInputOnClick && renderer.input?.deps) renderer.input.deps.onClick = origInputOnClick;
+        if (origPainterPaintAll && userDrawings.painter) userDrawings.painter.paintAll = origPainterPaintAll;
+        if (origPainterPaintHighlights && userDrawings.painter) userDrawings.painter.paintHighlights = origPainterPaintHighlights;
       } catch {
         /* already destroyed */
       }
