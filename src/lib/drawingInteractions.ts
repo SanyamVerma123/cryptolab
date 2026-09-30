@@ -236,7 +236,21 @@ export function installDrawingIsolation(ws: VelaWorkspace): () => void {
         return true;
       }
 
-      return this.hitAt(x, y) != null;
+      const hit = this.hitAt(x, y);
+      if (!hit) return false;
+
+      // KEY USER REQUIREMENT:
+      // "Can you make that until i click or tap on any drawing, it will not active for atteration or changes.
+      // Like sumtimes i move the screen by click and move finger or mouse the drawing is also moving so make until i fist click or tap then it will ativate to move."
+      //
+      // An unselected drawing does NOT claim pointerdown. This allows any press & drag
+      // over an unselected drawing to PAN THE SCREEN smoothly instead of dragging the drawing!
+      // Only when a drawing is ALREADY SELECTED (or its handles are touched) does it claim the drag.
+      const selected = this.deps.selectedIds ? this.deps.selectedIds() : new Set<string>();
+      const isSelected = selected.has(hit.id);
+      const isHandle = typeof hit.hitHandle === "function" && hit.hitHandle(x, y, proj, 6) >= 0;
+
+      return isSelected || isHandle;
     };
 
     // 3. Patch userDrawings.claim
@@ -293,7 +307,34 @@ export function installDrawingIsolation(ws: VelaWorkspace): () => void {
       renderer.input.deps.drawingsClaim = (x: number, y: number): boolean => {
         const proj = renderer.drawingProjector?.();
         if (isAxisZone(x, y, proj, coords)) return false;
-        return origInputDrawingsClaim(x, y);
+        return userDrawings.claim(x, y);
+      };
+    }
+
+    // 7. Intercept input.deps.onClick so clicking/tapping an unselected drawing activates/selects it
+    const origInputOnClick = renderer.input?.deps?.onClick;
+    if (renderer.input?.deps) {
+      renderer.input.deps.onClick = (x: number, y: number) => {
+        const proj = renderer.drawingProjector?.();
+        if (isAxisZone(x, y, proj, coords)) {
+          origInputOnClick?.(x, y);
+          return;
+        }
+
+        const hit = interaction.hitAt(x, y);
+        if (hit) {
+          // Single tap/click on an unselected drawing: ACTIVATE IT!
+          // Now handles appear and the user can alter, drag, or resize it.
+          if (typeof userDrawings.openSettingsById === "function") {
+            userDrawings.openSettingsById(hit.id, x, y);
+          } else if (typeof userDrawings.setSelection === "function") {
+            userDrawings.setSelection([hit.id]);
+          }
+          return;
+        }
+
+        // Tap/click on empty chart space: deselect drawings
+        origInputOnClick?.(x, y);
       };
     }
 
@@ -304,6 +345,7 @@ export function installDrawingIsolation(ws: VelaWorkspace): () => void {
         userDrawings.claim = origUserDrawingsClaim;
         userDrawings.updateHover = origUserDrawingsUpdateHover;
         if (origUserDrawingsDeleteAt) userDrawings.deleteAt = origUserDrawingsDeleteAt;
+        if (origInputOnClick && renderer.input?.deps) renderer.input.deps.onClick = origInputOnClick;
       } catch {
         /* already destroyed */
       }
