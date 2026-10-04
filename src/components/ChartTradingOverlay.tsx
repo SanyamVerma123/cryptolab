@@ -40,6 +40,24 @@ interface Props {
   data: LiveData;
 }
 
+function getActiveChart(ws: VelaWorkspace | null | undefined) {
+  if (!ws) return null;
+  try {
+    return (ws as any).activeCell ? ws.chart : null;
+  } catch {
+    return null;
+  }
+}
+
+function getChartRenderer(ws: VelaWorkspace | null | undefined): any {
+  const chart = getActiveChart(ws);
+  try {
+    return (chart?.renderer as any)?.renderer ?? null;
+  } catch {
+    return null;
+  }
+}
+
 interface ProjectedPositionLine {
   id: string;
   side: "BUY" | "SELL";
@@ -238,7 +256,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
     if (!ws) return;
     const findPlot = () => {
       try {
-        const r = (ws.chart?.renderer as any)?.renderer;
+        const r = getChartRenderer(ws);
         if (r?.plot && r.plot instanceof HTMLElement) {
           if (r.plot !== plotEl) setPlotEl(r.plot);
           return;
@@ -348,7 +366,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
 
     const updateProjections = () => {
       try {
-        const r = (ws.chart?.renderer as any)?.renderer;
+        const r = getChartRenderer(ws);
         if (!r?.coords || !r?.scene?.panes) return;
 
         let pane = r.scene.panes.get("price") || [...r.scene.panes.values()][0];
@@ -592,7 +610,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
     (clientY: number): number | null => {
       if (!ws) return null;
       try {
-        const r = (ws.chart?.renderer as any)?.renderer;
+        const r = getChartRenderer(ws);
         if (!r?.coords || !r?.scene?.panes) return null;
         let pane = r.scene.panes.get("price") || [...r.scene.panes.values()][0];
         if (!pane?.scale || !pane?.bounds) return null;
@@ -616,10 +634,14 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
   // Trigger quick context menu at client coordinates
   const triggerMenuAt = useCallback(
     (clientX: number, clientY: number) => {
-      const host =
-        plotEl ||
-        (ws?.chart?.renderer as any)?.renderer?.plot ||
-        (document.querySelector(".vela-cell canvas")?.parentElement as HTMLElement | null);
+      let host: HTMLElement | null = null;
+      try {
+        const r = getChartRenderer(ws);
+        host =
+          plotEl ||
+          r?.plot ||
+          (document.querySelector(".vela-cell canvas")?.parentElement as HTMLElement | null);
+      } catch {}
       if (!host) return;
       const rect = host.getBoundingClientRect();
 
@@ -641,10 +663,14 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
 
   // Trade shortcut menu: Mobile = Double-tap ONLY (no long-press). Desktop = Double right-click ONLY (no double left-click).
   useEffect(() => {
-    const host =
-      plotEl ||
-      (ws?.chart?.renderer as any)?.renderer?.plot ||
-      (document.querySelector(".vela-cell canvas")?.parentElement as HTMLElement | null);
+    let host: HTMLElement | null = null;
+    try {
+      const r = getChartRenderer(ws);
+      host =
+        plotEl ||
+        r?.plot ||
+        (document.querySelector(".vela-cell canvas")?.parentElement as HTMLElement | null);
+    } catch {}
     if (!host) return;
 
     const onPointerDown = (e: PointerEvent) => {

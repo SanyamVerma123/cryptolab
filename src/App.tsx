@@ -18,6 +18,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
 import { VelaChart } from "./components/VelaChart";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MarketPanel } from "./components/MarketPanel";
 import { AiPanel } from "./components/AiPanel";
 import { FavoritesBar } from "./components/FavoritesBar";
@@ -133,7 +134,7 @@ export default function App() {
         localStorage.setItem("tradepro_right_panel_width", String(nextW));
       } catch {}
       try {
-        ws?.chart?.resize();
+        ws?.resize?.();
       } catch {}
     };
 
@@ -146,7 +147,7 @@ export default function App() {
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
       try {
-        ws?.chart?.resize();
+        ws?.resize?.();
       } catch {}
     };
 
@@ -195,30 +196,55 @@ export default function App() {
     const readSym = () => {
       if (dead) return;
       try {
-        // `market.symbol` is provider-prefixed (e.g. "hyperliquid:BTC"); the
-        // panel and the market store need the bare coin.
-        const sym = bareSymbol(ws.chart.market?.symbol);
+        const activeChart = (ws as any).activeCell ? ws.chart : null;
+        if (!activeChart) return;
+        const fullSym = activeChart.market?.symbol;
+        const sym = bareSymbol(fullSym);
         if (sym) setCoin(sym);
+        const tfVal = activeChart.market?.timeframe;
+        if (tfVal) setTf(tfVal);
       } catch {
         /* workspace torn down — ignore */
       }
     };
 
-    // Focus/active-cell change (single-chart app: fires on chart activation).
     const offActive = ws.on("cell:active", readSym);
-    // Symbol/timeframe change inside Vela — the one that actually matters for
-    // keeping the data panel in sync with the chart.
-    let offMarket: (() => void) | undefined;
+    const offLayout = ws.on("layout:changed", readSym);
+
+    // Wire market:changed across every live cell in the workspace
+    const wiredCells = new Set<string>();
+    const offsMarket: (() => void)[] = [];
+
+    const wireCell = (cell: any) => {
+      if (!cell || wiredCells.has(cell.id)) return;
+      wiredCells.add(cell.id);
+      try {
+        const off = cell.chart.on("market:changed", () => {
+          if (ws.active?.id === cell.id) {
+            readSym();
+          }
+        });
+        offsMarket.push(off);
+      } catch {}
+    };
+
     try {
-      offMarket = ws.chart.on("market:changed", readSym);
-    } catch {
-      /* chart not ready yet (Strict Mode destroyed instance) */
-    }
+      ws.cells().forEach(wireCell);
+    } catch {}
+
+    const offCreated = ws.on("cell:created", ({ id }: any) => {
+      try {
+        const cell = ws.cell(id);
+        if (cell) wireCell(cell);
+      } catch {}
+    });
 
     return () => {
       dead = true;
       offActive?.();
-      offMarket?.();
+      offLayout?.();
+      offCreated?.();
+      offsMarket.forEach((off) => off());
     };
   }, [ws]);
 
@@ -333,13 +359,21 @@ export default function App() {
               setWs(w);
             }} />
             {/* Live Chart Trading Overlay: TradingView style Entry, TP, SL Lines */}
-            <ChartTradingOverlay ws={ws} coin={coin} data={live} />
+            <ErrorBoundary>
+              <ChartTradingOverlay ws={ws} coin={coin} data={live} />
+            </ErrorBoundary>
             {/* Pine Script editor (PineTS engine registered in VelaChart). */}
-            <PineEditor ws={ws} open={pineOpen} onOpenChange={setPineOpen} />
+            <ErrorBoundary>
+              <PineEditor ws={ws} open={pineOpen} onOpenChange={setPineOpen} />
+            </ErrorBoundary>
             {/* The official LuxAlgo indicator library */}
-            <LuxAlgoPanel ws={ws} open={luxOpen} onOpenChange={setLuxOpen} />
+            <ErrorBoundary>
+              <LuxAlgoPanel ws={ws} open={luxOpen} onOpenChange={setLuxOpen} />
+            </ErrorBoundary>
             {/* Indicator toggles */}
-            <IndicatorToggles ws={ws} open={indOpen} />
+            <ErrorBoundary>
+              <IndicatorToggles ws={ws} open={indOpen} />
+            </ErrorBoundary>
             <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
             <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
           </div>
@@ -351,14 +385,14 @@ export default function App() {
             isOpen={bottomOrdersOpen}
             onResize={() => {
               try {
-                ws?.chart?.resize();
+                ws?.resize?.();
               } catch {}
             }}
             onToggle={() => {
               setBottomOrdersOpen((v) => !v);
               setTimeout(() => {
                 try {
-                  ws?.chart?.resize();
+                  ws?.resize?.();
                 } catch {}
               }, 120);
             }}

@@ -129,10 +129,12 @@ export function ChartRadialMenu({ ws }: Props) {
     (tool: RadialTool) => {
       if (!ws) return;
       try {
+        const chart = (ws as any).activeCell ? ws.chart : null;
+        if (!chart) return;
         if (tool.type === "cursor") {
-          ws.chart.drawings.setTool(null);
+          chart.drawings.setTool(null);
         } else {
-          ws.chart.drawings.setTool(tool.type as never);
+          chart.drawings.setTool(tool.type as never);
         }
       } catch (e) {
         console.warn("[radial menu] failed to set tool:", e);

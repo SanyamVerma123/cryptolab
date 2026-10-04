@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@getcandlekit/charts": "^0.1.0",
-    "@luxalgo/vela": "^0.7.7",
+    "@luxalgo/vela": "^0.8.0",
     "@luxalgo/vela-pinets": "^0.2.13",
     "@supabase/supabase-js": "^2.117.2",
     "@types/pg": "^8.23.1",
@@ -25,7 +25,7 @@
     "lightweight-charts-indicators": "^0.4.0",
     "oakscriptjs": "^0.2.0",
     "pg": "^8.23.0",
-    "pinets": "^0.9.34",
+    "pinets": "^0.10.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "technicalindicators": "^3.1.0"

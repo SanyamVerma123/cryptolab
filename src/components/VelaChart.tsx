@@ -1,38 +1,28 @@
 /**
- * VelaChart — mounts the @luxalgo/vela WORKSPACE (single-chart mode) into a div.
+ * VelaChart — mounts the @luxalgo/vela WORKSPACE into a div.
  *
  * Vela owns its own DOM (it renders the whole shell — topbar, drawing toolbar,
  * status line, bottom bar — into the container). There are no React bindings,
  * so this is deliberately a thin imperative wrapper: one ref, mount on effect,
  * destroy on unmount.
  *
- * Everything the user asked for is native to Vela:
- *   - 84 drawing tools, each with a full settings popup (colour/width/style/
- *     fill/text/lock/delete/duplicate/z-order), data-space anchored so they
- *     survive pan/zoom/symbol/timeframe switches, persisted to localStorage.
- *   - Drawings extend arbitrarily far RIGHT of the last candle: Vela's
- *     CoordinateSystem is pure linear math (xToLogical / logicalToTime
- *     extrapolate past barCount-1). There is no coordinateToTime() returning
- *     null past the last bar, so the old lightweight-charts bug cannot occur.
- *   - Hyperliquid REST history + WS live stream, first-party, no auth.
- *
- * Fix notes (see the commits that touched this file):
- *   - ADAPTIVE HISTORY DEPTH. Vela's Hyperliquid provider translates a bar
- *     `limit` into a time window: `end - ((limit + 2) * intervalMs)`, and HL's
- *     candleSnapshot caps at ~5000 candles. A flat `bars: 500` is wrong at
- *     both ends: on small timeframes it under-loads, on 1W it asks for 500
- *     weeks and the chart does not paint properly. `barsForTf()` scales the
- *     request per timeframe so every interval gets a consistent window.
- *   - ATTRIBUTION (Apache-2.0 NOTICE). The built-in mark may be disabled ONLY
- *     with an equivalent visible attribution elsewhere. We keep the built-in
- *     mark but restyle it small + unobtrusive via CSS, which the NOTICE
- *     explicitly allows ("You may restyle or reposition this mark to fit your
- *     design"). See styles/app.css `.vela-attribution`.
+ * Native Vela Features:
+ *   - Layout picker: Built-in LayoutPicker with multi-chart layouts (1 to 8 cells).
+ *   - Drawings: 84 drawing tools with full settings popups, persistence across symbols.
+ *   - Replay: First-class WorkspaceReplay registered via Vela's native topbar widget action.
+ *   - Radial Menu: Alt-key drawing wheel.
  */
 import { useEffect, useRef, useState } from "react";
-import { VelaWorkspace, registerLayout, layoutForGrid, ensureLayout } from "@luxalgo/vela/workspace";
-import { registerIcon } from "@luxalgo/vela";
+import {
+  VelaWorkspace,
+  registerLayout,
+  registerBuiltinLayouts,
+  ensureLayout,
+} from "@luxalgo/vela/workspace";
+import { registerIcon, registerWidgetAction } from "@luxalgo/vela";
 import { HyperliquidProvider } from "@luxalgo/vela/providers/hyperliquid";
+import { BinanceProvider } from "@luxalgo/vela/providers/binance";
+import { CoinbaseProvider } from "@luxalgo/vela/providers/coinbase";
 import { PineEngine } from "@luxalgo/vela-pinets";
 import { syncCustomLibrary } from "./PineEditor";
 import { installToolDefaults } from "../lib/toolDefaults";
@@ -46,8 +36,15 @@ import { mountMarket } from "../lib/marketData";
 import { installDrawingIsolation } from "../lib/drawingInteractions";
 import { AlpacaProvider } from "../lib/alpacaProvider";
 import { ChartBarReplay } from "./ChartBarReplay";
-import { ChartMultiLayout } from "./ChartMultiLayout";
 import { ChartRadialMenu } from "./ChartRadialMenu";
+import { ErrorBoundary } from "./ErrorBoundary";
+
+// Register Vela's built-in presets ('1', '2h', '2v', '4', '8')
+try {
+  registerBuiltinLayouts();
+} catch {
+  // already registered
+}
 
 // Register custom layout presets (up to 8 charts max)
 try {
@@ -90,14 +87,41 @@ try {
   // layouts already registered
 }
 
+// Register layout icon so Vela's native topbar renders the 4-box layout icon
+try {
+  registerIcon(
+    "layout",
+    `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>`
+  );
+} catch {
+  // icon already registered
+}
+
 // Register replay icon in Vela icon registry
 try {
   registerIcon(
     "replay",
-    `<svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8a5.5 5.5 0 1 1 1.6 3.9l-1.4 1.4M2.5 8H6M2.5 8V4.5"/><polygon points="7,8 10,6 10,10" fill="currentColor"/></svg>`
+    `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M7 4.5v7l-5-3.5 5-3.5zm7 0v7l-5-3.5 5-3.5z"/></svg>`
   );
 } catch {
   // icon already registered
+}
+
+// Register native Replay topbar action into Vela's left cluster
+try {
+  registerWidgetAction({
+    id: "replay",
+    target: "topbar",
+    align: "left",
+    order: 10,
+    icon: "replay",
+    label: "Replay",
+    run: () => {
+      window.dispatchEvent(new CustomEvent("tradepro:toggle-replay"));
+    },
+  });
+} catch {
+  // action already registered
 }
 
 interface Props {
@@ -107,16 +131,6 @@ interface Props {
   onReady?: (ws: VelaWorkspace) => void;
 }
 
-/**
- * History depth per timeframe. Goals:
- *   - small timeframes: enough recent bars to scroll back meaningfully
- *   - large timeframes (1W/1M): a full multi-year window without asking the
- *     provider for more bars than Hyperliquid's ~5000-candle cap can serve
- *
- * The counts stay under HL's candle cap for every interval, and each maps to
- * roughly the same wall-clock window (a few months to a few years), which is
- * what keeps "switch from 1h to 1W" from breaking the paint.
- */
 const TF_BARS: Record<string, number> = {
   "1": 1200, "3": 1200, "5": 1200, "15": 1200, "30": 1200,
   "45": 1000, "60": 1000, "120": 800, "180": 800, "240": 700,
@@ -136,8 +150,6 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
 
   const [wsInstance, setWsInstance] = useState<VelaWorkspace | null>(null);
   const [replayActive, setReplayActive] = useState<boolean>(false);
-  const [layoutOpen, setLayoutOpen] = useState<boolean>(false);
-  const layoutBtnRef = useRef<HTMLButtonElement | null>(null);
 
   // Mount once. React 19 Strict Mode double-invokes effects in dev, so guard.
   useEffect(() => {
@@ -145,7 +157,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     if (!el || wsRef.current) return;
 
     const ws = new VelaWorkspace(el, {
-      layout: "1", // Single chart initial, layout picker & sync engine active!
+      layout: "1", // Single chart initial, native layout picker & sync engine active!
       engines: {
         pine: () => new PineEngine(),
       },
@@ -157,17 +169,24 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       autofocus: true,
       // Persist market, style, timezone, drawings and indicators to localStorage.
       persist: true,
-      // Multi-provider feed: Hyperliquid (crypto) + Alpaca (US stocks & equities)
+      // Multi-provider feed: all providers provided by Vela + Alpaca
       providers: {
         hyperliquid: () => new HyperliquidProvider(),
+        binance: () => new BinanceProvider(),
+        coinbase: () => new CoinbaseProvider(),
         alpaca: () => new AlpacaProvider(),
       },
       drawings: true, // the full 84-tool surface with the shared toolbar
+      drawingToolbar: true, // shared toolbar for the workspace
+      maxWebglCells: 8, // budget policy
+      alertCap: 50, // aggregate alerts in topbar bell
       sync: {
         crosshair: true,
+        viewport: true,
+        drawings: true,
+        style: true,
         symbol: false,
         timeframe: false,
-        style: true,
       },
     });
     wsRef.current = ws;
@@ -178,15 +197,12 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     ws.setLayout = (layout: unknown) => {
       let def = typeof layout === "string" ? ensureLayout(layout) : layout as { cells?: unknown[] };
       if (def && def.cells && def.cells.length > 8) {
-        console.warn("[trade-pro] layout exceeds max 8 charts, clamping to 8");
-        const clampedDef = ensureLayout("8") ?? layoutForGrid(2, 4);
-        origSetLayout(clampedDef);
-      } else {
-        origSetLayout(layout as Parameters<typeof origSetLayout>[0]);
+        console.warn("[trade-pro] layout exceeds max 8 charts, capping at 8");
+        return origSetLayout("8");
       }
+      return origSetLayout(layout as any);
     };
 
-    // New cells created in multi-chart grid get drawing isolation wired
     ws.on("cell:created", () => {
       try {
         installDrawingIsolation(ws);
@@ -195,44 +211,41 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       }
     });
 
-    // PineTS engine for initial cell (guarded for Strict Mode)
-    try {
-      ws.chart.registerEngine("pine", new PineEngine());
-    } catch (e) {
-      console.warn("[trade-pro] pine engine registration skipped:", e);
-    }
+    const initCell = () => {
+      if (!wsRef.current) return;
+      try {
+        const chart = (ws as any).activeCell ? ws.chart : null;
+        if (!chart) return;
+        chart
+          .ready()
+          .then(() => {
+            if (!wsRef.current) return;
+            try {
+              syncCustomLibrary(ws);
+            } catch (e) {
+              console.warn("[trade-pro] custom library sync failed:", e);
+            }
+            try {
+              installToolDefaults(ws);
+            } catch (e) {
+              console.warn("[trade-pro] tool defaults install failed:", e);
+            }
+            try {
+              installDrawingIsolation(ws);
+            } catch (e) {
+              console.warn("[trade-pro] drawing isolation install failed:", e);
+            }
 
-    ws.chart
-      .ready()
-      .then(() => {
-        // Don't hand a destroyed workspace up to App — it would throw on the
-        // next read. The real (second) mount calls onReady with a live one.
-        if (!wsRef.current) return;
-        // Re-register the user's saved Pine scripts into the indicator library
-        // so the "custom" group comes back after a reload.
-        try {
-          syncCustomLibrary(ws);
-        } catch (e) {
-          console.warn("[trade-pro] custom library sync failed:", e);
-        }
-        // Remember the user's per-tool style choices (colour, width, fill…)
-        // so a tool keeps its settings until changed again, even after reload.
-        try {
-          installToolDefaults(ws);
-        } catch (e) {
-          console.warn("[trade-pro] tool defaults install failed:", e);
-        }
-        // Protect Price/Date axes and oscillator indicator panes from drawing
-        // interception, and enforce border-only hit testing for Box drawings.
-        try {
-          installDrawingIsolation(ws);
-        } catch (e) {
-          console.warn("[trade-pro] drawing isolation install failed:", e);
-        }
+            onReadyRef.current?.(ws);
+          })
+          .catch((e) => console.error("[trade-pro] vela ready failed", e));
+      } catch (e) {
+        console.warn("[trade-pro] initCell error:", e);
+      }
+    };
 
-        onReadyRef.current?.(ws);
-      })
-      .catch((e) => console.error("[trade-pro] vela ready failed", e));
+    initCell();
+    ws.on("cell:active", initCell);
 
     return () => {
       try {
@@ -246,9 +259,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Symbol / timeframe switches route through the workspace's own API so the
-  // cell identity, indicators, drawings and subscriptions all survive — and
-  // the history depth follows the new timeframe.
+  // Symbol / timeframe switches route through the workspace's own API
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws) return;
@@ -260,11 +271,11 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     let stopCrosshair: (() => void) | undefined;
     let stopIsolation: (() => void) | undefined;
 
-    // Re-mount this coin's LuxAlgo library indicators once the market is live.
-    // Defined before `setupMarket` (which calls it) — a `const` is not hoisted.
     const restoreLux = () => {
       try {
-        void restoreLuxIndicators(ws, ws.chart.market?.symbol).then((r) => {
+        const sym = (ws as any).activeCell ? ws.chart?.market?.symbol : undefined;
+        if (!sym) return;
+        void restoreLuxIndicators(ws, sym).then((r) => {
           if (r.failed.length) {
             console.warn(
               "[trade-pro] some library indicators could not be restored:",
@@ -277,12 +288,11 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       }
     };
 
-    // Re-mount this coin's CUSTOM Pine scripts (pinePersist). Same pattern as
-    // the library restore above — the editor saves a palette of scripts, this
-    // is the "which were actually on the chart" list.
     const restorePine = () => {
       try {
-        void restorePineIndicators(ws, ws.chart.market?.symbol).then((r) => {
+        const sym = (ws as any).activeCell ? ws.chart?.market?.symbol : undefined;
+        if (!sym) return;
+        void restorePineIndicators(ws, sym).then((r) => {
           if (r.failed.length) {
             console.warn(
               "[trade-pro] some custom indicators could not be restored:",
@@ -297,80 +307,55 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
 
     const setupMarket = () => {
       try {
-        ws.chart.setMarket({ symbol: coin, timeframe, bars: barsForTf(timeframe) });
+        const chart = (ws as any).activeCell ? ws.chart : null;
+        if (chart) {
+          chart.setMarket({ symbol: coin, timeframe, bars: barsForTf(timeframe) });
+        }
       } catch (e) {
         console.error("[trade-pro] setMarket failed", e);
       }
-      // Re-mount this coin's LuxAlgo library indicators now that the market is
-      // set (the list is coin-scoped, so this needs a real symbol).
+
       restoreLux();
-      // Same for custom Pine scripts the user wrote + applied.
       restorePine();
-      // Keep the app's own bar store in lockstep — the AI draws from this.
-      // (Vela owns the chart's array internally; this is the AI's read copy.)
-      // CRITICAL: Only subscribe AFTER the chart is ready to prevent the
-      // "cannot read property of undefined reading open time" toast from the
-      // countdown chip trying to read a non-existent bar on mount.
       stopMarket = mountMarket(ws, { symbol: coin, timeframe });
 
-      // A coin switch wipes the chart's drawings; re-install the tool-style
-      // persistence listeners on the new market so the user's per-tool settings
-      // (colour, width…) carry across coins instead of resetting.
       try {
         stopDefaults = installToolDefaults(ws);
       } catch (e) {
         console.warn("[trade-pro] tool defaults re-install failed:", e);
       }
 
-      // Per-symbol drawings: boxes drawn on BTC must not appear on ETH. Styles
-      // (colour, width) still carry across coins via toolDefaults above.
       try {
         stopSymbols = installPerSymbolDrawings(ws);
       } catch (e) {
         console.warn("[trade-pro] per-symbol drawings failed:", e);
       }
 
-      // Indicator visibility + inputs: the "I" button hide and per-input edits
-      // (e.g. turning specific FVG levels off) are NOT round-tripped by Vela's
-      // own persistence, so they revert on reload and on a second add. We own
-      // that layer, scoped per coin.
       try {
         stopIndicators = installIndicatorState(ws);
       } catch (e) {
         console.warn("[trade-pro] indicator state failed:", e);
       }
 
-      // (restoreLux is defined above, alongside setupMarket — the library
-      // restore runs from there, once the market symbol is actually set.)
-
-      // Crosshair placement: while a drawing tool is armed, the chart stops
-      // scrolling and the system cursor hides so only Vela's crosshair shows —
-      // the "move, then tap to place" behaviour the user has on desktop.
       try {
         stopCrosshair = installCrosshairPlacement(ws);
       } catch (e) {
         console.warn("[trade-pro] crosshair placement failed:", e);
       }
 
-      // Ensure the "current price line" (last value marker) is visible on ALL panes,
-      // including oscillator panes (MACD, RSI, etc.). Vela's renderer setting
-      // `currentPriceLine` typically targets the main scale; we explicitly enforce
-      // it via the renderer config to guarantee it shows on sub-panes too.
       try {
-        ws.chart.renderer.set({ currentPriceLine: true });
+        const chart = (ws as any).activeCell ? ws.chart : null;
+        chart?.renderer?.set?.({ currentPriceLine: true });
       } catch (e) {
         console.warn("[trade-pro] could not enable price line on panes:", e);
       }
 
-      // Track which drawing the user has selected, so the presets dropdown's
-      // "Custom" button snapshots the one they just finished configuring.
       try {
         trackSelection(ws);
       } catch {
         /* chart not ready */
       }
 
-      // Drawing isolation: axes (price/time) & oscillator panes protection + Box border hit-testing
       try {
         stopIsolation = installDrawingIsolation(ws);
       } catch (e) {
@@ -378,8 +363,6 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       }
     };
 
-    // If the chart is already ready (e.g., initial mount finished), run immediately.
-    // Otherwise, wait for the next ready signal (which happens on every setMarket).
     setupMarket();
 
     return () => {
@@ -392,108 +375,27 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     };
   }, [coin, timeframe]);
 
-  // Dedicated topbar buttons manager: guarantees Replay and Multiple Charts buttons
-  // are ALWAYS attached to the chart topbar (.vela-widget-topbar) beside Indicators.
+  // Synchronize Replay toggle event from native topbar action
   useEffect(() => {
-    let active = true;
+    const handleToggle = () => setReplayActive((prev) => !prev);
+    window.addEventListener("tradepro:toggle-replay", handleToggle);
 
-    const attach = () => {
-      if (!active) return;
-      try {
-        const indBtn = document.querySelector(".vela-widget-indicators") as HTMLElement | null;
-        if (!indBtn || !indBtn.parentElement) return;
-
-        const parent = indBtn.parentElement;
-
-        // 1. Multiple Charts Layout Button (4-square grid icon, Image 1)
-        const nativeLayoutBtn = parent.querySelector<HTMLButtonElement>(
-          ".vela-widget-style[aria-label*='Layout'], button[aria-label*='Layout']"
-        );
-        let layoutBtn = parent.querySelector(".vela-topbar-layout-custom-btn") as HTMLButtonElement | null;
-
-        if (nativeLayoutBtn) {
-          layoutBtnRef.current = nativeLayoutBtn;
-          nativeLayoutBtn.onclick = (e) => {
-            e.stopPropagation();
-            setLayoutOpen((prev) => !prev);
-          };
-        } else if (!layoutBtn) {
-          layoutBtn = document.createElement("button");
-          layoutBtn.className = "vela-widget-style vela-topbar-layout-custom-btn";
-          layoutBtn.title = "Multiple Charts Layout (Max 8)";
-          layoutBtn.setAttribute("aria-label", "Multiple Charts Layout");
-          layoutBtn.innerHTML = `
-            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3">
-              <rect x="2" y="2" width="5" height="5" rx="1"/>
-              <rect x="9" y="2" width="5" height="5" rx="1"/>
-              <rect x="2" y="9" width="5" height="5" rx="1"/>
-              <rect x="9" y="9" width="5" height="5" rx="1"/>
-            </svg>
-          `;
-          layoutBtn.onclick = (e) => {
-            e.stopPropagation();
-            setLayoutOpen((prev) => !prev);
-          };
-          layoutBtnRef.current = layoutBtn;
-          try {
-            indBtn.before(layoutBtn);
-          } catch {
-            parent.appendChild(layoutBtn);
-          }
+    // Sync active attribute on topbar button
+    try {
+      const btn = document.querySelector<HTMLElement>("[data-action-id='replay'], button[aria-label*='Replay']");
+      if (btn) {
+        if (replayActive) {
+          btn.classList.add("active");
+          btn.setAttribute("data-active", "true");
+        } else {
+          btn.classList.remove("active");
+          btn.removeAttribute("data-active");
         }
-
-        // 2. Bar Replay Button (◂◂ Replay, Images 1 & 2)
-        let replayBtn = parent.querySelector(".vela-topbar-replay-btn") as HTMLButtonElement | null;
-        if (!replayBtn) {
-          replayBtn = document.createElement("button");
-          replayBtn.className = "vela-widget-action-left vela-topbar-replay-btn";
-          replayBtn.title = "Bar Replay (Practice strategies with historical cuts)";
-          replayBtn.setAttribute("aria-label", "Bar Replay");
-          replayBtn.innerHTML = `
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style="margin-right: 5px; vertical-align: -1px;">
-              <path d="M7 4.5v7l-5-3.5 5-3.5zm7 0v7l-5-3.5 5-3.5z"/>
-            </svg>
-            <span>Replay</span>
-          `;
-          replayBtn.onclick = (e) => {
-            e.stopPropagation();
-            setReplayActive((prev) => !prev);
-          };
-
-          try {
-            indBtn.after(replayBtn);
-          } catch {
-            parent.appendChild(replayBtn);
-          }
-        }
-
-        // Keep active state synchronized
-        if (replayBtn) {
-          if (replayActive) {
-            replayBtn.classList.add("active");
-            replayBtn.setAttribute("data-active", "true");
-          } else {
-            replayBtn.classList.remove("active");
-            replayBtn.removeAttribute("data-active");
-          }
-        }
-      } catch (err) {
-        // Safe catch to ensure topbar DOM manipulation never crashes React
-        console.warn("[trade-pro] attach topbar error:", err);
       }
-    };
-
-    // Attach immediately and monitor with safe interval
-    attach();
-    const intervalId = setInterval(attach, 400);
-
-    const handleCustomToggle = () => setReplayActive((prev) => !prev);
-    window.addEventListener("tradepro:toggle-replay", handleCustomToggle);
+    } catch {}
 
     return () => {
-      active = false;
-      clearInterval(intervalId);
-      window.removeEventListener("tradepro:toggle-replay", handleCustomToggle);
+      window.removeEventListener("tradepro:toggle-replay", handleToggle);
     };
   }, [replayActive]);
 
@@ -503,21 +405,18 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}
     >
       <div ref={ref} className="vela-host" />
-      <ChartBarReplay
-        ws={wsInstance}
-        coin={coin}
-        timeframe={timeframe}
-        active={replayActive}
-        onClose={() => setReplayActive(false)}
-      />
-      <ChartMultiLayout
-        ws={wsInstance}
-        isOpen={layoutOpen}
-        onClose={() => setLayoutOpen(false)}
-        triggerRef={layoutBtnRef}
-      />
-      <ChartRadialMenu ws={wsInstance} />
+      <ErrorBoundary>
+        <ChartBarReplay
+          ws={wsInstance}
+          coin={coin}
+          timeframe={timeframe}
+          active={replayActive}
+          onClose={() => setReplayActive(false)}
+        />
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <ChartRadialMenu ws={wsInstance} />
+      </ErrorBoundary>
     </div>
   );
 }
-
