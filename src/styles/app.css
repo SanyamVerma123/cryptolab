@@ -5853,6 +5853,28 @@ body.resizing-col .market-panel {
   color: #ffffff;
 }
 
+/* Vela Drawing Toolbar Scrollbar Suppression */
+.vela-dtb {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.vela-dtb::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
 
+/* Vela Chart Host & Container */
+.vela-chart-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0d1117;
+}
+.vela-host {
+  width: 100%;
+  height: 100%;
+}
 
 

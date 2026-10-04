@@ -19,7 +19,7 @@ import {
   registerBuiltinLayouts,
   ensureLayout,
 } from "@luxalgo/vela/workspace";
-import { registerIcon, registerWidgetAction } from "@luxalgo/vela";
+import { registerIcon, registerWidgetAction } from "@luxalgo/vela/plugin";
 import { HyperliquidProvider } from "@luxalgo/vela/providers/hyperliquid";
 import { BinanceProvider } from "@luxalgo/vela/providers/binance";
 import { CoinbaseProvider } from "@luxalgo/vela/providers/coinbase";
@@ -35,6 +35,8 @@ import { trackSelection } from "../lib/drawingPresets";
 import { mountMarket } from "../lib/marketData";
 import { installDrawingIsolation } from "../lib/drawingInteractions";
 import { AlpacaProvider } from "../lib/alpacaProvider";
+import { TwelveDataProvider } from "../lib/twelveDataProvider";
+import { AlphaVantageProvider } from "../lib/alphaVantageProvider";
 import { ChartBarReplay } from "./ChartBarReplay";
 import { ChartRadialMenu } from "./ChartRadialMenu";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -169,12 +171,14 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       autofocus: true,
       // Persist market, style, timezone, drawings and indicators to localStorage.
       persist: true,
-      // Multi-provider feed: all providers provided by Vela + Alpaca
+      // Multi-provider feed: all providers provided by Vela + Alpaca + TwelveData + AlphaVantage
       providers: {
         hyperliquid: () => new HyperliquidProvider(),
         binance: () => new BinanceProvider(),
         coinbase: () => new CoinbaseProvider(),
         alpaca: () => new AlpacaProvider(),
+        twelvedata: () => new TwelveDataProvider(),
+        alphavantage: () => new AlphaVantageProvider(),
       },
       drawings: true, // the full 84-tool surface with the shared toolbar
       drawingToolbar: true, // shared toolbar for the workspace
@@ -214,7 +218,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     const initCell = () => {
       if (!wsRef.current) return;
       try {
-        const chart = (ws as any).activeCell ? ws.chart : null;
+        const chart = (ws as any).active ? ws.chart : null;
         if (!chart) return;
         chart
           .ready()
@@ -273,7 +277,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
 
     const restoreLux = () => {
       try {
-        const sym = (ws as any).activeCell ? ws.chart?.market?.symbol : undefined;
+        const sym = (ws as any).active ? ws.chart?.market?.symbol : undefined;
         if (!sym) return;
         void restoreLuxIndicators(ws, sym).then((r) => {
           if (r.failed.length) {
@@ -290,7 +294,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
 
     const restorePine = () => {
       try {
-        const sym = (ws as any).activeCell ? ws.chart?.market?.symbol : undefined;
+        const sym = (ws as any).active ? ws.chart?.market?.symbol : undefined;
         if (!sym) return;
         void restorePineIndicators(ws, sym).then((r) => {
           if (r.failed.length) {
@@ -307,7 +311,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
 
     const setupMarket = () => {
       try {
-        const chart = (ws as any).activeCell ? ws.chart : null;
+        const chart = (ws as any).active ? ws.chart : null;
         if (chart) {
           chart.setMarket({ symbol: coin, timeframe, bars: barsForTf(timeframe) });
         }
@@ -344,7 +348,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       }
 
       try {
-        const chart = (ws as any).activeCell ? ws.chart : null;
+        const chart = (ws as any).active ? ws.chart : null;
         chart?.renderer?.set?.({ currentPriceLine: true });
       } catch (e) {
         console.warn("[trade-pro] could not enable price line on panes:", e);

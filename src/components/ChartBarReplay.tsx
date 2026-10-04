@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
-import type { OHLCV } from "@luxalgo/vela";
-import { liveBars } from "../lib/marketData";
 
 interface Props {
   ws: VelaWorkspace | null;
@@ -12,9 +10,6 @@ interface Props {
 }
 
 export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) {
-  const [fullBars, setFullBars] = useState<OHLCV[]>([]);
-  const [cutIndex, setCutIndex] = useState<number>(-1);
-  const [initialCutIndex, setInitialCutIndex] = useState<number>(-1);
   const [cutMode, setCutMode] = useState<boolean>(true);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [speed, setSpeed] = useState<number>(1000); // ms per bar
@@ -24,50 +19,135 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; startX: number; startY: number } | null>(null);
   const playerRef = useRef<HTMLDivElement | null>(null);
-  const playTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Initialize bars when active opens
+  const [currentCursorTime, setCurrentCursorTime] = useState<number | null>(null);
+  const [initialCutTime, setInitialCutTime] = useState<number | null>(null);
+  const [barsLeft, setBarsLeft] = useState<number>(0);
+
+  // Synchronize with Vela's native WorkspaceReplay
   useEffect(() => {
     if (!active || !ws) {
       setIsPlaying(false);
-      if (playTimerRef.current) clearInterval(playTimerRef.current);
       return;
     }
 
-    const chartRaw = ((ws.chart as unknown as { orchestrator?: { rawBars?: OHLCV[] } })?.orchestrator?.rawBars) || [];
-    const sourceBars = chartRaw.length > 20 ? [...chartRaw] : [...liveBars()];
+    const replay = ws.replay;
+    if (!replay) return;
 
-    if (sourceBars.length > 10) {
-      setFullBars(sourceBars);
-      setCutMode(true);
-      const initCut = Math.max(15, Math.floor(sourceBars.length * 0.8));
-      setCutIndex(initCut);
-      setInitialCutIndex(initCut);
+    // Check existing state
+    const s = replay.state;
+    if (s?.active) {
+      setCutMode(false);
+      setIsPlaying(s.playing ?? false);
+      if (s.cursorTime) setCurrentCursorTime(s.cursorTime);
+      if (s.remaining !== undefined) setBarsLeft(s.remaining);
     } else {
-      console.warn("[trade-pro replay] waiting for bars to load");
+      setCutMode(true);
     }
-  }, [active, ws]);
 
-  // Handle cut selection click on the chart
-  const applyCutAtTime = useCallback((timeMs: number) => {
-    if (!ws || fullBars.length === 0) return;
-
-    let targetIdx = fullBars.findIndex((b) => b.time >= timeMs);
-    if (targetIdx === -1) targetIdx = fullBars.length - 1;
-    targetIdx = Math.max(15, Math.min(targetIdx, fullBars.length - 1));
-
-    setCutIndex(targetIdx);
-    setInitialCutIndex(targetIdx);
-    const sliced = fullBars.slice(0, targetIdx + 1);
+    // Subscribe to native WorkspaceReplay events
+    const offs: (() => void)[] = [];
 
     try {
-      ws.chart.setMarket({ symbol: coin, timeframe, data: sliced });
+      const offStart = replay.on("replay:start", (e: any) => {
+        setCutMode(false);
+        if (e?.cursorTime) {
+          setCurrentCursorTime(e.cursorTime);
+          if (!initialCutTime) setInitialCutTime(e.cursorTime);
+        }
+        if (e?.remaining !== undefined) setBarsLeft(e.remaining);
+      });
+      if (typeof offStart === "function") offs.push(offStart);
+
+      const offStep = replay.on("replay:step", (e: any) => {
+        if (e?.cursorTime) setCurrentCursorTime(e.cursorTime);
+        if (e?.remaining !== undefined) setBarsLeft(e.remaining);
+      });
+      if (typeof offStep === "function") offs.push(offStep);
+
+      const offPlay = replay.on("replay:play", () => setIsPlaying(true));
+      if (typeof offPlay === "function") offs.push(offPlay);
+
+      const offPause = replay.on("replay:pause", () => setIsPlaying(false));
+      if (typeof offPause === "function") offs.push(offPause);
+
+      const offEnd = replay.on("replay:end", () => {
+        setIsPlaying(false);
+        setBarsLeft(0);
+      });
+      if (typeof offEnd === "function") offs.push(offEnd);
     } catch (e) {
-      console.error("[trade-pro replay] failed to setMarket sliced:", e);
+      console.warn("[trade-pro replay] event listener registration failed:", e);
     }
 
-    setCutMode(false);
-  }, [ws, fullBars, coin, timeframe]);
+    return () => {
+      offs.forEach((fn) => {
+        try {
+          fn();
+        } catch {}
+      });
+    };
+  }, [active, ws, initialCutTime]);
+
+  // Apply cut at specified timestamp
+  const applyCutAtTime = useCallback(
+    async (timeMs: number) => {
+      if (!ws?.replay) return;
+      try {
+        await ws.replay.start({ from: timeMs });
+        setInitialCutTime(timeMs);
+        setCurrentCursorTime(timeMs);
+        setCutMode(false);
+      } catch (e) {
+        console.error("[trade-pro replay] start replay failed:", e);
+      }
+    },
+    [ws]
+  );
+
+  // Listen for candle clicks in cut mode directly via chart renderer onClick
+  useEffect(() => {
+    if (!active || !cutMode || !ws) return;
+
+    let offClick: (() => void) | undefined;
+    const bindClick = () => {
+      const chart = ws.active ? ws.chart : null;
+      if (chart?.renderer?.onClick) {
+        try {
+          offClick = chart.renderer.onClick(({ time }: { time?: number | null }) => {
+            if (time && time > 0) {
+              void applyCutAtTime(time);
+            }
+          });
+        } catch {}
+      }
+    };
+
+    bindClick();
+    const offCellActive = ws.on("cell:active", bindClick);
+
+    return () => {
+      offClick?.();
+      offCellActive?.();
+    };
+  }, [active, cutMode, ws, applyCutAtTime]);
+
+  // Pointer move on chart container for the cut line indicator
+  useEffect(() => {
+    if (!active || !cutMode) return;
+
+    const container = document.querySelector(".vela-chart-container") as HTMLElement | null;
+    if (!container) return;
+
+    const onPointerMove = (e: PointerEvent) => {
+      const rect = container.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      setCursorX(x);
+    };
+
+    container.addEventListener("pointermove", onPointerMove);
+    return () => container.removeEventListener("pointermove", onPointerMove);
+  }, [active, cutMode]);
 
   // Handle Esc key
   useEffect(() => {
@@ -85,121 +165,67 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [active, cutMode]);
 
-  // Mouse move and click listener on chart for Cut mode
-  useEffect(() => {
-    if (!active || !cutMode || !ws) return;
-
-    const rootEl = ws.root;
-    if (!rootEl) return;
-
-    const onPointerMove = (e: PointerEvent) => {
-      const rect = rootEl.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      setCursorX(x);
-    };
-
-    const onPointerDown = (e: MouseEvent) => {
-      if (playerRef.current && playerRef.current.contains(e.target as Node)) {
-        return;
-      }
-
-      const target = e.target as HTMLElement;
-      if (target?.closest?.(".vela-axis") || target?.closest?.(".vela-bottombar")) {
-        return;
-      }
-
-      const crossTime = ws.active?.lastCrossTime;
-      if (crossTime && crossTime > 0) {
-        e.preventDefault();
-        e.stopPropagation();
-        applyCutAtTime(crossTime);
-      } else {
-        try {
-          const coords = (ws.chart as unknown as { renderer?: { coords?: { xToLogical: (x: number) => number; logicalToTime: (l: number) => number } } })?.renderer?.coords;
-          if (coords) {
-            const rect = rootEl.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const logical = coords.xToLogical(x);
-            const time = coords.logicalToTime(logical);
-            if (time > 0) {
-              e.preventDefault();
-              e.stopPropagation();
-              applyCutAtTime(time);
-            }
-          }
-        } catch {}
-      }
-    };
-
-    rootEl.addEventListener("pointermove", onPointerMove);
-    rootEl.addEventListener("click", onPointerDown, true);
-
-    return () => {
-      rootEl.removeEventListener("pointermove", onPointerMove);
-      rootEl.removeEventListener("click", onPointerDown, true);
-    };
-  }, [active, cutMode, ws, fullBars, applyCutAtTime]);
-
   // Step 1 bar forward
   const stepForward = useCallback(() => {
-    if (!ws || fullBars.length === 0 || cutIndex >= fullBars.length - 1) {
-      setIsPlaying(false);
-      return;
-    }
-    const nextIdx = cutIndex + 1;
-    setCutIndex(nextIdx);
-    const sliced = fullBars.slice(0, nextIdx + 1);
+    if (!ws?.replay) return;
     try {
-      ws.chart.setMarket({ symbol: coin, timeframe, data: sliced });
+      ws.replay.step();
+      const s = ws.replay.state;
+      if (s?.cursorTime) setCurrentCursorTime(s.cursorTime);
+      if (s?.remaining !== undefined) setBarsLeft(s.remaining);
     } catch (e) {
-      console.error("[trade-pro replay] stepForward error:", e);
+      console.warn("[trade-pro replay] step error:", e);
     }
-  }, [ws, fullBars, cutIndex, coin, timeframe]);
+  }, [ws]);
 
   // Jump to start cut bar
-  const jumpToStartBar = useCallback(() => {
-    if (!ws || fullBars.length === 0) return;
-    const targetIdx = initialCutIndex >= 0 ? initialCutIndex : 15;
-    setCutIndex(targetIdx);
-    const sliced = fullBars.slice(0, targetIdx + 1);
+  const jumpToStartBar = useCallback(async () => {
+    if (!ws?.replay) return;
+    if (initialCutTime) {
+      await ws.replay.start({ from: initialCutTime });
+    } else {
+      const bounds = ws.replay.bounds;
+      if (bounds?.first) {
+        const fallback = bounds.first + (bounds.last - bounds.first) * 0.7;
+        await ws.replay.start({ from: fallback });
+      }
+    }
+  }, [ws, initialCutTime]);
+
+  // Play / Pause toggle
+  const togglePlay = useCallback(() => {
+    if (!ws?.replay) return;
     try {
-      ws.chart.setMarket({ symbol: coin, timeframe, data: sliced });
+      if (isPlaying) {
+        ws.replay.pause();
+        setIsPlaying(false);
+      } else {
+        // If replay hasn't started yet, auto-cut at 75% history
+        if (!ws.replay.state?.active) {
+          const bounds = ws.replay.bounds;
+          const from = bounds?.first ? bounds.first + (bounds.last - bounds.first) * 0.75 : Date.now() - 3600000 * 24;
+          void ws.replay.start({ from }).then(() => {
+            ws.replay.play(speed);
+            setIsPlaying(true);
+          });
+        } else {
+          ws.replay.play(speed);
+          setIsPlaying(true);
+        }
+      }
     } catch (e) {
-      console.error("[trade-pro replay] jumpToStartBar error:", e);
+      console.warn("[trade-pro replay] play toggle error:", e);
     }
-  }, [ws, fullBars, initialCutIndex, coin, timeframe]);
+  }, [ws, isPlaying, speed]);
 
-  // Auto-play interval effect
-  useEffect(() => {
-    if (!isPlaying) {
-      if (playTimerRef.current) {
-        clearInterval(playTimerRef.current);
-        playTimerRef.current = null;
-      }
-      return;
-    }
-
-    playTimerRef.current = setInterval(() => {
-      stepForward();
-    }, speed);
-
-    return () => {
-      if (playTimerRef.current) {
-        clearInterval(playTimerRef.current);
-        playTimerRef.current = null;
-      }
-    };
-  }, [isPlaying, speed, stepForward]);
-
-  // Exit replay and restore real-time market
+  // Exit replay and restore live market
   const handleExit = () => {
     setIsPlaying(false);
-    if (playTimerRef.current) clearInterval(playTimerRef.current);
-    if (ws) {
+    if (ws?.replay) {
       try {
-        ws.chart.setMarket({ symbol: coin, timeframe });
+        ws.replay.stop();
       } catch (e) {
-        console.error("[trade-pro replay] exit setMarket error:", e);
+        console.warn("[trade-pro replay] stop error:", e);
       }
     }
     onClose();
@@ -245,9 +271,8 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
 
   if (!active) return null;
 
-  const currentBar = fullBars[cutIndex] || null;
-  const currentFormattedDate = currentBar
-    ? new Date(currentBar.time).toLocaleString("en-US", {
+  const currentFormattedDate = currentCursorTime
+    ? new Date(currentCursorTime).toLocaleString("en-US", {
         month: "short",
         day: "numeric",
         hour: "2-digit",
@@ -256,11 +281,9 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
       })
     : "";
 
-  const barsLeft = Math.max(0, fullBars.length - 1 - cutIndex);
-
   return (
     <>
-      {/* Background Chart Watermark (matching LuxAlgo Quant / Image 2 & 4) */}
+      {/* Background Chart Watermark (subtle, exactly like LuxAlgo Quant reference) */}
       <div
         className="tv-replay-watermark"
         style={{
@@ -274,19 +297,19 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
           justifyContent: "center",
           pointerEvents: "none",
           userSelect: "none",
-          zIndex: 5,
-          opacity: 0.12,
+          zIndex: 4,
+          opacity: 0.08,
         }}
       >
-        <div style={{ fontSize: "42px", fontWeight: 800, color: "#ffffff", letterSpacing: "1px" }}>
+        <div style={{ fontSize: "28px", fontWeight: 700, color: "#ffffff", letterSpacing: "1px" }}>
           {coin} · {timeframe}
         </div>
-        <div style={{ fontSize: "28px", fontWeight: 700, color: "#ffffff", marginTop: "4px" }}>
+        <div style={{ fontSize: "20px", fontWeight: 600, color: "#ffffff", marginTop: "3px" }}>
           ◂◂ Replay
         </div>
       </div>
 
-      {/* Cut mode vertical tracking line and banner */}
+      {/* Cut mode: vertical line with red cursor and bottom instruction pill */}
       {cutMode && (
         <div
           className="tv-replay-cut-overlay"
@@ -297,7 +320,7 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
             pointerEvents: "none",
           }}
         >
-          {/* Blue vertical line tracking cursor */}
+          {/* 1px Blue vertical line tracking cursor */}
           {cursorX !== null && cursorX > 0 && (
             <div
               style={{
@@ -305,28 +328,27 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
                 top: 0,
                 bottom: 32,
                 left: `${cursorX}px`,
-                width: "2px",
+                width: "1px",
                 background: "#2962FF",
-                boxShadow: "0 0 8px rgba(41, 98, 255, 0.6)",
+                boxShadow: "0 0 4px rgba(41, 98, 255, 0.5)",
                 pointerEvents: "none",
               }}
             />
           )}
 
-          {/* Bottom pill tooltip: Bar replay: click the bar to start from (Esc cancels) */}
+          {/* Bottom instruction banner */}
           <div
             style={{
               position: "absolute",
-              bottom: "48px",
+              bottom: "16px",
               left: "50%",
               transform: "translateX(-50%)",
-              background: "rgba(18, 22, 33, 0.92)",
-              border: "1px solid rgba(255, 255, 255, 0.15)",
-              backdropFilter: "blur(8px)",
-              color: "#e2e8f0",
-              padding: "7px 18px",
+              background: "#1e222d",
+              border: "1px solid #2a2e39",
+              color: "#d1d4dc",
+              padding: "6px 16px",
               borderRadius: "20px",
-              fontSize: "13px",
+              fontSize: "12px",
               fontWeight: 500,
               boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
               pointerEvents: "auto",
@@ -337,15 +359,17 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
           >
             <span>Bar replay: click the bar to start from (Esc cancels)</span>
             <button
-              onClick={() => setCutMode(false)}
+              onClick={() => handleExit()}
               style={{
                 background: "transparent",
                 border: "none",
-                color: "#94a3b8",
+                color: "#787b86",
                 cursor: "pointer",
                 padding: "2px 4px",
-                fontSize: "12px",
+                fontSize: "11px",
+                lineHeight: 1,
               }}
+              title="Cancel replay"
             >
               ✕
             </button>
@@ -353,29 +377,32 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
         </div>
       )}
 
-      {/* Floating Replay Player Bar (Image 2 style) */}
-      <div
-        ref={playerRef}
-        className={`tv-replay-player-pill ${isDragging ? "dragging" : ""}`}
-        style={{
-          position: "absolute",
-          bottom: "36px",
-          left: "50%",
-          transform: `translate(calc(-50% + ${position.x}px), ${position.y}px)`,
-          zIndex: 40,
-          background: "#12151d",
-          border: "1px solid rgba(255, 255, 255, 0.12)",
-          borderRadius: "8px",
-          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.65)",
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          padding: "5px 10px",
-          userSelect: "none",
-          fontSize: "13px",
-          color: "#e2e8f0",
-        }}
-      >
+      {/* Real Replay Player Bar at bottom (visible once cut bar is selected) */}
+      {!cutMode && (
+        <div
+          ref={playerRef}
+          className={`tv-replay-player-pill ${isDragging ? "dragging" : ""}`}
+          style={{
+            position: "absolute",
+            bottom: "14px",
+            left: "50%",
+            transform: `translate(calc(-50% + ${position.x}px), ${position.y}px)`,
+            zIndex: 40,
+            background: "#1e222d",
+            border: "1px solid #2a2e39",
+            borderRadius: "6px",
+            boxShadow: "0 4px 20px rgba(0, 0, 0, 0.55)",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+            padding: "4px 8px",
+            userSelect: "none",
+            fontSize: "12px",
+            color: "#d1d4dc",
+            height: "34px",
+            boxSizing: "border-box",
+          }}
+        >
         {/* Drag handle */}
         <div
           onMouseDown={handleDragStart}
@@ -417,7 +444,7 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
 
         {/* Play / Pause button */}
         <button
-          onClick={() => setIsPlaying((p) => !p)}
+          onClick={togglePlay}
           style={{
             background: isPlaying ? "rgba(37, 99, 235, 0.2)" : "transparent",
             border: "none",
@@ -437,14 +464,13 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
         {/* Step Forward button */}
         <button
           onClick={stepForward}
-          disabled={cutIndex >= fullBars.length - 1}
           style={{
             background: "transparent",
             border: "none",
-            color: cutIndex >= fullBars.length - 1 ? "#475569" : "#cbd5e1",
+            color: "#cbd5e1",
             padding: "4px 8px",
             borderRadius: "4px",
-            cursor: cutIndex >= fullBars.length - 1 ? "not-allowed" : "pointer",
+            cursor: "pointer",
             fontSize: "13px",
           }}
           title="Step forward 1 bar"
@@ -458,7 +484,13 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
         <div style={{ position: "relative" }}>
           <select
             value={speed}
-            onChange={(e) => setSpeed(Number(e.target.value))}
+            onChange={(e) => {
+              const newSpeed = Number(e.target.value);
+              setSpeed(newSpeed);
+              if (isPlaying && ws?.replay) {
+                ws.replay.play(newSpeed);
+              }
+            }}
             style={{
               background: "rgba(255, 255, 255, 0.06)",
               border: "1px solid rgba(255, 255, 255, 0.12)",
@@ -485,14 +517,18 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
         <div style={{ width: "1px", height: "18px", background: "rgba(255, 255, 255, 0.12)", margin: "0 2px" }} />
 
         {/* Timestamp Display */}
-        <div style={{ fontSize: "12px", color: "#cbd5e1", padding: "0 4px", fontWeight: 500 }}>
-          {currentFormattedDate}
-        </div>
+        {currentFormattedDate && (
+          <div style={{ fontSize: "12px", color: "#cbd5e1", padding: "0 4px", fontWeight: 500 }}>
+            {currentFormattedDate}
+          </div>
+        )}
 
         {/* Bars left counter */}
-        <div style={{ fontSize: "12px", color: "#94a3b8", padding: "0 4px" }}>
-          {barsLeft} bars left
-        </div>
+        {barsLeft > 0 && (
+          <div style={{ fontSize: "12px", color: "#94a3b8", padding: "0 4px" }}>
+            {barsLeft} bars left
+          </div>
+        )}
 
         {/* Pin toggle */}
         <button
@@ -533,6 +569,7 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
           ✕
         </button>
       </div>
+      )}
     </>
   );
 }

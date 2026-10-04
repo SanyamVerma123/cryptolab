@@ -9,7 +9,7 @@
  *   - getSymbolInfo(): Configures stock sessions (09:30-16:00 ET), ticks ($0.01), and USD denomination.
  *   - subscribe(): Live polling for intraday price updates.
  */
-import type { OHLCV, BarRange } from "@luxalgo/vela";
+import type { OHLCV, BarRange } from "@luxalgo/vela/plugin";
 import { getAlpacaStockBars } from "./alpaca";
 
 export interface SymbolDescriptor {

@@ -19,11 +19,15 @@
  */
 import { HyperliquidProvider } from "@luxalgo/vela/providers/hyperliquid";
 import { AlpacaProvider, isAlpacaEquity } from "./alpacaProvider";
-// OHLCV/BarRange are re-exported through the package root's types.
-import type { OHLCV, BarRange } from "@luxalgo/vela";
+import { TwelveDataProvider, isForexSymbol } from "./twelveDataProvider";
+import { AlphaVantageProvider, isCommoditySymbol } from "./alphaVantageProvider";
+// OHLCV/BarRange are re-exported through the plugin package.
+import type { OHLCV, BarRange } from "@luxalgo/vela/plugin";
 
 const provider = new HyperliquidProvider();
 const alpacaProvider = new AlpacaProvider();
+const twelveDataProvider = new TwelveDataProvider();
+const alphaVantageProvider = new AlphaVantageProvider();
 
 /** The live bar array — replaced wholesale on each refresh (stable reference
  *  for the AI's context, so React closures don't go stale). */
@@ -106,9 +110,16 @@ export function visibleBarsInRange(
 async function loadHistory(symbol: string, timeframe: string): Promise<void> {
   try {
     const range: BarRange = { limit: 1500 };
-    const got = isAlpacaEquity(symbol)
-      ? await alpacaProvider.getBars(symbol, timeframe, range)
-      : await provider.getBars(symbol, timeframe, range);
+    let got: OHLCV[] = [];
+    if (isForexSymbol(symbol)) {
+      got = await twelveDataProvider.getBars(symbol, timeframe, range);
+    } else if (isCommoditySymbol(symbol)) {
+      got = await alphaVantageProvider.getBars(symbol, timeframe, range);
+    } else if (isAlpacaEquity(symbol)) {
+      got = await alpacaProvider.getBars(symbol, timeframe, range);
+    } else {
+      got = await provider.getBars(symbol, timeframe, range);
+    }
     // Newest last — the AI + FVG detection both assume ascending time.
     bars = got.slice().sort((a, b) => a.time - b.time);
     if (bars.length > 0) {
@@ -141,13 +152,23 @@ export function mountMarket(
 
   // Live ticks: the forming bar updates and each closed bar is appended.
   try {
-    unsub = isAlpacaEquity(symbol)
-      ? alpacaProvider.subscribe(symbol, timeframe, (bar) => {
-          pushBar(bar);
-        })
-      : provider.subscribe(symbol, timeframe, (bar) => {
-          pushBar(bar);
-        });
+    if (isForexSymbol(symbol)) {
+      unsub = twelveDataProvider.subscribe(symbol, timeframe, (bar) => {
+        pushBar(bar);
+      });
+    } else if (isCommoditySymbol(symbol)) {
+      unsub = alphaVantageProvider.subscribe(symbol, timeframe, (bar) => {
+        pushBar(bar);
+      });
+    } else if (isAlpacaEquity(symbol)) {
+      unsub = alpacaProvider.subscribe(symbol, timeframe, (bar) => {
+        pushBar(bar);
+      });
+    } else {
+      unsub = provider.subscribe(symbol, timeframe, (bar) => {
+        pushBar(bar);
+      });
+    }
   } catch (e) {
     console.warn("[trade-pro] live subscribe failed, polling instead:", e);
   }

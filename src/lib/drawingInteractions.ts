@@ -21,7 +21,7 @@
  * Works seamlessly across both Android devices (touch) and Windows (mouse/pointer).
  */
 
-import { getDrawingType } from "@luxalgo/vela";
+import { getDrawingType } from "@luxalgo/vela/plugin";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
 
 /** Euclidean distance from point (px, py) to segment (ax, ay)-(bx, by) */

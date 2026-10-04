@@ -21,7 +21,6 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
-import type { Vela } from "@luxalgo/vela";
 import { VELA_TOOLS, VELA_TOOL_MAP } from "../lib/velaToolIcons";
 import {
   listPresets,
@@ -202,9 +201,9 @@ export function FavoritesBar({ ws }: Props) {
     if (!ws) return;
     // ws.chart throws "no active cell" on a destroyed instance (React 19
     // Strict Mode mounts+destroys one before the real one). Bail out whole.
-    let c: Vela | null = null;
+    let c: any = null;
     try {
-      c = ws.chart;
+      c = (ws as any).active ? ws.chart : null;
     } catch {
       return;
     }

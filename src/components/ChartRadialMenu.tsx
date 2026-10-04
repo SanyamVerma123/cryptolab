@@ -129,7 +129,7 @@ export function ChartRadialMenu({ ws }: Props) {
     (tool: RadialTool) => {
       if (!ws) return;
       try {
-        const chart = (ws as any).activeCell ? ws.chart : null;
+        const chart = (ws as any).active ? ws.chart : null;
         if (!chart) return;
         if (tool.type === "cursor") {
           chart.drawings.setTool(null);
@@ -143,8 +143,25 @@ export function ChartRadialMenu({ ws }: Props) {
     [ws]
   );
 
-  // Listen for Alt keydown / keyup
+  // Listen for Alt keydown / keyup and tradepro:toggle-radial-menu event
   useEffect(() => {
+    const handleToggle = () => {
+      if (isOpenRef.current) {
+        setIsOpen(false);
+        isOpenRef.current = false;
+      } else {
+        const pad = 200;
+        const cx = Math.max(pad, Math.min(window.innerWidth - pad, mousePos.current.x || window.innerWidth / 2));
+        const cy = Math.max(pad, Math.min(window.innerHeight - pad, mousePos.current.y || window.innerHeight / 2));
+        setCenter({ x: cx, y: cy });
+        setSelectedIndex(6);
+        setIsOpen(true);
+        isOpenRef.current = true;
+      }
+    };
+
+    window.addEventListener("tradepro:toggle-radial-menu", handleToggle);
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Alt") {
         if (!isOpenRef.current) {
@@ -166,6 +183,7 @@ export function ChartRadialMenu({ ws }: Props) {
 
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === "Alt") {
+        e.preventDefault();
         if (isOpenRef.current) {
           const tool = RADIAL_TOOLS[selectedIndexRef.current];
           if (tool) {
@@ -177,12 +195,22 @@ export function ChartRadialMenu({ ws }: Props) {
       }
     };
 
+    const onBlur = () => {
+      if (isOpenRef.current) {
+        setIsOpen(false);
+        isOpenRef.current = false;
+      }
+    };
+
     window.addEventListener("keydown", onKeyDown, { capture: true });
     window.addEventListener("keyup", onKeyUp, { capture: true });
+    window.addEventListener("blur", onBlur);
 
     return () => {
+      window.removeEventListener("tradepro:toggle-radial-menu", handleToggle);
       window.removeEventListener("keydown", onKeyDown, { capture: true });
       window.removeEventListener("keyup", onKeyUp, { capture: true });
+      window.removeEventListener("blur", onBlur);
     };
   }, [armTool]);
 

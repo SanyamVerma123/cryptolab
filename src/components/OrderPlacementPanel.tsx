@@ -69,7 +69,7 @@ export function OrderPlacementPanel({
       ? data.livePrice
       : liveMktPx > 0
       ? liveMktPx
-      : data.ctx?.markPx || data.ctx?.midPx || (isAlpacaEquity(coin) ? 150 : 65000);
+      : data.ctx?.markPx || data.ctx?.midPx || (isAlpacaEquity(coin) ? 150 : 85000);
 
   // Form inputs
   const [priceInput, setPriceInput] = useState<string>("");

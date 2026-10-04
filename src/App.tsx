@@ -196,7 +196,7 @@ export default function App() {
     const readSym = () => {
       if (dead) return;
       try {
-        const activeChart = (ws as any).activeCell ? ws.chart : null;
+        const activeChart = (ws as any).active ? ws.chart : null;
         if (!activeChart) return;
         const fullSym = activeChart.market?.symbol;
         const sym = bareSymbol(fullSym);

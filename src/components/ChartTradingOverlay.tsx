@@ -43,7 +43,7 @@ interface Props {
 function getActiveChart(ws: VelaWorkspace | null | undefined) {
   if (!ws) return null;
   try {
-    return (ws as any).activeCell ? ws.chart : null;
+    return (ws as any).active ? ws.chart : null;
   } catch {
     return null;
   }

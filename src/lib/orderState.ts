@@ -96,83 +96,27 @@ const DEFAULT_BALANCES: Balances = {
   SOL: 75.0,
 };
 
-const DEFAULT_ORDERS: Order[] = [
-  {
-    id: "ord_101",
-    date: new Date(Date.now() - 3600000 * 2).toLocaleString([], {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }),
-    pair: "BTC/USD",
-    coin: "BTC",
-    type: "Limit",
-    side: "BUY",
-    price: 64200.0,
-    amount: 0.15,
-    filled: 0,
-    total: 9630.0,
-    trigger: "-",
-    status: "Open",
-    leverage: 5,
-  },
-];
-
-const DEFAULT_POSITIONS: TradePosition[] = [
-  {
-    id: "pos_101",
-    date: new Date(Date.now() - 3600000 * 3).toLocaleString([], {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }),
-    pair: "BTC/USD",
-    coin: "BTC",
-    side: "BUY",
-    entryPrice: 64500.0,
-    amount: 0.25,
-    total: 16125.0,
-    takeProfit: 68000.0,
-    stopLoss: 62500.0,
-    leverage: 10,
-    margin: 1612.5,
-    liquidationPrice: 58372.5,
-  },
-];
-
-const DEFAULT_HISTORY: Order[] = [
-  {
-    id: "ord_100",
-    date: new Date(Date.now() - 3600000 * 5).toLocaleString([], {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }),
-    pair: "BTC/USD",
-    coin: "BTC",
-    type: "Market",
-    side: "BUY",
-    price: 64550.0,
-    amount: 0.25,
-    filled: 100,
-    total: 16137.5,
-    trigger: "-",
-    status: "Filled",
-    leverage: 10,
-  },
-];
+const DEFAULT_ORDERS: Order[] = [];
+const DEFAULT_POSITIONS: TradePosition[] = [];
+const DEFAULT_HISTORY: Order[] = [];
 
 function getStored<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return fallback;
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (key === ORDERS_KEY && Array.isArray(parsed)) {
+      // Never load mock demo orders
+      return parsed.filter((o: any) => o && o.id !== "ord_101") as unknown as T;
+    }
+    if (key === POSITIONS_KEY && Array.isArray(parsed)) {
+      // Never load mock demo positions
+      return parsed.filter((p: any) => p && p.id !== "pos_101") as unknown as T;
+    }
+    if (key === HISTORY_KEY && Array.isArray(parsed)) {
+      return parsed.filter((h: any) => h && h.id !== "ord_100") as unknown as T;
+    }
+    return parsed;
   } catch {
     return fallback;
   }
@@ -844,10 +788,7 @@ export function checkPriceTriggers(
         // Did price cut down through L, or touch L from above?
         const cutDown = prevPrice > L && currentPrice <= L;
         const touchedLow = _candleLow !== undefined && _candleLow <= L && prevPrice >= L;
-        const refPrice = ord.placedAtPrice ?? prevPrice;
-        const placedAbove = refPrice >= L && currentPrice <= L;
-
-        if (cutDown || touchedLow || placedAbove) {
+        if (cutDown || touchedLow) {
           shouldFill = true;
         }
       }
@@ -858,10 +799,7 @@ export function checkPriceTriggers(
         // Did price cut up through L, or touch L from below?
         const cutUp = prevPrice < L && currentPrice >= L;
         const touchedHigh = _candleHigh !== undefined && _candleHigh >= L && prevPrice <= L;
-        const refPrice = ord.placedAtPrice ?? prevPrice;
-        const placedBelow = refPrice <= L && currentPrice >= L;
-
-        if (cutUp || touchedHigh || placedBelow) {
+        if (cutUp || touchedHigh) {
           shouldFill = true;
         }
       }
