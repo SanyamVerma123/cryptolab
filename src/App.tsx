@@ -1,7 +1,7 @@
 /**
  * trade-pro — App shell, v3.0 (Vela).
  *
- * The chart is now @luxalgo/vela (workspace, single-chart mode). Vela renders
+ * The chart is now @luxalgo/vela/workspace. Vela renders
  * its own complete shell — topbar (symbol/timeframe/style/indicators), the
  * 84-tool drawing toolbar, status line, bottom bar — into its container, and
  * everything the user asked for is native to it:
@@ -10,10 +10,8 @@
  *   - persistence across symbol/timeframe switches,
  *   - first-party Hyperliquid feed, no auth.
  *
- * What this shell still owns (per the user's call): the app top bar (symbol +
- * timeframe pickers, AI button, panel toggles) and the market panel
- * (stats / order book) docked beside the chart — closeable, so the chart can
- * go full width.
+ * Vela owns the shared chart shell and topbar. Trade Pro adds chart actions
+ * through Vela's widget API and keeps order entry and market data in panels.
  */
 import { useEffect, useMemo, useState } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
@@ -26,7 +24,6 @@ import { PineEditor } from "./components/PineEditor";
 import { IndicatorToggles } from "./components/IndicatorToggles";
 import { SettingsModal } from "./components/SettingsModal";
 import { ChartTradingOverlay } from "./components/ChartTradingOverlay";
-import { LuxAlgoPanel } from "./components/LuxAlgoPanel";
 import { OrderPlacementPanel } from "./components/OrderPlacementPanel";
 import { BottomOrdersDrawer } from "./components/BottomOrdersDrawer";
 import { UserMenu } from "./components/UserMenu";
@@ -36,16 +33,6 @@ import { HyperliquidSocket } from "./lib/hyperliquid";
 import { useLiveData } from "./lib/useLiveData";
 import "./styles/app.css";
 
-const TIMEFRAMES: { label: string; vela: string }[] = [
-  { label: "1m", vela: "1" },
-  { label: "5m", vela: "5" },
-  { label: "15m", vela: "15" },
-  { label: "1h", vela: "60" },
-  { label: "4h", vela: "240" },
-  { label: "1D", vela: "D" },
-  { label: "1W", vela: "W" },
-];
-
 export default function App() {
   const [coin, setCoin] = useState("BTC");
   const [tf, setTf] = useState("60");
@@ -53,15 +40,29 @@ export default function App() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [panelMode, setPanelMode] = useState<"data" | "order" | "ai">("order");
   const [bottomOrdersOpen, setBottomOrdersOpen] = useState(false);
+  const [ordersFocusTab, setOrdersFocusTab] = useState<"positions" | "orders">("positions");
+  const [ordersFocusRequest, setOrdersFocusRequest] = useState(0);
   const [pineOpen, setPineOpen] = useState(false);
   const [indOpen, setIndOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [luxOpen, setLuxOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   useEffect(() => {
     const cleanup = initCloudSync();
     return () => cleanup();
+  }, []);
+
+  // Chart-owned toolbar actions open these host React panels. Keeping the
+  // controls in Vela's chart chrome makes them feel like chart tools rather
+  // than unrelated app-level buttons.
+  useEffect(() => {
+    const openPine = () => setPineOpen((v) => !v);
+    window.addEventListener("tradepro:toggle-pine", openPine);
+    return () => {
+      window.removeEventListener("tradepro:toggle-pine", openPine);
+    };
   }, []);
   const [panelWidth, setPanelWidth] = useState<number>(() => {
     try {
@@ -110,6 +111,18 @@ export default function App() {
       );
     }
   };
+
+  useEffect(() => {
+    const toggles: [string, () => void][] = [
+      ["tradepro:toggle-market", () => setPanelOpen((v) => !v)],
+      ["tradepro:open-settings", () => setSettingsOpen(true)],
+      ["tradepro:open-account", () => setAccountOpen((v) => !v)],
+      ["tradepro:toggle-favorites", () => setFavoritesOpen((v) => !v)],
+      ["tradepro:install", () => void handleInstallApp()],
+    ];
+    toggles.forEach(([name, fn]) => window.addEventListener(name, fn));
+    return () => toggles.forEach(([name, fn]) => window.removeEventListener(name, fn));
+  }, [installPrompt, isInstalled]);
 
   const handlePanelResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -275,84 +288,13 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <div className="brand">Trade&nbsp;Pro</div>
-
-        {/* The user's starred drawing tools live OUT of the chart now — in the
-            topbar, so they never cover candles. Vela's own tool icons; the
-            strip is draggable by its title if it gets in the way. */}
-        <FavoritesBar ws={ws} />
-
-        {/* No coin picker here — Vela's own topbar has symbol search (type a
-            letter), timeframe, style and the indicator dialog built in. */}
-
-        <span className="topbar-spacer" />
-
-        <div className="controls">
-          <button
-            className={"series-select icon-only-btn" + (pineOpen ? " on" : "")}
-            title="Pine Script Editor"
-            onClick={() => setPineOpen((v) => !v)}
-            aria-label="Pine Script Editor"
-          >
-            <span className="ctl-ico" aria-hidden="true">
-              {/* The real Pine Script mark, matching the Pine branding. */}
-              <img
-                src="/pine-logo.svg"
-                alt="Pine"
-                width={16}
-                height={16}
-                style={{ verticalAlign: "-2px", borderRadius: 3 }}
-              />
-            </span>
-          </button>
-          <button
-            className={"series-select icon-only-btn" + (luxOpen ? " on" : "")}
-            title="LuxAlgo Indicator Library"
-            onClick={() => setLuxOpen((v) => !v)}
-            aria-label="LuxAlgo Indicator Library"
-          >
-            <span className="ctl-ico" aria-hidden="true">✥</span>
-          </button>
-          <button
-            className={"series-select icon-only-btn" + (panelOpen ? " on" : "")}
-            title={panelOpen ? "Hide Market Panel" : "Show Market Panel"}
-            onClick={() => setPanelOpen((v) => !v)}
-            aria-label={panelOpen ? "Hide Market Panel" : "Show Market Panel"}
-          >
-            <span className="ctl-ico" aria-hidden="true">{panelOpen ? "◧" : "▦"}</span>
-          </button>
-
-          {/* Settings modal (Alpaca API Keys & Trading Preferences) */}
-          <button
-            className={"series-select icon-only-btn" + (settingsOpen ? " on" : "")}
-            title="Alpaca Trading & App Settings"
-            onClick={() => setSettingsOpen(true)}
-            aria-label="Settings"
-          >
-            <span className="ctl-ico" aria-hidden="true">⚙</span>
-          </button>
-
-          {/* User Account & Supabase Cloud Sync */}
-          <UserMenu onOpenAuth={() => setAuthOpen(true)} />
-
-          {/* PWA Install / Download App button */}
-          {!isInstalled && (
-            <button
-              className="series-select icon-only-btn pwa-install-btn"
-              title="Install Trade Pro App"
-              onClick={handleInstallApp}
-              aria-label="Install Trade Pro App"
-            >
-              <span className="ctl-ico" aria-hidden="true">📥</span>
-            </button>
-          )}
-        </div>
-      </header>
-
       <main className={"chart-area" + (panelOpen ? "" : " panel-closed")}>
         <div className="chart-main-column">
           <div className="chart-host">
+            {favoritesOpen && <FavoritesBar ws={ws} />}
+            {accountOpen && <div className="workspace-account-overlay">
+              <UserMenu externalOpen onOpenAuth={() => { setAuthOpen(true); setAccountOpen(false); }} />
+            </div>}
             <VelaChart coin={coin} timeframe={tf} onReady={(w) => {
               // Expose for in-page diagnostics; harmless in production.
               (window as unknown as { __ws?: VelaWorkspace }).__ws = w;
@@ -365,10 +307,6 @@ export default function App() {
             {/* Pine Script editor (PineTS engine registered in VelaChart). */}
             <ErrorBoundary>
               <PineEditor ws={ws} open={pineOpen} onOpenChange={setPineOpen} />
-            </ErrorBoundary>
-            {/* The official LuxAlgo indicator library */}
-            <ErrorBoundary>
-              <LuxAlgoPanel ws={ws} open={luxOpen} onOpenChange={setLuxOpen} />
             </ErrorBoundary>
             {/* Indicator toggles */}
             <ErrorBoundary>
@@ -383,6 +321,8 @@ export default function App() {
             currentCoin={coin}
             currentPrice={live.livePrice || live.trades?.[0]?.price || live.book?.mid || live.ctx?.markPx || live.ctx?.midPx || 0}
             isOpen={bottomOrdersOpen}
+            focusTab={ordersFocusTab}
+            focusRequest={ordersFocusRequest}
             onResize={() => {
               try {
                 ws?.resize?.();
@@ -463,7 +403,9 @@ export default function App() {
                   coin={coin}
                   data={live}
                   onOpenSettings={() => setSettingsOpen(true)}
-                  onOrderPlaced={() => {
+                  onOrderPlaced={(kind) => {
+                    setOrdersFocusTab(kind === "order" ? "orders" : "positions");
+                    setOrdersFocusRequest((v) => v + 1);
                     setBottomOrdersOpen(true);
                     setTimeout(() => {
                       try {

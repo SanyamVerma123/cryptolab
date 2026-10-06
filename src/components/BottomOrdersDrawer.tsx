@@ -11,7 +11,7 @@
  *      Last price, Unrealized PnL ($ and %), Trade value, Market value, Leverage, Margin, Actions (Edit ✎, Close ✕).
  * 4. Dual environment support (In-App Paper vs Alpaca Paper).
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useOrders } from "../lib/orderState";
 
 interface Props {
@@ -20,6 +20,8 @@ interface Props {
   isOpen: boolean;
   onToggle: () => void;
   onResize?: () => void;
+  focusTab?: "positions" | "orders";
+  focusRequest?: number;
 }
 
 type BottomTab =
@@ -37,6 +39,8 @@ export function BottomOrdersDrawer({
   isOpen,
   onToggle,
   onResize,
+  focusTab,
+  focusRequest = 0,
 }: Props) {
   const {
     tradingMode,
@@ -56,6 +60,10 @@ export function BottomOrdersDrawer({
   const [editingPosId, setEditingPosId] = useState<string | null>(null);
   const [editTpInput, setEditTpInput] = useState("");
   const [editSlInput, setEditSlInput] = useState("");
+
+  useEffect(() => {
+    if (focusTab) setTab(focusTab);
+  }, [focusTab, focusRequest]);
 
   const [drawerHeight, setDrawerHeight] = useState<number>(() => {
     try {

@@ -88,6 +88,7 @@ const POSITIONS_KEY = "tradepro_open_positions_v2";
 const HISTORY_KEY = "tradepro_order_history_v2";
 const BALANCES_KEY = "tradepro_balances_v2";
 const ALERTS_KEY = "tradepro_price_alerts_v2";
+const LAST_LOCAL_CHANGE_KEY = "tradepro_orders_last_local_change_v1";
 
 const DEFAULT_BALANCES: Balances = {
   USD: 50000.0,
@@ -152,6 +153,10 @@ function notify() {
     setStored(POSITIONS_KEY, gPositions);
     setStored(HISTORY_KEY, gHistory);
     setStored(BALANCES_KEY, gBalances);
+    try {
+      localStorage.setItem(LAST_LOCAL_CHANGE_KEY, String(Date.now()));
+      window.dispatchEvent(new CustomEvent("order-state-changed"));
+    } catch { /* local persistence remains best-effort */ }
   }
   setStored(ALERTS_KEY, gAlerts);
   setStored(TRADING_MODE_KEY, gTradingMode);

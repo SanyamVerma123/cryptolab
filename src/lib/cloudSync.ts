@@ -132,7 +132,6 @@ export function applyCloudData(payload: Partial<SyncPayload>): void {
     if (pt.tradepro_order_history_v2) writeJson("tradepro_order_history_v2", pt.tradepro_order_history_v2);
     if (pt.tradepro_balances_v2) writeJson("tradepro_balances_v2", pt.tradepro_balances_v2);
     if (pt.tradepro_price_alerts_v2) writeJson("tradepro_price_alerts_v2", pt.tradepro_price_alerts_v2);
-    window.dispatchEvent(new CustomEvent("order-state-changed"));
     changed = true;
   }
 
@@ -266,6 +265,29 @@ export async function pullFromCloud(): Promise<boolean> {
 
     if (!data) {
       // First login on this account: push local data to create cloud record
+      return await pushToCloud();
+    }
+
+    // Keep a newer local paper-trading state from being replaced by an older
+    // or blank cloud document on login/reconnect. Local order mutations stamp
+    // their save time; cloud updated_at becomes authoritative after each push.
+    const localChangedAt = Number(localStorage.getItem("tradepro_orders_last_local_change_v1") || 0);
+    const remoteChangedAt = Date.parse(data.updated_at || "") || 0;
+    const localOrders = readJson("tradepro_open_orders_v2", []);
+    const localPositions = readJson("tradepro_open_positions_v2", []);
+    const localHistory = readJson("tradepro_order_history_v2", []);
+    const cloudTrading = data.paper_trading || {};
+    const cloudHasTrades = [
+      cloudTrading.tradepro_open_orders_v2,
+      cloudTrading.tradepro_open_positions_v2,
+      cloudTrading.tradepro_order_history_v2,
+    ].some((items) => Array.isArray(items) && items.length > 0);
+    const localHasTrades = [localOrders, localPositions, localHistory]
+      .some((items) => Array.isArray(items) && items.length > 0);
+    if (
+      (localChangedAt > 0 && localChangedAt > remoteChangedAt) ||
+      (localHasTrades && !cloudHasTrades && localChangedAt === 0)
+    ) {
       return await pushToCloud();
     }
 

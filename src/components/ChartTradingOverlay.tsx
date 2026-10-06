@@ -279,6 +279,9 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
     if (tradingMode !== "in_app") return;
 
     const checkTriggers = (px: number) => {
+      // Replay bars are historical chart data. Never let them (or the live
+      // feed continuing behind the replay) fill simulated orders or alerts.
+      if (ws?.replay.state.active) return;
       if (!px || px <= 0) return;
       const { filledOrders, closedPositions, triggeredAlerts } = checkPriceTriggers(coin, px);
 
@@ -329,11 +332,12 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
       unsub();
       clearInterval(interval);
     };
-  }, [coin, tradingMode]);
+  }, [coin, tradingMode, ws]);
 
   // Real-time execution for direct trade tape ticks from WebSocket
   useEffect(() => {
     if (tradingMode !== "in_app") return;
+    if (ws?.replay.state.active) return;
     const px = data.livePrice || data.trades?.[0]?.price;
     if (px && px > 0) {
       const { filledOrders, closedPositions } = checkPriceTriggers(coin, px);
@@ -351,7 +355,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
         setTimeout(() => setAlertFeedback(null), 4500);
       }
     }
-  }, [coin, tradingMode, data.livePrice, data.trades]);
+  }, [coin, tradingMode, data.livePrice, data.trades, ws]);
 
   // Project prices to exact pixel Y inside r.plot
   useEffect(() => {

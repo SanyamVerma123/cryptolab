@@ -11,9 +11,10 @@ import { onSyncStatusChange, pushToCloud, pullFromCloud, type SyncStatus } from 
 
 interface UserMenuProps {
   onOpenAuth: () => void;
+  externalOpen?: boolean;
 }
 
-export function UserMenu({ onOpenAuth }: UserMenuProps) {
+export function UserMenu({ onOpenAuth, externalOpen = false }: UserMenuProps) {
   const [user, setUser] = useState<User | null>(null);
   const [status, setStatus] = useState<SyncStatus>("idle");
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
@@ -40,6 +41,10 @@ export function UserMenu({ onOpenAuth }: UserMenuProps) {
       unsubSync();
     };
   }, []);
+
+  useEffect(() => {
+    if (externalOpen) setDropdownOpen(true);
+  }, [externalOpen]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -89,7 +94,7 @@ export function UserMenu({ onOpenAuth }: UserMenuProps) {
 
   return (
     <div className="user-menu-container" ref={menuRef}>
-      <button
+      {!externalOpen && <button
         className={`user-profile-chip icon-only-chip ${dropdownOpen ? "active" : ""}`}
         onClick={() => setDropdownOpen((v) => !v)}
         title={`Account: ${user.email} (${status === "synced" ? "Cloud Synced" : status})`}
@@ -112,7 +117,7 @@ export function UserMenu({ onOpenAuth }: UserMenuProps) {
               : "Synced with Supabase Cloud"
           }
         />
-      </button>
+      </button>}
 
       {dropdownOpen && (
         <div className="user-dropdown-card">

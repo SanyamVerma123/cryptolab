@@ -39,7 +39,7 @@ import { isAlpacaEquity } from "../lib/alpacaProvider";
 interface Props {
   coin: string;
   data: LiveData;
-  onOrderPlaced?: () => void;
+  onOrderPlaced?: (kind: "position" | "order") => void;
   onOpenSettings?: () => void;
 }
 
@@ -294,7 +294,7 @@ export function OrderPlacementPanel({
         void syncAlpaca();
         setAmountInput("");
         setPercent(null);
-        onOrderPlaced?.();
+        onOrderPlaced?.(type === "Market" ? "position" : "order");
         setTimeout(() => setMessage(null), 4000);
       }
       return;
@@ -325,7 +325,7 @@ export function OrderPlacementPanel({
       });
       setAmountInput("");
       setPercent(null);
-      onOrderPlaced?.();
+      onOrderPlaced?.(type === "Market" ? "position" : "order");
       setTimeout(() => setMessage(null), 4000);
     }
   };

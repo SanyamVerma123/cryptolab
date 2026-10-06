@@ -12,7 +12,7 @@
  *   - Replay: First-class WorkspaceReplay registered via Vela's native topbar widget action.
  *   - Radial Menu: Alt-key drawing wheel.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   VelaWorkspace,
   registerLayout,
@@ -24,7 +24,7 @@ import { HyperliquidProvider } from "@luxalgo/vela/providers/hyperliquid";
 import { BinanceProvider } from "@luxalgo/vela/providers/binance";
 import { CoinbaseProvider } from "@luxalgo/vela/providers/coinbase";
 import { PineEngine } from "@luxalgo/vela-pinets";
-import { syncCustomLibrary } from "./PineEditor";
+import { preloadLuxLibrary, syncCustomLibrary } from "./PineEditor";
 import { installToolDefaults } from "../lib/toolDefaults";
 import { installPerSymbolDrawings } from "../lib/perSymbolDrawings";
 import { installIndicatorState } from "../lib/indicatorState";
@@ -109,6 +109,38 @@ try {
   // icon already registered
 }
 
+try {
+  registerIcon("tradepro-script", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5.5 3.5-4 4.5 4 4.5M10.5 3.5l4 4.5-4 4.5"/></svg>`);
+  registerIcon("tradepro-market", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 13.5h12M3 11V7m3 4V3m3 8V5m3 6V2"/></svg>`);
+  registerIcon("tradepro-settings", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="m8 1.5.8 1.3 1.5.3 1.1-.7 1.2 1.2-.7 1.2.3 1.5 1.3.8v1.8l-1.3.8-.3 1.5.7 1.2-1.2 1.2-1.1-.7-1.5.3L8 14.5H6.2l-.8-1.3-1.5-.3-1.2.7-1.2-1.2.7-1.2-.3-1.5-1.3-.8V7.1l1.3-.8.3-1.5-.7-1.2 1.2-1.2 1.2.7 1.5-.3.8-1.3z" transform="translate(1 0) scale(.875)"/></svg>`);
+  registerIcon("tradepro-tools", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="m2 13 3-3m-1-6 6 6m-2-7 2-2 4 4-2 2M2 4l2-2 3 3-2 2z"/></svg>`);
+  registerIcon("tradepro-account", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="5" r="2.5"/><path d="M2.5 14c.5-3 2.3-4.5 5.5-4.5s5 1.5 5.5 4.5"/></svg>`);
+  registerIcon("tradepro-install", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 1.5v9m-3-3 3 3 3-3M2 11.5v3h12v-3"/></svg>`);
+} catch {
+  // icons already registered
+}
+
+// Put scripting and workspace actions into Vela's shared chart topbar.
+try {
+  registerWidgetAction({
+    id: "tradepro-scripts",
+    target: "topbar",
+    align: "left",
+    order: 8,
+    icon: "tradepro-script",
+    label: "Pine Script",
+    iconOnly: true,
+    run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-pine")),
+  });
+  registerWidgetAction({ id: "tradepro-tools", target: "topbar", align: "left", order: 11, icon: "tradepro-tools", iconOnly: true, label: "Favorite tools", run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-favorites")) });
+  registerWidgetAction({ id: "tradepro-market", target: "topbar", align: "right", order: 1, icon: "tradepro-market", iconOnly: true, label: "Market panel", run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-market")) });
+  registerWidgetAction({ id: "tradepro-settings", target: "topbar", align: "right", order: 2, icon: "tradepro-settings", iconOnly: true, label: "Trading settings", run: () => window.dispatchEvent(new CustomEvent("tradepro:open-settings")) });
+  registerWidgetAction({ id: "tradepro-account", target: "topbar", align: "right", order: 3, icon: "tradepro-account", iconOnly: true, label: "Account and cloud sync", run: () => window.dispatchEvent(new CustomEvent("tradepro:open-account")) });
+  registerWidgetAction({ id: "tradepro-install", target: "topbar", align: "right", order: 4, icon: "tradepro-install", iconOnly: true, label: "Install Trade Pro", run: () => window.dispatchEvent(new CustomEvent("tradepro:install")) });
+} catch {
+  // actions are refreshed for new workspaces on registration
+}
+
 // Register native Replay topbar action into Vela's left cluster
 try {
   registerWidgetAction({
@@ -118,6 +150,7 @@ try {
     order: 10,
     icon: "replay",
     label: "Replay",
+    iconOnly: true,
     run: () => {
       window.dispatchEvent(new CustomEvent("tradepro:toggle-replay"));
     },
@@ -152,6 +185,13 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
 
   const [wsInstance, setWsInstance] = useState<VelaWorkspace | null>(null);
   const [replayActive, setReplayActive] = useState<boolean>(false);
+  const replayActiveRef = useRef(false);
+  replayActiveRef.current = replayActive;
+
+  const closeReplay = useCallback(() => {
+    replayActiveRef.current = false;
+    setReplayActive(false);
+  }, []);
 
   // Mount once. React 19 Strict Mode double-invokes effects in dev, so guard.
   useEffect(() => {
@@ -171,6 +211,9 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       autofocus: true,
       // Persist market, style, timezone, drawings and indicators to localStorage.
       persist: true,
+      statusline: true,
+      watermark: true,
+      bottombar: true,
       // Multi-provider feed: all providers provided by Vela + Alpaca + TwelveData + AlphaVantage
       providers: {
         hyperliquid: () => new HyperliquidProvider(),
@@ -226,6 +269,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
             if (!wsRef.current) return;
             try {
               syncCustomLibrary(ws);
+              void preloadLuxLibrary(ws);
             } catch (e) {
               console.warn("[trade-pro] custom library sync failed:", e);
             }
@@ -379,28 +423,31 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     };
   }, [coin, timeframe]);
 
-  // Synchronize Replay toggle event from native topbar action
+  // Synchronize the custom replay dock with Vela's native topbar action.
   useEffect(() => {
-    const handleToggle = () => setReplayActive((prev) => !prev);
+    const handleToggle = () => {
+      if (replayActiveRef.current) {
+        replayActiveRef.current = false;
+        try { wsRef.current?.replay.stop(); } catch {}
+        setReplayActive(false);
+      } else {
+        replayActiveRef.current = true;
+        setReplayActive(true);
+      }
+    };
     window.addEventListener("tradepro:toggle-replay", handleToggle);
+    return () => window.removeEventListener("tradepro:toggle-replay", handleToggle);
+  }, []);
 
-    // Sync active attribute on topbar button
+  // Keep the native toolbar's selected treatment in sync with the dock.
+  useEffect(() => {
     try {
       const btn = document.querySelector<HTMLElement>("[data-action-id='replay'], button[aria-label*='Replay']");
-      if (btn) {
-        if (replayActive) {
-          btn.classList.add("active");
-          btn.setAttribute("data-active", "true");
-        } else {
-          btn.classList.remove("active");
-          btn.removeAttribute("data-active");
-        }
-      }
-    } catch {}
-
-    return () => {
-      window.removeEventListener("tradepro:toggle-replay", handleToggle);
-    };
+      if (!btn) return;
+      btn.classList.toggle("active", replayActive);
+      if (replayActive) btn.setAttribute("data-active", "true");
+      else btn.removeAttribute("data-active");
+    } catch { /* Vela may be remounting its topbar */ }
   }, [replayActive]);
 
   return (
@@ -409,13 +456,14 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}
     >
       <div ref={ref} className="vela-host" />
+      {/** Workspace-native bar actions toggle custom tool palettes and app dialogs. */}
       <ErrorBoundary>
         <ChartBarReplay
           ws={wsInstance}
           coin={coin}
           timeframe={timeframe}
           active={replayActive}
-          onClose={() => setReplayActive(false)}
+          onClose={closeReplay}
         />
       </ErrorBoundary>
       <ErrorBoundary>

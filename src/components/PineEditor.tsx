@@ -1,5 +1,5 @@
 /**
- * PineEditor — a floating Pine Script editor, opened from the "Pine" button.
+ * PineEditor — an in-chart Pine Script editor, opened from Vela's tool row.
  *
  * Vela ships NO scripting engine; PineTS (`@luxalgo/vela-pinets`) is registered
  * in VelaChart.tsx, so `chart.addIndicator(source)` compiles and runs real
@@ -11,7 +11,7 @@
  * user's own indicators appear in the picker alongside the built-ins, by name,
  * and can be re-added after a reload. The library persists to localStorage.
  *
- * The panel is draggable by its header, like the AI panel.
+ * The panel docks over the chart like Vela's script editor.
  */
 import { useEffect, useRef, useState } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
@@ -20,6 +20,7 @@ import {
   loadPineLibrary,
   savePineLibrary,
 } from "../lib/pinePersist";
+import { getIndicatorSource, listIndicators } from "../lib/luxAlgoClient";
 
 interface Props {
   ws: VelaWorkspace | null;
@@ -28,6 +29,9 @@ interface Props {
 }
 
 const STORE_KEY = "trade-pro:pine-source";
+const LUX_LIBRARY_KEY = "trade-pro:lux-library-cache";
+const LUX_COMPLETE_KEY = "trade-pro:lux-library-complete";
+const luxPreloadByWorkspace = new WeakMap<VelaWorkspace, Promise<void>>();
 
 const SAMPLE = `//@version=6
 indicator("EMA + RSI bands", overlay=true)
@@ -53,22 +57,97 @@ function scriptName(src: string): string | null {
 export function syncCustomLibrary(ws: VelaWorkspace): void {
   const lib = loadPineLibrary();
   try {
-    const cell = ws.active as unknown as {
-      setManifest?: (list: unknown[], seedEnabled: boolean) => void;
-    };
-    if (typeof cell?.setManifest === "function") {
-      const manifest = lib.map((s) => ({
-        name: s.name,
-        script: s.script,
-        language: "pine",
-        category: "Custom",
-        enabled: false,
-      }));
-      cell.setManifest(manifest, false);
+    let lux: Array<{ name: string; script: string }> = [];
+    try {
+      const raw = localStorage.getItem(LUX_LIBRARY_KEY);
+      const saved = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(saved)) lux = saved.filter((item) => item?.name && item?.script);
+    } catch { /* an invalid cache must not block the chart */ }
+    const manifest = [
+        ...lib.map((s) => ({
+          name: s.name,
+          script: s.script,
+          language: "pine",
+          category: "My Scripts",
+          enabled: false,
+        })),
+        ...lux.map((s) => ({ ...s, language: "pine", category: "LuxAlgo", enabled: false })),
+      ];
+    // Every chart cell gets the same picker catalog, including cells created by
+    // a later grid change. Vela keeps each cell's applied instances separate.
+    for (const cell of ws.cells()) {
+      (cell as unknown as { setManifest?: (list: unknown[], seedEnabled: boolean) => void })
+        .setManifest?.(manifest, false);
     }
   } catch {
     /* cell not ready */
   }
+}
+
+/** Populate Vela's native Indicators picker with the public LuxAlgo library. */
+export function preloadLuxLibrary(ws: VelaWorkspace): Promise<void> {
+  const existing = luxPreloadByWorkspace.get(ws);
+  if (existing) return existing;
+  const task = (async () => {
+    const readCache = (): Array<{ slug: string; name: string; script: string }> => {
+      try {
+        const raw = localStorage.getItem(LUX_LIBRARY_KEY);
+        const items = raw ? JSON.parse(raw) : [];
+        return Array.isArray(items) ? items.filter((x) => x?.slug && x?.name && x?.script) : [];
+      } catch { return []; }
+    };
+    let cached = readCache();
+    syncCustomLibrary(ws);
+    if (localStorage.getItem(LUX_COMPLETE_KEY) === "1") return;
+
+    try {
+      const first = await listIndicators("", 0, 100);
+      const catalog = [...first.indicators];
+      for (let page = 1; page * first.pageSize < first.total; page += 1) {
+        const next = await listIndicators("", page, first.pageSize);
+        catalog.push(...next.indicators);
+      }
+      const uniqueCatalog = [...new Map(catalog.filter((x) => x.slug).map((item) => [item.slug, item])).values()];
+      const known = new Set(cached.map((x) => x.slug));
+      const pending = uniqueCatalog.filter((x) => !known.has(x.slug));
+      let cursor = 0;
+      let dirtyCount = 0;
+      let transientFailure = false;
+      const workers = Array.from({ length: 3 }, async () => {
+        while (cursor < pending.length) {
+          const item = pending[cursor++];
+          try {
+            const result = await getIndicatorSource(item.slug);
+            if (result.available && result.source) {
+              cached.push({ slug: item.slug, name: item.name, script: result.source });
+              known.add(item.slug);
+              dirtyCount += 1;
+            }
+          } catch (error) {
+            const reason = (error as Error).message || "";
+            if (!reason.includes("not publicly available")) transientFailure = true;
+          }
+          if (dirtyCount >= 5) {
+            try { localStorage.setItem(LUX_LIBRARY_KEY, JSON.stringify(cached)); } catch { /* cache is optional */ }
+            syncCustomLibrary(ws);
+            dirtyCount = 0;
+          }
+        }
+      });
+      await Promise.all(workers);
+      try {
+        localStorage.setItem(LUX_LIBRARY_KEY, JSON.stringify(cached));
+        if (!transientFailure) localStorage.setItem(LUX_COMPLETE_KEY, "1");
+      } catch { /* the current session catalog still works */ }
+      syncCustomLibrary(ws);
+      if (transientFailure) luxPreloadByWorkspace.delete(ws);
+    } catch (error) {
+      console.warn("[trade-pro] LuxAlgo catalog preload failed:", error);
+      luxPreloadByWorkspace.delete(ws);
+    }
+  })();
+  luxPreloadByWorkspace.set(ws, task);
+  return task;
 }
 
 export function PineEditor({ ws, open, onOpenChange }: Props) {
@@ -81,8 +160,11 @@ export function PineEditor({ ws, open, onOpenChange }: Props) {
   });
   const [status, setStatus] = useState<string>("");
   const [ok, setOk] = useState<boolean | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  const drag = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
+  const [saved, setSaved] = useState(() => loadPineLibrary());
+  const [history, setHistory] = useState<string[]>([src]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+  const gutterRef = useRef<HTMLDivElement | null>(null);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Persist the draft so a reload doesn't lose work.
   useEffect(() => {
@@ -92,39 +174,6 @@ export function PineEditor({ ws, open, onOpenChange }: Props) {
       /* ignore */
     }
   }, [src]);
-
-  // Park bottom-left of the chart host on open.
-  useEffect(() => {
-    if (!open || !panelRef.current) return;
-    panelRef.current.style.left = "16px";
-    panelRef.current.style.top = "56px";
-  }, [open]);
-
-  const onHeadDown = (e: React.PointerEvent) => {
-    const el = panelRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    drag.current = { sx: e.clientX, sy: e.clientY, px: e.clientX - r.left, py: e.clientY - r.top };
-  };
-  useEffect(() => {
-    const move = (e: PointerEvent) => {
-      const d = drag.current;
-      const el = panelRef.current;
-      if (!d || !el) return;
-      const host = el.closest(".chart-host") as HTMLElement | null;
-      const hr = host ? host.getBoundingClientRect() : { left: 0, top: 0 };
-      el.style.right = "auto";
-      el.style.left = e.clientX - hr.left - d.px + "px";
-      el.style.top = e.clientY - hr.top - d.py + "px";
-    };
-    const up = () => { drag.current = null; };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    return () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-  }, []);
 
   if (!open) return null;
 
@@ -177,18 +226,62 @@ export function PineEditor({ ws, open, onOpenChange }: Props) {
     }
   };
 
+  const saveDraft = () => {
+    const name = scriptName(src) ?? "My script";
+    const next = loadPineLibrary().filter((item) => item.name !== name);
+    next.push({ name, script: src });
+    savePineLibrary(next);
+    setSaved(next);
+    if (ws) syncCustomLibrary(ws);
+    setStatus(`Saved “${name}” to My Scripts.`);
+    setOk(true);
+  };
+
+  const editSource = (value: string) => {
+    const next = [...history.slice(0, historyIndex + 1), value].slice(-80);
+    setHistory(next);
+    setHistoryIndex(next.length - 1);
+    setSrc(value);
+  };
+
+  const stepHistory = (direction: -1 | 1) => {
+    if (direction < 0) {
+      const prior = history[historyIndex - 1];
+      if (prior !== undefined) {
+        setSrc(prior);
+        setHistoryIndex(Math.max(0, historyIndex - 1));
+      }
+    } else if (historyIndex < history.length - 1) {
+      const next = history[historyIndex + 1];
+      setSrc(next);
+      setHistoryIndex(historyIndex + 1);
+    }
+  };
+
   return (
-    <div className="pine-panel" ref={panelRef} role="dialog" aria-label="Pine Script editor">
-      <div className="pine-head" onPointerDown={onHeadDown}>
-        <span className="pine-dot" />
-        <span className="pine-title">Pine Script</span>
-        <button
-          className="pine-run"
-          onClick={run}
-          title="Compile and run on the chart"
-        >
-          Run ▶
-        </button>
+    <div className="pine-panel" role="dialog" aria-label="Pine Script editor">
+      <div className="pine-head">
+        <div className="pine-action-box">
+          <select className="pine-title-select" value={saved.some((item) => item.name === scriptName(src)) ? scriptName(src)! : "__draft"} onChange={(e) => {
+            const item = saved.find((entry) => entry.name === e.target.value);
+            if (item) setSrc(item.script);
+          }} aria-label="Saved scripts">
+            <option value="__draft">{scriptName(src) ?? "My script"}</option>
+            {saved.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
+          </select>
+          <button className="pine-run" onClick={run} title="Compile and run on chart">▶ <span>Run</span></button>
+          <button className="pine-toolbar-icon" onClick={() => {
+            const duplicate = src.replace(/((?:indicator|strategy)\s*\(\s*["'])([^"']+)(["'])/i, "$1$2 copy$3");
+            editSource(duplicate);
+            setStatus("Draft duplicated. Save it to My Scripts when ready.");
+            setOk(null);
+          }} title="Duplicate draft">▢</button>
+          <button className="pine-toolbar-icon" onClick={saveDraft} title="Save to My Scripts">▣</button>
+          <button className="pine-toolbar-icon" onClick={() => stepHistory(-1)} disabled={historyIndex <= 0} title="Undo">↶</button>
+          <button className="pine-toolbar-icon" onClick={() => stepHistory(1)} disabled={historyIndex >= history.length - 1} title="Redo">↷</button>
+        </div>
+        <span className="pine-head-spacer" />
+        <span className="pine-version">Pine v6</span>
         <button
           className="pine-x"
           onClick={() => onOpenChange(false)}
@@ -197,13 +290,20 @@ export function PineEditor({ ws, open, onOpenChange }: Props) {
           ✕
         </button>
       </div>
-      <textarea
-        className="pine-editor"
-        spellCheck={false}
-        value={src}
-        onChange={(e) => setSrc(e.target.value)}
-        placeholder="//@version=6&#10;indicator(&quot;My indicator&quot;)&#10;plot(ta.ema(close, 20))"
-      />
+      <div className="pine-code-area">
+        <div className="pine-gutter" ref={gutterRef} aria-hidden="true">
+          {Array.from({ length: Math.max(1, src.split("\n").length) }, (_, i) => <span key={i}>{i + 1}</span>)}
+        </div>
+        <textarea
+          ref={editorRef}
+          className="pine-editor"
+          spellCheck={false}
+          value={src}
+          onChange={(e) => editSource(e.target.value)}
+          onScroll={(e) => { if (gutterRef.current) gutterRef.current.scrollTop = e.currentTarget.scrollTop; }}
+          placeholder={'//@version=6\nindicator("My indicator")\nplot(ta.ema(close, 20))'}
+        />
+      </div>
       {status && (
         <div className={"pine-status" + (ok === null ? "" : ok ? " ok" : " err")}>
           {status}

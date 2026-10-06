@@ -1161,43 +1161,38 @@ html, body, #root {
 .pine-panel {
   position: absolute;
   z-index: 60;
-  left: 16px;
-  top: 56px;
-  width: 380px;
-  max-width: calc(100% - 24px);
-  height: 320px;
+  top: 0;
+  right: 0;
+  width: min(78%, 1120px);
+  max-width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  background: rgba(16, 19, 26, 0.97);
-  border: 1px solid #2c3550;
-  border-radius: 12px;
-  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(10px);
+  background: #131519;
+  border-left: 1px solid #292d33;
+  border-top: 1px solid #292d33;
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.24);
   overflow: hidden;
 }
 .pine-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: #141926;
-  border-bottom: 1px solid #232a3a;
-  cursor: grab;
+  gap: 12px;
+  min-height: 42px;
+  padding: 0 14px;
+  background: #17191d;
+  border-bottom: 1px solid #292d33;
   user-select: none;
 }
-.pine-head:active { cursor: grabbing; }
-.pine-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: #38c0fd; box-shadow: 0 0 8px #38c0fd;
-  flex: none;
-}
-.pine-title { font-weight: 700; font-size: 12px; flex: 1; }
+.pine-title { font-weight: 600; font-size: 12px; color: #d7dbe2; }
+.pine-head-spacer { flex: 1; }
+.pine-version { color: #9299a5; font: 11px ui-monospace, monospace; }
 .pine-run {
-  background: #2962ff; border: none; color: #fff;
-  border-radius: 6px; padding: 4px 10px;
+  background: #e5e8ee; border: none; color: #17191d;
+  border-radius: 4px; padding: 6px 12px;
   font-size: 11px; font-weight: 700; cursor: pointer;
 }
-.pine-run:hover { background: #1e4bd6; }
+.pine-run:hover { background: #fff; }
 .pine-x {
   background: none; border: none; color: #8b94a3; cursor: pointer;
   font-size: 12px; padding: 2px 6px; border-radius: 5px;
@@ -1205,21 +1200,30 @@ html, body, #root {
 .pine-x:hover { color: #fff; background: #232a3a; }
 .pine-editor {
   flex: 1;
+  min-width: 0;
   width: 100%;
   resize: none;
   border: none;
   outline: none;
-  background: #0d1017;
-  color: #d7dce6;
+  background: #131519;
+  color: #d7dbe2;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.6;
-  padding: 10px;
+  padding: 12px 14px;
   tab-size: 2;
 }
 .pine-status { padding: 7px 10px; font-size: 11px; border-top: 1px solid #232a3a; }
 .pine-status.ok { color: #0ecb81; }
 .pine-status.err { color: #f6465d; white-space: pre-wrap; }
+.pine-code-area { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.pine-gutter {
+  display: flex; flex: 0 0 42px; flex-direction: column; overflow: hidden;
+  padding: 12px 8px 12px 0; border-right: 1px solid #202329; background: #131519;
+  color: #68717f; text-align: right; user-select: none;
+  font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.pine-gutter span { min-height: 1.6em; }
 
 /* === AI settings (webhook) === */
 .ai-settings { padding: 9px 10px; border-bottom: 1px solid #232a3a; display: flex; flex-direction: column; gap: 6px; }
@@ -1519,6 +1523,97 @@ html, body, #root {
   color: #d7e0ee;
   animation: lux-in 0.18s ease;
 }
+
+/* Tool windows stay visually attached to Vela's own chart surface. */
+.pine-panel {
+  border-radius: 0;
+}
+.lux-panel {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  width: min(560px, calc(100% - 36px));
+  max-height: min(72%, 640px);
+  border: 1px solid #30343b;
+  border-radius: 10px;
+  background: #17191d;
+  box-shadow: 0 20px 64px rgba(0, 0, 0, 0.7);
+  z-index: 80;
+  animation: none;
+}
+
+/* Keep trade levels in the renderer's plot, with a restrained price-line weight. */
+.tv-line-solid,
+.tv-line-dashed {
+  height: 1px;
+  opacity: .86;
+  mix-blend-mode: screen;
+}
+.tv-scale-price-chip {
+  border: 1px solid rgba(255, 255, 255, .22);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .28);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Vela workspace replay — native workspace controller, chart-docked controls. */
+.replay-cut-layer {
+  position: absolute; inset: 0; z-index: 45; pointer-events: none;
+}
+.replay-cut-line {
+  position: absolute; top: 0; bottom: 28px; width: 1px;
+  background: #4b8bff; box-shadow: 0 0 5px rgba(75, 139, 255, .55);
+}
+.replay-cut-hint {
+  position: absolute; bottom: 42px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; white-space: nowrap;
+  padding: 7px 12px; border: 1px solid #343943; border-radius: 6px;
+  background: #1a1d22; color: #d7dbe2; font-size: 11px;
+  box-shadow: 0 5px 20px rgba(0,0,0,.45); pointer-events: auto;
+}
+.replay-cut-hint button, .replay-control {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  min-height: 28px; padding: 3px 8px; border: 0; border-radius: 4px;
+  background: transparent; color: #c9ced7; cursor: pointer; font-size: 11px;
+}
+.replay-cut-hint button:hover, .replay-control:hover:not(:disabled) { background: rgba(255,255,255,.09); color: #fff; }
+.replay-control:disabled { opacity: .4; cursor: default; }
+.replay-dock {
+  position: absolute; z-index: 46; left: 18px; bottom: 50px;
+  display: flex; align-items: center; gap: 2px; max-width: calc(100% - 36px);
+  height: 36px; padding: 3px 6px; border: 1px solid #333840; border-radius: 6px;
+  background: rgba(25, 28, 33, .97); box-shadow: 0 5px 22px rgba(0,0,0,.48);
+  color: #d7dbe2; font-size: 11px;
+}
+.replay-speed select {
+  height: 26px; max-width: 60px; padding: 0 4px; border: 0; outline: 0;
+  background: transparent; color: #d7dbe2; font-size: 11px; cursor: pointer;
+}
+.replay-speed option { color: #16181c; }
+.replay-time { padding: 0 7px; white-space: nowrap; color: #d7dbe2; font-variant-numeric: tabular-nums; }
+.replay-remaining { padding: 0 6px; white-space: nowrap; color: #8f98a5; }
+.replay-scrubber-wrap { width: clamp(70px, 13vw, 190px); padding: 0 5px; }
+.replay-scrubber { display: block; width: 100%; height: 3px; accent-color: #2962ff; cursor: pointer; }
+.replay-date-wrap { position: relative; }
+.replay-date-input {
+  position: absolute; left: 50%; bottom: 36px; transform: translateX(-50%);
+  width: 205px; padding: 8px; border: 1px solid #393e47; border-radius: 5px;
+  background: #202329; color: #e4e7ec; color-scheme: dark; z-index: 3;
+}
+.replay-exit { color: #9299a5; }
+.replay-watermark {
+  position: absolute; z-index: 4; left: 50%; top: 45%; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  color: rgba(255,255,255,.12); font-size: 25px; font-weight: 700; pointer-events: none;
+}
+.replay-watermark small { font-size: 12px; letter-spacing: .1em; }
+
+@media (max-width: 680px) {
+  .pine-panel { width: 100%; }
+  .replay-dock { left: 6px; bottom: 44px; max-width: calc(100% - 12px); }
+  .replay-remaining { display: none; }
+  .replay-scrubber-wrap { width: clamp(54px, 15vw, 120px); }
+  .replay-time { font-size: 10px; padding: 0 3px; }
+}
 @keyframes lux-in {
   from { opacity: 0; transform: translateY(-6px) scale(0.99); }
   to   { opacity: 1; transform: none; }
@@ -1676,7 +1771,7 @@ html, body, #root {
 .lux-bad { color: #ffb4a2; background: rgba(255, 120, 90, 0.12); }
 
 @media (max-width: 720px) {
-  .lux-panel { width: calc(100vw - 24px); right: 12px; }
+  .lux-panel { width: min(560px, calc(100vw - 24px)); right: auto; left: 50%; }
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -1931,6 +2026,25 @@ html, body, #root {
   min-height: 0;
   position: relative;
 }
+
+/* Vela is the sole app header. Optional Trade Pro chart tools live in its
+   workspace canvas and can be opened from the workspace topbar. */
+.chart-host > .favs {
+  position: absolute;
+  top: 44px;
+  left: 54px;
+  margin: 0;
+  z-index: 90;
+  box-shadow: 0 12px 38px rgba(0, 0, 0, .5);
+}
+.workspace-account-overlay {
+  position: absolute;
+  z-index: 95;
+  top: 42px;
+  right: 10px;
+}
+.workspace-account-overlay .user-menu-container { position: relative; }
+.workspace-account-overlay .user-dropdown-card { top: 0; }
 
 /* ==========================================================================
    Binance-style Place Order Panel (.order-placement-panel)
@@ -5875,6 +5989,293 @@ body.resizing-col .market-panel {
 .vela-host {
   width: 100%;
   height: 100%;
+}
+
+/* Pine editor controls follow the compact boxed layout in the reference. */
+.pine-head { gap: 10px; }
+.pine-action-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 30px;
+  padding: 2px 4px;
+  border: 1px solid #30343b;
+  border-radius: 5px;
+  background: #111317;
+}
+.pine-title-select {
+  width: min(180px, 24vw);
+  min-width: 90px;
+  padding: 0 7px;
+  border: 0;
+  outline: 0;
+  color: #d7dbe2;
+  background: transparent;
+  font-size: 12px;
+}
+.pine-title-select option { background: #17191d; color: #d7dbe2; }
+.pine-action-box .pine-run {
+  min-height: 24px;
+  padding: 3px 9px;
+  border: 1px solid #e5e8ee;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.pine-toolbar-icon {
+  width: 26px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #9299a5;
+  background: transparent;
+  cursor: pointer;
+  font-size: 15px;
+}
+.pine-toolbar-icon:hover:not(:disabled) { border-color: #3b414a; color: #e4e7ec; background: #202329; }
+.pine-toolbar-icon:disabled { opacity: .38; cursor: default; }
+
+/* TradingView-like quote/trade panel framing and compact segmented tabs. */
+.market-panel {
+  background: #0f1115;
+  border-left: 1px solid #282b31;
+  color: #d7dbe2;
+}
+.mp-head {
+  min-height: 42px;
+  padding: 0 10px;
+  color: #aeb4bf;
+  border-bottom-color: #292d33;
+  background: #17191d;
+}
+.mp-tabs { gap: 3px; }
+.mp-tab {
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #aeb4bf;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+}
+.mp-tab:hover { color: #eef0f4; background: #22252b; }
+.mp-tab.on { color: #eef0f4; background: #292d33; border-color: #383d46; }
+.mp-close { width: 28px; height: 28px; font-size: 14px; }
+.mp-body { background: #101216; }
+.market-panel .op-card,
+.market-panel .mp-body > section { border-color: #292d33; }
+
+/* Paper-trading drawer: docked terminal surface, compact controls and rows. */
+.bottom-orders-drawer.tv-paper-drawer {
+  color: #d7dbe2;
+  background: #131519;
+  border-top: 1px solid #32363d;
+  box-shadow: 0 -5px 18px rgba(0, 0, 0, .18);
+}
+.tv-paper-drawer .bod-header {
+  height: 38px;
+  min-height: 38px;
+  padding: 0 12px;
+  background: #17191d;
+  border-bottom-color: #292d33;
+}
+.tv-paper-drawer .bod-header-title-row { gap: 10px; }
+.tv-paper-drawer .bod-controls { gap: 8px; }
+.tv-paper-drawer .tv-drawer-logo { color: #e3e6eb; font-size: 12px; font-weight: 600; }
+.tv-paper-drawer .bod-env-pill { border-radius: 4px; font-size: 10px; }
+.tv-paper-drawer .tv-acc-metrics-row { background: #131519; border-bottom-color: #292d33; }
+.tv-paper-drawer .tv-am-item { border-right-color: #292d33; }
+.tv-paper-drawer .tv-tab-bar { gap: 18px; background: #17191d; border-bottom-color: #292d33; }
+.tv-paper-drawer .tv-tab-item { color: #aeb4bf; }
+.tv-paper-drawer .tv-tab-item.active { color: #f0b90b; }
+.tv-paper-drawer .tv-tab-badge { border-radius: 9px; background: #292d33; color: #d7dbe2; }
+.tv-paper-drawer .bod-table-wrap { background: #131519; }
+.tv-paper-drawer .bod-table th { color: #9299a5; background: #17191d; border-bottom-color: #292d33; }
+.tv-paper-drawer .bod-table td { border-bottom-color: #22252b; }
+.tv-paper-drawer .bod-table tr:hover td { background: #1a1d22; }
+.tv-paper-drawer .bod-resizer-line { background: #3b414a; }
+.tv-paper-drawer .bod-resizer-handle:hover .bod-resizer-line { background: #8e96a3; }
+
+@media (max-width: 680px) {
+  .pine-action-box { gap: 1px; padding: 1px 2px; }
+  .pine-title-select { width: 105px; }
+  .pine-toolbar-icon { width: 23px; }
+  .tv-paper-drawer .tv-acc-metrics-row { overflow-x: auto; }
+  .tv-paper-drawer .bod-controls .bod-checkbox-label { display: none; }
+}
+
+/* Replay dock: movable, compact controls that read as part of the chart chrome. */
+.replay-dock {
+  --replay-border: rgba(129, 145, 169, .22);
+  min-height: 38px;
+  height: auto;
+  gap: 4px;
+  padding: 4px 6px;
+  border-color: var(--replay-border);
+  border-radius: 8px;
+  background: rgba(20, 23, 29, .96);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .4), 0 1px 0 rgba(255, 255, 255, .035) inset;
+  backdrop-filter: blur(12px);
+  touch-action: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.replay-dock:hover { border-color: rgba(139, 160, 193, .4); }
+.replay-dock.is-selecting { border-color: rgba(74, 130, 235, .45); }
+.replay-dock.is-selecting .replay-badge { color: #8eb5ff; }
+.replay-dock.is-dragging {
+  border-color: rgba(63, 131, 248, .78);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .48), 0 0 0 2px rgba(63, 131, 248, .15);
+  cursor: grabbing;
+  transition: none;
+}
+.replay-dock.is-collapsed { min-height: 36px; }
+.replay-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: stretch;
+  padding: 0 7px 0 4px;
+  border: 0;
+  border-right: 1px solid rgba(129, 145, 169, .16);
+  border-radius: 4px 0 0 4px;
+  color: #aeb9ca;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.replay-drag-handle:hover { color: #e3ebf7; background: rgba(255, 255, 255, .045); }
+.replay-drag-handle:active { cursor: grabbing; }
+.replay-drag-handle:focus-visible,
+.replay-control:focus-visible,
+.replay-speed select:focus-visible,
+.replay-date-go:focus-visible {
+  outline: 2px solid #4787f5;
+  outline-offset: 1px;
+}
+.replay-grip { color: #758298; font-size: 15px; line-height: 1; }
+.replay-badge {
+  color: #bbc9df;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .11em;
+}
+.replay-control {
+  min-width: 29px;
+  min-height: 29px;
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: #b7c0ce;
+  font-size: 11px;
+  transition: color .12s ease, background .12s ease, border-color .12s ease;
+}
+.replay-control:hover:not(:disabled) { background: #272d37; color: #f4f7fc; }
+.replay-control:disabled { color: #657083; opacity: .7; }
+.replay-primary {
+  min-width: 30px;
+  color: #e7efff;
+  background: rgba(47, 111, 231, .2);
+}
+.replay-primary:hover:not(:disabled) { background: rgba(47, 111, 231, .36); color: #fff; }
+.replay-speed {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 3px;
+  border: 1px solid rgba(129, 145, 169, .16);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, .025);
+}
+.replay-speed select { min-height: 24px; color: #d5ddea; font-variant-numeric: tabular-nums; }
+.replay-time {
+  min-width: 132px;
+  padding: 0 6px;
+  color: #e0e6f0;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.replay-remaining { color: #8491a4; font-size: 10px; font-variant-numeric: tabular-nums; }
+.replay-scrubber-wrap { width: clamp(72px, 12vw, 168px); }
+.replay-scrubber { height: 4px; accent-color: #4484f4; }
+.replay-date-wrap { display: flex; align-items: center; }
+.replay-date-popover {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 9px);
+  z-index: 5;
+  display: grid;
+  gap: 8px;
+  width: 222px;
+  padding: 10px;
+  transform: translateX(-50%);
+  border: 1px solid #343c49;
+  border-radius: 8px;
+  background: #171b22;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .5);
+}
+.replay-date-input {
+  position: static;
+  width: 100%;
+  padding: 7px 8px;
+  transform: none;
+  border-color: #353e4c;
+  border-radius: 5px;
+  background: #101319;
+  font: inherit;
+}
+.replay-date-go {
+  min-height: 30px;
+  border: 1px solid rgba(75, 132, 239, .55);
+  border-radius: 5px;
+  color: #eaf1ff;
+  background: #245cb8;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+.replay-date-go:hover { background: #2d6bce; }
+.replay-position-actions { display: inline-flex; align-items: center; gap: 1px; padding-left: 2px; border-left: 1px solid rgba(129, 145, 169, .16); }
+.replay-exit { color: #9ba5b4; }
+.replay-exit:hover:not(:disabled) { color: #ff9999; background: rgba(222, 70, 70, .13); }
+.replay-watermark { color: rgba(210, 221, 240, .11); text-shadow: 0 2px 16px rgba(0, 0, 0, .18); }
+.replay-watermark small { color: rgba(210, 221, 240, .45); font-size: 10px; letter-spacing: .17em; }
+.replay-cut-hint { border-color: #394354; border-radius: 8px; background: rgba(22, 27, 35, .96); backdrop-filter: blur(10px); }
+.replay-cut-line { width: 1px; background: #5790fa; box-shadow: 0 0 0 1px rgba(87, 144, 250, .12), 0 0 10px rgba(87, 144, 250, .5); }
+
+/* Shared surface treatment for chart side panels and the lower trading drawer. */
+.market-panel, .bottom-orders-drawer.tv-paper-drawer {
+  color: #d8dee8;
+  border-color: #2b3038;
+  background-color: #111419;
+}
+.mp-head, .tv-paper-drawer .bod-header, .tv-paper-drawer .tv-tab-bar {
+  background-color: #171a20;
+  border-color: #2b3038;
+}
+.market-panel button, .tv-paper-drawer button { transition: color .12s ease, background-color .12s ease, border-color .12s ease; }
+.market-panel input, .market-panel select, .tv-paper-drawer input, .tv-paper-drawer select {
+  color-scheme: dark;
+  border-color: #343b46;
+}
+.tv-paper-drawer .bod-table tr:hover td { background-color: #1b2028; }
+.vela-chart-container { background: #0d1015; }
+
+@media (max-width: 900px) {
+  .replay-dock { max-width: calc(100% - 16px); gap: 2px; }
+  .replay-time { min-width: 106px; font-size: 9px; }
+  .replay-remaining { display: none; }
+  .replay-scrubber-wrap { width: clamp(54px, 12vw, 105px); }
+}
+@media (max-width: 600px) {
+  .replay-dock { max-width: calc(100% - 16px); flex-wrap: wrap; }
+  .replay-drag-handle { min-height: 28px; }
+  .replay-time { min-width: 0; padding: 0 3px; }
+  .replay-scrubber-wrap { width: clamp(48px, 16vw, 76px); }
+  .replay-dock:not(.is-collapsed) .replay-position-actions { display: none; }
+  .replay-date-popover { left: auto; right: -28px; transform: none; }
 }
 
 

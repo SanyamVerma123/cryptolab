@@ -24,6 +24,7 @@ import {
   type LuxFamily,
 } from "../lib/luxAlgoClient";
 import { rememberLuxIndicator } from "../lib/luxPersist";
+import { syncCustomLibrary } from "./PineEditor";
 
 interface Props {
   ws: VelaWorkspace | null;
@@ -81,7 +82,8 @@ export function LuxAlgoPanel({ ws, open, onOpenChange }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    void loadList();
+    const timer = window.setTimeout(() => void loadList(), query ? 220 : 0);
+    return () => window.clearTimeout(timer);
   }, [open, loadList]);
 
   // ---- stage 2: fetch source + inject into the chart ----------------------
@@ -105,6 +107,20 @@ export function LuxAlgoPanel({ ws, open, onOpenChange }: Props) {
             message: `"${item.name}" has no public source (premium-tier indicators are excluded).`,
           });
           return;
+        }
+        // Vela's own Indicators picker uses the shared manifest. Cache only
+        // source the user has actually requested, then publish it there under
+        // LuxAlgo so it remains available from the chart's native library.
+        try {
+          const cacheKey = "trade-pro:lux-library-cache";
+          const raw = localStorage.getItem(cacheKey);
+          const saved = raw ? JSON.parse(raw) : [];
+          const entries = Array.isArray(saved) ? saved.filter((s) => s?.slug !== item.slug) : [];
+          entries.push({ slug: item.slug, name: item.name, script: source });
+          localStorage.setItem(cacheKey, JSON.stringify(entries.slice(-50)));
+          syncCustomLibrary(ws);
+        } catch (e) {
+          console.warn("[trade-pro] LuxAlgo picker cache could not be updated:", e);
         }
         // Compile + mount on the live chart. This is the only mutation this
         // component performs; existing indicators/params are untouched.

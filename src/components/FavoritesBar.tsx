@@ -149,7 +149,7 @@ export function FavoritesBar({ ws }: Props) {
         setFloating(true);
       }
       if (!moved.current) return;
-      const host = el.closest(".topbar") as HTMLElement | null;
+      const host = el.closest(".chart-host") as HTMLElement | null;
       const hr = host ? host.getBoundingClientRect() : { left: 0, top: 0, width: 0 };
       const x = e.clientX - hr.left - d.dx;
       const y = e.clientY - hr.top - d.dy;
@@ -185,7 +185,7 @@ export function FavoritesBar({ ws }: Props) {
       const p = JSON.parse(localStorage.getItem(POS_KEY) ?? "null");
       if (p && barRef.current) {
         setFloating(true);
-        const host = barRef.current.closest(".topbar") as HTMLElement | null;
+        const host = barRef.current.closest(".chart-host") as HTMLElement | null;
         const hr = host ? host.getBoundingClientRect() : { left: 0, top: 0 };
         barRef.current.style.position = "absolute";
         barRef.current.style.left = Math.max(4, p.x - hr.left) + "px";
