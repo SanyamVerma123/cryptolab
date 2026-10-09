@@ -1,0 +1,11 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="81" height="10" viewBox="0 0 81 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Replay progress" clip-path="url(#clip0_0_5)">
+<rect id="Progress track" x="5" y="3.5" width="76" height="3" rx="1.5" fill="#565A5D"/>
+<circle id="Progress thumb" cx="5" cy="5" r="5" fill="#4797FF"/>
+</g>
+<defs>
+<clipPath id="clip0_0_5">
+<rect width="81" height="10" fill="white"/>
+</clipPath>
+</defs>
+</svg>

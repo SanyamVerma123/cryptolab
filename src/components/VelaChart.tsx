@@ -177,6 +177,12 @@ function barsForTf(tf: string): number {
   return TF_BARS[tf] ?? 500;
 }
 
+function canonicalSymbol(symbol: string | undefined): string {
+  if (!symbol) return "";
+  const separator = symbol.indexOf(":");
+  return (separator >= 0 ? symbol.slice(separator + 1) : symbol).toUpperCase();
+}
+
 export function VelaChart({ coin, timeframe, onReady }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const wsRef = useRef<VelaWorkspace | null>(null);
@@ -357,7 +363,17 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       try {
         const chart = (ws as any).active ? ws.chart : null;
         if (chart) {
-          chart.setMarket({ symbol: coin, timeframe, bars: barsForTf(timeframe) });
+          const market = chart.market;
+          const sameIdentity = canonicalSymbol(market?.symbol) === canonicalSymbol(coin)
+            && market?.timeframe === timeframe;
+          if (!sameIdentity) {
+            chart.setMarket({ symbol: coin, timeframe, bars: barsForTf(timeframe) });
+          } else if (!ws.replay.state.active && market?.bars !== barsForTf(timeframe)) {
+            // The native topbar already applied this timeframe. A depth-only
+            // setMarket during replay ends the cell's replay but emits no
+            // market:changed event for WorkspaceReplay to rejoin on.
+            chart.setMarket({ bars: barsForTf(timeframe) });
+          }
         }
       } catch (e) {
         console.error("[trade-pro] setMarket failed", e);
