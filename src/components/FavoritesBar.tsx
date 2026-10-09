@@ -1,14 +1,9 @@
 /**
- * FavoritesBar — the user's starred drawing tools, in the TOP BAR (out of the
- * chart so it never covers candles), draggable by its title like Vela's own
- * drawing settings popup, using Vela's OWN icons (identical to the toolbar's).
+ * FavoritesBar — a compact, floating drawing-tools bar with Vela's own icons.
  *
  * What changed and why (user reports):
- *   - "favourite panel is not moving / shows inches-down jump": the bar was
- *     absolutely positioned INSIDE .chart-host and its drag handler wrote
- *     `left/top` from getBoundingClientRect() while a parent had transforms.
- *     It now lives in .topbar, and drag is pure clientX/Y deltas with NO
- *     rect reads — so the panel never teleports on grab.
+ *   - The toolbar uses a dedicated dotted grip and stores its position relative
+ *     to the chart host, so it stays movable and doesn't jump on restore.
  *   - "same symbol as the drawing tool": glyphs are Vela's own svg24 tool
  *     icons, extracted from its toolbar registry (see
  *     scripts/extract-vela-icons.cjs) — no more hand-picked unicode.
@@ -74,7 +69,7 @@ export function FavoritesBar({ ws }: Props) {
   const [favs, setFavs] = useState<string[]>([]);
   const [armed, setArmed] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
-  const [floating, setFloating] = useState(false);
+  const [floating] = useState(true);
   const [presets, setPresets] = useState<DrawingPreset[]>([]);
   const [presetOpen, setPresetOpen] = useState(false);
   const [naming, setNaming] = useState(false);
@@ -131,6 +126,7 @@ export function FavoritesBar({ ws }: Props) {
 
   // --- Dragging by the title (like Vela's settings popup) ---
   const onTitleDown = (e: React.PointerEvent) => {
+    e.preventDefault();
     const el = barRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
@@ -146,26 +142,28 @@ export function FavoritesBar({ ws }: Props) {
       if (!d || !el) return;
       if (Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) > 3) {
         moved.current = true;
-        setFloating(true);
       }
       if (!moved.current) return;
       const host = el.closest(".chart-host") as HTMLElement | null;
-      const hr = host ? host.getBoundingClientRect() : { left: 0, top: 0, width: 0 };
-      const x = e.clientX - hr.left - d.dx;
-      const y = e.clientY - hr.top - d.dy;
+      const hr = host?.getBoundingClientRect() ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+      const x = Math.max(4, Math.min(hr.width - el.offsetWidth - 4, e.clientX - hr.left - d.dx));
+      const y = Math.max(4, Math.min(hr.height - el.offsetHeight - 4, e.clientY - hr.top - d.dy));
       el.style.position = "absolute";
-      el.style.left = Math.max(4, x) + "px";
-      el.style.top = Math.max(4, y) + "px";
+      el.style.left = x + "px";
+      el.style.top = y + "px";
       el.style.right = "auto";
+      el.style.bottom = "auto";
     };
     const up = () => {
       if (!drag.current) return;
       drag.current = null;
       const el = barRef.current;
       if (el && moved.current) {
+        const host = el.closest(".chart-host") as HTMLElement | null;
         const r = el.getBoundingClientRect();
+        const hr = host?.getBoundingClientRect() ?? { left: 0, top: 0 };
         try {
-          localStorage.setItem(POS_KEY, JSON.stringify({ x: r.left, y: r.top }));
+          localStorage.setItem(POS_KEY, JSON.stringify({ x: r.left - hr.left, y: r.top - hr.top }));
         } catch {
           /* ignore */
         }
@@ -184,12 +182,11 @@ export function FavoritesBar({ ws }: Props) {
     try {
       const p = JSON.parse(localStorage.getItem(POS_KEY) ?? "null");
       if (p && barRef.current) {
-        setFloating(true);
-        const host = barRef.current.closest(".chart-host") as HTMLElement | null;
-        const hr = host ? host.getBoundingClientRect() : { left: 0, top: 0 };
         barRef.current.style.position = "absolute";
-        barRef.current.style.left = Math.max(4, p.x - hr.left) + "px";
-        barRef.current.style.top = Math.max(4, p.y - hr.top) + "px";
+        barRef.current.style.left = Math.max(4, p.x) + "px";
+        barRef.current.style.top = Math.max(4, p.y) + "px";
+        barRef.current.style.right = "auto";
+        barRef.current.style.bottom = "auto";
       }
     } catch {
       /* ignore */
@@ -267,13 +264,15 @@ export function FavoritesBar({ ws }: Props) {
       role="toolbar"
       aria-label="Favorite drawing tools"
     >
-      <span
-        className="favs-title"
-        title="Drag to move"
+      <button
+        type="button"
+        className="favs-grip"
+        title="Drag toolbar"
+        aria-label="Drag favorite tools toolbar"
         onPointerDown={onTitleDown}
       >
-        Tools
-      </span>
+        <svg viewBox="0 0 12 18" aria-hidden="true"><circle cx="3" cy="3" r="1"/><circle cx="9" cy="3" r="1"/><circle cx="3" cy="9" r="1"/><circle cx="9" cy="9" r="1"/><circle cx="3" cy="15" r="1"/><circle cx="9" cy="15" r="1"/></svg>
+      </button>
       <span className="favs-tools">
         {favs.map((t) => {
           const meta = tool(t);
