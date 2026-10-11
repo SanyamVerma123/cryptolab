@@ -20,6 +20,7 @@ import {
   LUX_FAMILIES,
   listIndicators,
   getIndicatorSource,
+  runPineIndicator,
   type LuxIndicator,
   type LuxFamily,
 } from "../lib/luxAlgoClient";
@@ -126,7 +127,7 @@ export function LuxAlgoPanel({ ws, open, onOpenChange }: Props) {
         // component performs; existing indicators/params are untouched.
         setAdd({ kind: "compiling", slug: item.slug, name: item.name });
         const chart = ws.chart;
-        const handle = chart.addIndicator(source);
+        const handle = await runPineIndicator(chart, source, item.name);
         // Remember the slug so a reload/symbol switch re-mounts it
         // (luxPersist). Vela's own persistence does not keep host-added
         // indicators, so without this the script is gone on refresh.

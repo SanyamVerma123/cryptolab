@@ -136,7 +136,7 @@ export function AiPanel({ ws, open = true, onOpenChange, onPineOpen, inline = fa
           say("I couldn't identify a support or resistance level in the visible candles. Scroll the chart to the area you want and retry.");
           return;
         }
-        const done = applyActions(ws, result.actions);
+        const done = await applyActions(ws, result.actions);
         say(`Marked ${result.labels.join(" and ")} on the active chart.${done.length ? `\n${done.join("\n")}` : ""}`);
         return;
       }
@@ -168,7 +168,7 @@ export function AiPanel({ ws, open = true, onOpenChange, onPineOpen, inline = fa
               { time: g.to, price: g.bottom },
             ],
           }));
-          const done = applyActions(ws, acts);
+          const done = await applyActions(ws, acts);
           say(
             `Marked ${gaps.length} fair value gap${gaps.length > 1 ? "s" : ""} on the visible bars (${gaps[0].up ? "bullish" : "bearish"} most recent).` +
               (done.length ? `\n${done.join("\n")}` : "") + `\n${reply.reply}`,
@@ -176,12 +176,12 @@ export function AiPanel({ ws, open = true, onOpenChange, onPineOpen, inline = fa
           return;
         }
         say("No clean fair value gaps on the visible bars. I armed the Box tool so you can mark one manually.");
-        const done = applyActions(ws, [{ type: "draw", tool: "box" }]);
+        const done = await applyActions(ws, [{ type: "draw", tool: "box" }]);
         if (done.length) say(done.join("\n"));
         return;
       }
 
-      const done = applyActions(ws, reply.actions ?? []);
+      const done = await applyActions(ws, reply.actions ?? []);
       say(reply.reply + (done.length ? "\n" + done.join("\n") : ""));
     } catch (e) {
       say(`The AI request failed: ${e instanceof Error ? e.message : String(e)}`);

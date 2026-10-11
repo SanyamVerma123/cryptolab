@@ -20,7 +20,7 @@ import {
   loadPineLibrary,
   savePineLibrary,
 } from "../lib/pinePersist";
-import { getIndicatorSource, listIndicators } from "../lib/luxAlgoClient";
+import { getIndicatorSource, listIndicators, runPineIndicator } from "../lib/luxAlgoClient";
 
 interface Props {
   ws: VelaWorkspace | null;
@@ -122,7 +122,7 @@ export function PineEditor({ ws, open, onOpenChange }: Props) {
 
   if (!open) return null;
 
-  const run = () => {
+  const run = async () => {
     if (!ws) {
       setStatus("Chart not ready yet.");
       setOk(false);
@@ -131,40 +131,17 @@ export function PineEditor({ ws, open, onOpenChange }: Props) {
     setStatus("Compiling…");
     setOk(null);
     try {
-      const handle = ws.chart.addIndicator(src);
-
-      // The handle is usable synchronously (per Vela's IndicatorHandle docs),
-      // so record the script for THIS coin immediately — do NOT wait for
-      // `ready`. The engine can take many seconds to compile, and if `ready`
-      // is late or never fires the script would still be on the chart but
-      // forgotten by persistence, silently vanishing on the next reload.
+      const handle = await runPineIndicator(ws.chart, src, scriptName(src) ?? "My script");
       rememberPineIndicator(ws.chart.market?.symbol, src, handle.title, handle.id);
+      setStatus(`Running on the chart — ${handle.title}.`);
+      setOk(true);
 
-      const t = setTimeout(() => {
-        setStatus("Timed out waiting for the engine.");
-        setOk(false);
-      }, 15_000);
-      handle.on("ready", () => {
-        clearTimeout(t);
-        setStatus(`Running on the chart — ${handle.title}.`);
-        setOk(true);
-
-        // Save into the indicator library's "custom" group so it appears in the
-        // picker by name and can be re-added after a reload.
-        const name = scriptName(src) ?? handle.title ?? "Custom indicator";
-        const lib = loadPineLibrary().filter((s) => s.name !== name);
-        lib.push({ name, script: src });
-        savePineLibrary(lib);
-        // Re-record now that the compiled title is final (it can differ from
-        // the pre-compile placeholder), keeping the same id → name mapping.
-        rememberPineIndicator(ws.chart.market?.symbol, src, handle.title, handle.id);
-        syncCustomLibrary(ws);
-      });
-      handle.on("error", (e: { error: Error }) => {
-        clearTimeout(t);
-        setStatus(e.error?.message ?? "Script failed.");
-        setOk(false);
-      });
+      // Save scripts into the personal library only after the first successful run.
+      const name = scriptName(src) ?? handle.title ?? "Custom indicator";
+      const lib = loadPineLibrary().filter((s) => s.name !== name);
+      lib.push({ name, script: src });
+      savePineLibrary(lib);
+      syncCustomLibrary(ws);
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "Failed to run.");
       setOk(false);

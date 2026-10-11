@@ -16,6 +16,7 @@
  */
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
 import { getChartBars, liveBars } from "./marketData";
+import { runPineIndicator } from "./luxAlgoClient";
 
 /** One thing the AI may ask the chart to do. */
 export interface ChartAction {
@@ -564,7 +565,7 @@ export function supportResistanceActions(text: string, bars: Bar[]): { actions: 
  * Apply the AI's actions to the chart. Returns short lines describing what it
  * did, shown in the chat.
  */
-export function applyActions(ws: VelaWorkspace, actions: ChartAction[]): string[] {
+export async function applyActions(ws: VelaWorkspace, actions: ChartAction[]): Promise<string[]> {
   const out: string[] = [];
   const c = ws.chart;
   for (const a of actions) {
@@ -586,11 +587,15 @@ export function applyActions(ws: VelaWorkspace, actions: ChartAction[]): string[
         });
         if (h) out.push(`Drew ${a.tool} at ${a.anchors.length} anchor(s).`);
       } else if (a.type === "indicator" && a.indicator) {
+        const available = await c.availableNativeIndicators();
+        const native = available.find((entry) => entry.type === a.indicator);
+        if (!native) throw new Error(`Native indicator “${a.indicator}” is not registered.`);
+        if (!native.supported) throw new Error(`Native indicator “${a.indicator}” is unavailable for this symbol or provider.`);
         c.addNativeIndicator(a.indicator, a.inputs ? { inputs: a.inputs } : undefined);
         out.push(`Added ${a.indicator}.`);
       } else if (a.type === "pine" && a.source) {
-        c.addIndicator(a.source);
-        out.push("Pine script running.");
+        const handle = await runPineIndicator(c, a.source, "AI indicator");
+        out.push(`Added ${handle.title}.`);
       } else if (a.type === "clearDrawings") {
         const ids = c.drawings.all().map((d) => d.id);
         if (ids.length) c.drawings.removeMany(ids);

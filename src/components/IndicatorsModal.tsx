@@ -37,7 +37,7 @@ import {
   rememberPineIndicator,
   type SavedPineScript,
 } from "../lib/pinePersist";
-import { getIndicatorSource } from "../lib/luxAlgoClient";
+import { getIndicatorSource, runPineIndicator } from "../lib/luxAlgoClient";
 import { rememberLuxIndicator } from "../lib/luxPersist";
 import { pushToCloud, scheduleCloudPush } from "../lib/cloudSync";
 import { syncCustomLibrary } from "./PineEditor";
@@ -269,7 +269,7 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
 
         if (item.isCustom && item.pineScript) {
           // Custom Pine Script
-          const handle = ws.chart.addIndicator(item.pineScript);
+          const handle = await runPineIndicator(ws.chart, item.pineScript, item.name);
           if (handle?.id) {
             rememberPineIndicator(sym, item.pineScript, item.name, handle.id);
           }
@@ -279,7 +279,7 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
           // LuxAlgo Library Indicator
           const res = await getIndicatorSource(item.luxSlug);
           if (res?.source) {
-            const handle = ws.chart.addIndicator(res.source);
+            const handle = await runPineIndicator(ws.chart, res.source, item.name);
             if (handle?.id) {
               rememberLuxIndicator(sym, item.luxSlug, handle.id);
             }
@@ -287,19 +287,18 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
             setRefreshKey((k) => k + 1);
           }
         } else if (item.nativeType) {
-          // Built-in Native Indicator
-          try {
-            const cell = ws.active as any;
-            const natives = cell?.supportedNatives?.() || [];
-            const idx = natives.findIndex((n: any) => n.type === item.nativeType);
-            if (idx >= 0 && typeof cell?.addFromLibrary === "function") {
-              cell.addFromLibrary(idx);
-            } else {
-              ws.chart.addIndicator(item.nativeType as any);
-            }
-          } catch {
-            ws.chart.addIndicator(item.nativeType as any);
+          // Native studies use Vela's native API. Passing a type such as "rsi"
+          // to addIndicator() treats it as Pine source and causes missing-name
+          // errors in the Pine runtime.
+          const available = await ws.chart.availableNativeIndicators();
+          const native = available.find((entry) => entry.type === item.nativeType);
+          if (!native) {
+            throw new Error(`“${item.name}” is not registered as a native chart indicator.`);
           }
+          if (!native.supported) {
+            throw new Error(`“${item.name}” is not available for this symbol or data provider.`);
+          }
+          ws.chart.addNativeIndicator(item.nativeType, item.nativeInputs ? { inputs: item.nativeInputs } : undefined);
           setFeedback(`Added "${item.name}"`);
           setRefreshKey((k) => k + 1);
         }

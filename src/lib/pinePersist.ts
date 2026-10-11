@@ -23,6 +23,7 @@
  */
 import { applyIndicatorState, beginRestore, endRestore } from "./indicatorState";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { runPineIndicator } from "./luxAlgoClient";
 
 const KEY = "trade-pro:pine-applied";
 
@@ -230,7 +231,7 @@ export async function restorePineIndicators(
           continue;
         }
 
-        const handle = ws.chart.addIndicator(script);
+        const handle = await runPineIndicator(ws.chart, script, name);
         // IndicatorHandle is synchronous; id/title exist immediately. Register the
         // per-session id -> name so a delete in THIS session can be traced back to
         // the script, and `keyOf` gives this indicator its own record (a Pine script

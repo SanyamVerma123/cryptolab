@@ -43,6 +43,25 @@ export interface LuxSource {
   source: string;
 }
 
+/** Execute a Pine script and resolve only after its first calculation succeeds. */
+export async function runPineIndicator(
+  chart: {
+    runIndicator: (source: string) => Promise<{
+      ok: boolean;
+      handle: { id: string; title: string } | null;
+      error: Error | null;
+    }>;
+  },
+  source: string,
+  displayName = "Indicator"
+): Promise<{ id: string; title: string }> {
+  const result = await chart.runIndicator(source);
+  if (!result.ok || !result.handle) {
+    throw result.error ?? new Error(`“${displayName}” could not be compiled or calculated.`);
+  }
+  return result.handle;
+}
+
 /** The library families the server exposes (used for the filter dropdown). */
 export const LUX_FAMILIES = [
   "trend",
@@ -175,21 +194,16 @@ export async function getIndicatorSource(slug: string): Promise<LuxSource> {
  * @returns the new indicator's id, or null if the chart refused it.
  */
 export async function addLibraryIndicatorToChart(
-  chart: { addIndicator: (src: string) => { id: string; title: string } },
+  chart: Parameters<typeof runPineIndicator>[0],
   slug: string
 ): Promise<{ id: string; title: string } | null> {
   const { source, name } = await getIndicatorSource(slug);
   if (!source) {
     throw new Error(`No Pine source came back for "${name || slug}".`);
   }
-  let handle: { id: string; title: string };
   try {
-    handle = chart.addIndicator(source);
+    return await runPineIndicator(chart, source, name || slug);
   } catch (e) {
-    throw new Error(
-      `The fetched script for "${name || slug}" did not compile: ${(e as Error).message}`
-    );
+    throw new Error(`The fetched script for “${name || slug}” failed: ${(e as Error).message}`);
   }
-  if (!handle) return null;
-  return { id: handle.id, title: handle.title };
 }

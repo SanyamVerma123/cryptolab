@@ -19,7 +19,7 @@
  * the chart from loading. Each indicator is restored independently, and any
  * failure is reported to the caller rather than thrown.
  */
-import { getIndicatorSource } from "./luxAlgoClient";
+import { getIndicatorSource, runPineIndicator } from "./luxAlgoClient";
 import { applyIndicatorState, beginRestore, endRestore } from "./indicatorState";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
 
@@ -198,7 +198,7 @@ export async function restoreLuxIndicators(
           continue;
         }
 
-        const handle = chart.addIndicator(source);
+        const handle = await runPineIndicator(chart, source, slug);
         if (handle?.id) rememberLuxIndicator(symbol, slug, handle.id);
         restored.push(slug);
       } catch (e) {

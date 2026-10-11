@@ -23,7 +23,7 @@ import { registerIcon, registerWidgetAction, unregisterWidgetAction } from "@lux
 import { SafeHyperliquidProvider } from "../lib/safeHyperliquidProvider";
 import { BinanceProvider } from "@luxalgo/vela/providers/binance";
 import { CoinbaseProvider } from "@luxalgo/vela/providers/coinbase";
-import { PineEngine } from "@luxalgo/vela-pinets";
+import { PineWorkerEngine } from "@luxalgo/vela-pinets";
 import { preloadLuxLibrary, syncCustomLibrary } from "./PineEditor";
 import { installToolDefaults } from "../lib/toolDefaults";
 import { installPerSymbolDrawings } from "../lib/perSymbolDrawings";
@@ -426,7 +426,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     const ws = new VelaWorkspace(el, {
       layout: "1", // Single chart initial, native layout picker & sync engine active!
       engines: {
-        pine: () => new PineEngine(),
+        pine: () => new PineWorkerEngine(),
       },
       symbol: coin,
       timeframe,
