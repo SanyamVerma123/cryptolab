@@ -157,12 +157,18 @@ export class TwelveDataProvider {
   async getBars(ticker: string, timeframe: string, range: BarRange): Promise<OHLCV[]> {
     const clean = cleanForexSymbol(ticker);
     const interval = TF_TO_TWELVEDATA[timeframe] || "1h";
-    const limit = Math.min(1000, Math.max(100, range.limit ?? 500));
+    const limit = Math.min(5000, Math.max(100, range.limit ?? 1500));
+    let endDateQuery = "";
+    if (range.to && range.to < Date.now() - 30000) {
+      const d = new Date(range.to);
+      const iso = d.toISOString().replace("T", " ").replace(/\.\d+Z$/, "");
+      endDateQuery = `&end_date=${encodeURIComponent(iso)}`;
+    }
 
     try {
       const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(
         clean
-      )}&interval=${interval}&apikey=${TWELVEDATA_API_KEY}&outputsize=${limit}`;
+      )}&interval=${interval}&apikey=${TWELVEDATA_API_KEY}&outputsize=${limit}${endDateQuery}`;
 
       const res = await fetch(url);
       if (!res.ok) {

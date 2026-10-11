@@ -56,8 +56,16 @@ function aiRelayPlugin(): PluginOption {
   };
 }
 
+import path from "node:path";
+import tailwindcss from "@tailwindcss/vite";
+
 export default defineConfig({
-  plugins: [react(), aiRelayPlugin()],
+  plugins: [tailwindcss(), react(), aiRelayPlugin()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   server: {
     host: true,        // expose on LAN so you can open it from your phone/tablet too
     port: 5173,

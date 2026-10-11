@@ -131,6 +131,7 @@ function keyOf(h: {
  * on every reload). See `onRemoved`.
  */
 const justRemoved = new Set<string>();
+const lastKnownInputs = new Map<string, Record<string, unknown>>();
 
 /**
  * True while the persistence layers are re-mounting saved indicators
@@ -179,20 +180,11 @@ function snapshot(ws: VelaWorkspace, sym: string | undefined): void {
       list.push(rec);
     }
 
-    // Preserve the last-known config for indicators that are no longer mounted
-    // (the user just removed them). Without this the record is deleted and a
-    // later re-add can only come back with declaration defaults.
-    const mounted = new Set(list.map((s) => s.key));
-    for (const [key, rec] of prev) {
-      // EXCEPT a key `onRemoved` deliberately forgot: keeping it here would
-      // resurrect the indicator on the next reload. Suppression is per-key and
-      // short-lived, so a genuine re-add still records normally.
-      if (justRemoved.has(key)) continue;
-      if (!mounted.has(key)) {
-        // Drop only the VISIBILITY of a removed indicator — remembering it as
-        // hidden would force a re-add to come back hidden, which is not what
-        // "add it back" means. Its INPUTS survive, which is the actual fix.
-        list.push({ ...rec, visible: true });
+    // Cache last-known inputs so that if the user explicitly re-adds this indicator,
+    // their preferred inputs can be restored, but NEVER resurrect unmounted indicators.
+    for (const rec of list) {
+      if (rec.inputs) {
+        lastKnownInputs.set(`${coin}:${rec.key}`, rec.inputs);
       }
     }
 
@@ -283,14 +275,13 @@ function carryInputsTo(ws: VelaWorkspace, coin: string | undefined, key: string)
   const apply = () => {
     try {
       const store = load();
-      const rec = (store[coin] || []).find((s) => s.key === key);
-      if (!rec || !rec.inputs) return;
+      const inputs = lastKnownInputs.get(`${coin}:${key}`) ?? (store[coin] || []).find((s) => s.key === key)?.inputs;
+      if (!inputs) return;
       const me = (ws.chart.indicators() || []).find((h) => keyOf(h) === key);
       if (!me) return;
-      me.setInputs(rec.inputs as never);
+      me.setInputs(inputs as never);
     } catch {
-      /* engine not ready for inputs yet — the ready() promise may have
-         rejected for an unrelated reason; the next add will retry */
+      /* engine not ready for inputs yet */
     }
   };
   try {

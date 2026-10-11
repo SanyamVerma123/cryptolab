@@ -165,8 +165,11 @@ export async function restoreLuxIndicators(
         // Idempotency: skip a script already mounted on THIS chart. Strict Mode
         // destroys the first chart and creates a fresh one, so a coin-level flag
         // would wrongly skip the live chart and leave its new ids unregistered.
-        const already = (ws.chart.indicators() || []).some((h) => h.source === source);
-        if (already) continue;
+        const existing = (ws.chart.indicators() || []).find((h) => h.source === source);
+        if (existing) {
+          if (existing.id) rememberLuxIndicator(symbol, slug, existing.id);
+          continue;
+        }
 
         const handle = ws.chart.addIndicator(source);
         // Re-register the new per-session id -> slug, so:

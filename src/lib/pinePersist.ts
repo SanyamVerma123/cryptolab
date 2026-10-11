@@ -202,10 +202,11 @@ export async function restorePineIndicators(
         // unregistered (breaking the eye-toggle replay). Matching on the chart
         // itself re-mounts exactly once per real chart. Vela exposes the source
         // on the handle, so an identical script can never be added twice.
-        const already = (ws.chart.indicators() || []).some(
-          (h) => h.source === script
-        );
-        if (already) continue;
+        const existing = (ws.chart.indicators() || []).find((h) => h.source === script);
+        if (existing) {
+          if (existing.id) rememberPineIndicator(symbol, script, existing.title, existing.id);
+          continue;
+        }
 
         const handle = ws.chart.addIndicator(script);
         // IndicatorHandle is synchronous; id/title exist immediately. Register the

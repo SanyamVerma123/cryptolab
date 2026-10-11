@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { Analytics } from "@vercel/analytics/react";
 import App from "./App";
 import "@getcandlekit/charts/styles.css";
+import "./styles/tailwind.css";
 import "./styles/app.css";
 
 const el = document.getElementById("root");

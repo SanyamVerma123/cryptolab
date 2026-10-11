@@ -127,9 +127,8 @@ export function preloadLuxLibrary(ws: VelaWorkspace): Promise<void> {
             const reason = (error as Error).message || "";
             if (!reason.includes("not publicly available")) transientFailure = true;
           }
-          if (dirtyCount >= 5) {
+          if (dirtyCount >= 30) {
             try { localStorage.setItem(LUX_LIBRARY_KEY, JSON.stringify(cached)); } catch { /* cache is optional */ }
-            syncCustomLibrary(ws);
             dirtyCount = 0;
           }
         }

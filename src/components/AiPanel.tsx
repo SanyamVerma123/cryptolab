@@ -25,6 +25,14 @@ import {
   type ChartAction,
 } from "../lib/aiClient";
 import { visibleBarsInRange } from "../lib/marketData";
+import { PromptInput } from "@/components/ui/ai-chat-input";
+import {
+  ThoughtChain,
+  ThoughtChainStep,
+  ThoughtChainTrigger,
+  ThoughtChainContent,
+  ThoughtChainItem,
+} from "@/components/ui/components-ai-thought-chain";
 
 interface Props {
   ws: VelaWorkspace | null;
@@ -234,7 +242,34 @@ export function AiPanel({ ws, open = true, onOpenChange, onPineOpen, inline = fa
             {mm.text}
           </div>
         ))}
-        {busy && <div className="ai-msg bot ai-thinking">thinking…</div>}
+        {busy && (
+          <div className="ai-msg bot my-2 p-2.5 rounded-xl bg-card border border-border/80 shadow-md">
+            <ThoughtChain>
+              <ThoughtChainStep status="done" defaultOpen={false}>
+                <ThoughtChainTrigger>Analyzing Chart & Market State</ThoughtChainTrigger>
+                <ThoughtChainContent>
+                  <ThoughtChainItem>Captured visible timeframe and candlestick range</ThoughtChainItem>
+                  <ThoughtChainItem>Inspected active indicator state & user drawings</ThoughtChainItem>
+                </ThoughtChainContent>
+              </ThoughtChainStep>
+
+              <ThoughtChainStep status="active" defaultOpen={true}>
+                <ThoughtChainTrigger>Scanning Price Action & Patterns</ThoughtChainTrigger>
+                <ThoughtChainContent>
+                  <ThoughtChainItem>Detecting fair value gaps, liquidity pools & market structure</ThoughtChainItem>
+                  <ThoughtChainItem>Calculating indicator signals and trend momentum</ThoughtChainItem>
+                </ThoughtChainContent>
+              </ThoughtChainStep>
+
+              <ThoughtChainStep status="pending" defaultOpen={false}>
+                <ThoughtChainTrigger>Synthesizing Trading Insights</ThoughtChainTrigger>
+                <ThoughtChainContent>
+                  <ThoughtChainItem>Formulating response and chart plot commands</ThoughtChainItem>
+                </ThoughtChainContent>
+              </ThoughtChainStep>
+            </ThoughtChain>
+          </div>
+        )}
       </div>
 
       {/* Quick Prompts Bar */}
@@ -254,22 +289,28 @@ export function AiPanel({ ws, open = true, onOpenChange, onPineOpen, inline = fa
         ))}
       </div>
 
-      <div className="ai-input">
-        <input
-          placeholder="Ask the AI…"
-          value={draft}
-          disabled={busy}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") send(); }}
+      <div className="p-2 border-t border-border flex flex-col gap-1.5 bg-card/75 backdrop-blur-sm">
+        <PromptInput
+          placeholder="Ask anything (e.g. mark fvg, trend line, ema 200)..."
+          onSubmit={(message) => {
+            const v = message.trim();
+            if (!v || busy) return;
+            setLog((l) => [...l, { who: "user", text: v }]);
+            void respond(v);
+          }}
+          className="w-full"
         />
-        <button onClick={send} disabled={busy}>Send</button>
-        <button
-          className="ai-pine-btn"
-          title="Open the Pine Script editor"
-          onClick={() => onPineOpen()}
-        >
-          Pine
-        </button>
+        <div className="flex items-center justify-between text-xs text-muted-foreground px-1 pt-1">
+          <button
+            type="button"
+            className="ai-pine-btn"
+            title="Open the Pine Script editor"
+            onClick={() => onPineOpen()}
+          >
+            Open Pine Script
+          </button>
+          <span className="text-[10px] opacity-70">Enter to send • Shift+Enter newline</span>
+        </div>
       </div>
     </div>
   );

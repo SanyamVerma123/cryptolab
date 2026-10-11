@@ -167,20 +167,51 @@ interface Props {
 }
 
 const TF_BARS: Record<string, number> = {
-  "1": 1200, "3": 1200, "5": 1200, "15": 1200, "30": 1200,
-  "45": 1000, "60": 1000, "120": 800, "180": 800, "240": 700,
-  "360": 600, "480": 500, "720": 400,
-  D: 365, W: 260, M: 120,
+  "1": 3000, "3": 3000, "5": 3000, "15": 3000, "30": 3000,
+  "45": 3000, "60": 3000, "120": 2500, "180": 2500, "240": 2000,
+  "360": 2000, "480": 1500, "720": 1500,
+  D: 2500, W: 1200, M: 600,
 };
 
 function barsForTf(tf: string): number {
-  return TF_BARS[tf] ?? 500;
+  return TF_BARS[tf] ?? 2500;
 }
 
 function canonicalSymbol(symbol: string | undefined): string {
   if (!symbol) return "";
   const separator = symbol.indexOf(":");
   return (separator >= 0 ? symbol.slice(separator + 1) : symbol).toUpperCase();
+}
+
+function wireAutoBackfill(chart: any): () => void {
+  if (!chart) return () => {};
+  let loading = false;
+  const onViewport = (vp: { from: number; to: number }) => {
+    if (loading || !vp || typeof vp.from !== "number") return;
+    try {
+      const bars = chart.bars;
+      if (!bars || !bars.length) return;
+      const oldestBarTime = bars[0].time;
+      const span = vp.to - vp.from;
+      // When visible window scrolls within 25% of the oldest bar, load more past candles
+      if (vp.from <= oldestBarTime + span * 0.25) {
+        const currentBars = chart.market?.bars ?? 2500;
+        if (currentBars < 5000) {
+          loading = true;
+          const nextBars = Math.min(5000, currentBars + 1500);
+          chart.setMarket({ bars: nextBars }).finally(() => {
+            setTimeout(() => { loading = false; }, 600);
+          });
+        }
+      }
+    } catch {}
+  };
+  try {
+    const off = chart.on("viewport:changed", onViewport);
+    return typeof off === "function" ? off : () => {};
+  } catch {
+    return () => {};
+  }
 }
 
 export function VelaChart({ coin, timeframe, onReady }: Props) {
@@ -289,6 +320,9 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
             } catch (e) {
               console.warn("[trade-pro] drawing isolation install failed:", e);
             }
+            try {
+              wireAutoBackfill(chart);
+            } catch {}
 
             onReadyRef.current?.(ws);
           })
