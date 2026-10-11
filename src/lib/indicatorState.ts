@@ -153,11 +153,11 @@ export function endRestore(ws: VelaWorkspace, sym: string | undefined): void {
   applyIndicatorState(ws, sym);
 }
 
-function snapshot(ws: VelaWorkspace, sym: string | undefined): void {
+function snapshot(ws: VelaWorkspace, sym: string | undefined, chart: VelaWorkspace["chart"] = ws.chart): void {
   const coin = bareSymbol(sym);
   if (!coin) return;
   try {
-    const handles = ws.chart.indicators();
+    const handles = chart.indicators();
     if (!handles) return;
     const store = load();
     const prev = new Map((store[coin] || []).map((s) => [s.key, s]));
@@ -206,7 +206,11 @@ function snapshot(ws: VelaWorkspace, sym: string | undefined): void {
  * visibility part is synchronous and safe to do immediately — `setVisible` is
  * a host-side toggle that suspends the indicator, no script prep required.
  */
-export function applyIndicatorState(ws: VelaWorkspace, sym: string | undefined): void {
+export function applyIndicatorState(
+  ws: VelaWorkspace,
+  sym: string | undefined,
+  chart: VelaWorkspace["chart"] = ws.chart,
+): void {
   const coin = bareSymbol(sym);
   if (!coin) return;
 
@@ -215,7 +219,7 @@ export function applyIndicatorState(ws: VelaWorkspace, sym: string | undefined):
       const store = load();
       const saved = store[coin];
       if (!saved || !saved.length) return;
-      const handles = ws.chart.indicators();
+      const handles = chart.indicators();
       if (!handles) return;
 
       // Ids change per session; match on the stable key.
@@ -270,14 +274,19 @@ export function applyIndicatorState(ws: VelaWorkspace, sym: string | undefined):
  * (which resolves once the indicator is prepared and computed) before
  * replaying. Idempotent and safe: `setInputs` with unchanged values is a no-op.
  */
-function carryInputsTo(ws: VelaWorkspace, coin: string | undefined, key: string): void {
+function carryInputsTo(
+  ws: VelaWorkspace,
+  coin: string | undefined,
+  key: string,
+  chart: VelaWorkspace["chart"] = ws.chart,
+): void {
   if (!coin) return;
   const apply = () => {
     try {
       const store = load();
       const inputs = lastKnownInputs.get(`${coin}:${key}`) ?? (store[coin] || []).find((s) => s.key === key)?.inputs;
       if (!inputs) return;
-      const me = (ws.chart.indicators() || []).find((h) => keyOf(h) === key);
+      const me = (chart.indicators() || []).find((h) => keyOf(h) === key);
       if (!me) return;
       me.setInputs(inputs as never);
     } catch {
@@ -285,7 +294,7 @@ function carryInputsTo(ws: VelaWorkspace, coin: string | undefined, key: string)
     }
   };
   try {
-    Promise.resolve(ws.chart.ready()).then(apply, apply);
+    Promise.resolve(chart.ready()).then(apply, apply);
   } catch {
     apply();
   }
@@ -297,7 +306,8 @@ function carryInputsTo(ws: VelaWorkspace, coin: string | undefined, key: string)
  */
 export function installIndicatorState(ws: VelaWorkspace): () => void {
   const offs: (() => void)[] = [];
-  let coin = bareSymbol(ws.chart.market?.symbol);
+  const chart = ws.chart;
+  let coin = bareSymbol(chart.market?.symbol);
 
   // Debounce: a single "hide" or input drag fires many change events, and a
   // full indicator sweep each time is wasteful.
@@ -306,8 +316,14 @@ export function installIndicatorState(ws: VelaWorkspace): () => void {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
-      snapshot(ws, coin);
+      snapshot(ws, coin, chart);
     }, 400);
+  };
+  const flush = () => {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = undefined;
+    snapshot(ws, coin, chart);
   };
 
   const onVisibility = (e: { id?: string; visible?: boolean }) => {
@@ -341,7 +357,7 @@ export function installIndicatorState(ws: VelaWorkspace): () => void {
       let name = e.id ? pineNameForIndicatorId(e.id) : undefined;
       // 2) sweep applied store for a custom script no longer mounted
       if (!name) {
-        const live = (ws.chart.indicators() ?? []) as {
+        const live = (chart.indicators() ?? []) as {
           id: string;
           title: string;
           source?: string;
@@ -378,7 +394,7 @@ export function installIndicatorState(ws: VelaWorkspace): () => void {
       timer = undefined;
     }
     try {
-      snapshot(ws, coin);
+      snapshot(ws, coin, chart);
     } catch {
       /* chart may be mid-teardown */
     }
@@ -392,10 +408,10 @@ export function installIndicatorState(ws: VelaWorkspace): () => void {
     // my settings are gone" bug. Keyed by nativeType / title, NOT by id, since
     // ids change every session and every add.
     try {
-      const all = ws.chart.indicators() || [];
+      const all = chart.indicators() || [];
       const me = e.id ? all.find((h) => h.id === e.id) : undefined;
       const key = me ? keyOf(me) : undefined;
-      if (me && key) carryInputsTo(ws, coin, key);
+      if (me && key) carryInputsTo(ws, coin, key, chart);
       // Map any newly added Pine indicator's id to its name
       if (me && me.source && me.id) {
         const name = pineScriptName(me.source) ?? me.title ?? "Custom indicator";
@@ -417,16 +433,15 @@ export function installIndicatorState(ws: VelaWorkspace): () => void {
   const onMarketChanged = (e: { symbol?: string }) => {
     coin = bareSymbol(e.symbol);
     // Apply this coin's indicator state as soon as its indicators restore.
-    setTimeout(() => applyIndicatorState(ws, coin), 50);
+    setTimeout(() => applyIndicatorState(ws, coin, chart), 50);
   };
 
   try {
-    const c = ws.chart;
-    offs.push(c.on("indicator:visibility", onVisibility) as () => void);
-    offs.push(c.on("indicator:inputs", onInputs) as () => void);
-    offs.push(c.on("indicator:removed", onRemoved) as () => void);
-    offs.push(c.on("indicator:added", onAdded) as () => void);
-    offs.push(c.on("market:changed", onMarketChanged) as () => void);
+    offs.push(chart.on("indicator:visibility", onVisibility) as () => void);
+    offs.push(chart.on("indicator:inputs", onInputs) as () => void);
+    offs.push(chart.on("indicator:removed", onRemoved) as () => void);
+    offs.push(chart.on("indicator:added", onAdded) as () => void);
+    offs.push(chart.on("market:changed", onMarketChanged) as () => void);
   } catch {
     /* chart not ready */
   }
@@ -434,10 +449,12 @@ export function installIndicatorState(ws: VelaWorkspace): () => void {
   // The chart has already restored its indicators at install time — apply the
   // saved state right away (deferred: Vela's restore is itself async and the
   // indicator list lands a tick after mount).
-  setTimeout(() => applyIndicatorState(ws, coin), 200);
+  setTimeout(() => applyIndicatorState(ws, coin, chart), 200);
+  if (typeof window !== "undefined") window.addEventListener("pagehide", flush);
 
   return () => {
-    if (timer) clearTimeout(timer);
+    flush();
+    if (typeof window !== "undefined") window.removeEventListener("pagehide", flush);
     for (const off of offs) {
       try {
         off();

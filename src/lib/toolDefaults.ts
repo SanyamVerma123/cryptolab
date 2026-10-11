@@ -41,9 +41,9 @@ function save(map: StyleMap): void {
  * tool TYPE, not drawing id, because the default is what a NEW drawing of that
  * type should start with.
  */
-function captureStyles(ws: VelaWorkspace): void {
+function captureStyles(ws: VelaWorkspace, chart: VelaWorkspace["chart"] = ws.chart): void {
   try {
-    const docs = ws.chart.drawings.all();
+    const docs = chart.drawings.all();
     if (!docs.length) return;
     const map = load();
     let changed = false;
@@ -124,12 +124,12 @@ function refreshPending(ws: VelaWorkspace, type: string): void {
 }
 
 /** Apply a stashed default to a freshly-created drawing of the right type. */
-function applyToCreated(ws: VelaWorkspace, id: string): void {
+function applyToCreated(ws: VelaWorkspace, id: string, chart: VelaWorkspace["chart"] = ws.chart): void {
   if (!pendingDefault) return;
   try {
-    const doc = ws.chart.drawings.all().find((d) => d.id === id);
+    const doc = chart.drawings.all().find((d) => d.id === id);
     if (!doc || doc.type !== pendingDefault.type) return;
-    ws.chart.drawings.update(id, { style: pendingDefault.style as never });
+    chart.drawings.update(id, { style: pendingDefault.style as never });
   } catch {
     /* ignore */
   }
@@ -147,13 +147,13 @@ export function installToolDefaults(ws: VelaWorkspace): () => void {
   const c = ws.chart;
   const offs: (() => void)[] = [];
 
-  const onEdited = () => void captureStyles(ws);
+  const onEdited = () => void captureStyles(ws, c);
   const onCreated = (e: { id: string }) => {
-    applyToCreated(ws, e.id);
+    applyToCreated(ws, e.id, c);
     // Re-capture right after creation: a NEW drawing of this type inherits the
     // pending default (above), so the map stays an accurate record of what the
     // tool currently produces — the next placement reads the same value.
-    void captureStyles(ws);
+    void captureStyles(ws, c);
   };
   const onTool = (e: { type: string | null }) => {
     if (e.type) {
@@ -173,7 +173,7 @@ export function installToolDefaults(ws: VelaWorkspace): () => void {
   }
 
   // Seed from anything already on the chart.
-  void captureStyles(ws);
+  void captureStyles(ws, c);
 
   return () => {
     for (const off of offs) {

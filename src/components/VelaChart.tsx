@@ -208,6 +208,41 @@ function canonicalSymbol(symbol: string | undefined): string {
 }
 
 const autoBackfillBindings = new WeakSet<object>();
+const historyLoadingNodes = new WeakMap<object, HTMLElement>();
+
+/** Show the backfill affordance inside this chart's plot (separate from Vela's
+ * centered first-load indicator). The renderer is shared by all data providers,
+ * so the same affordance works for every market source. */
+function setHistoryBackfillLoading(chart: any, loading: boolean): void {
+  if (!chart || (typeof chart !== "object" && typeof chart !== "function")) return;
+
+  const renderer = chart.orchestrator?.renderer;
+  const wrapper = renderer?.wrapper as HTMLElement | undefined;
+  if (!wrapper) return;
+
+  let node = historyLoadingNodes.get(chart);
+  if (!loading) {
+    node?.remove();
+    historyLoadingNodes.delete(chart);
+    return;
+  }
+
+  if (node?.isConnected && node.parentElement === wrapper) return;
+
+  node = wrapper.ownerDocument.createElement("div");
+  node.className = "tradepro-history-loading";
+  node.setAttribute("role", "status");
+  node.setAttribute("aria-label", "Loading older chart history");
+  node.setAttribute("aria-live", "polite");
+  for (let i = 0; i < 3; i += 1) {
+    const dot = wrapper.ownerDocument.createElement("span");
+    dot.className = "tradepro-history-loading-dot";
+    dot.style.animationDelay = `${-i * 180}ms`;
+    node.appendChild(dot);
+  }
+  wrapper.appendChild(node);
+  historyLoadingNodes.set(chart, node);
+}
 
 function wireAutoBackfill(chart: any, cell?: any): () => void {
   if (!chart || typeof chart.on !== "function") return () => {};
@@ -282,6 +317,7 @@ function wireAutoBackfill(chart: any, cell?: any): () => void {
       }
       requestedBars = nextBars;
       if (cell?.state) cell.state.bars = nextBars;
+      setHistoryBackfillLoading(chart, true);
 
       void (async () => {
         try {
@@ -295,10 +331,12 @@ function wireAutoBackfill(chart: any, cell?: any): () => void {
           console.warn("[trade-pro] backfill setMarket failed:", err);
         } finally {
           loading = false;
+          setHistoryBackfillLoading(chart, false);
         }
       })();
     } catch {
       loading = false;
+      setHistoryBackfillLoading(chart, false);
     }
   };
 
@@ -308,6 +346,7 @@ function wireAutoBackfill(chart: any, cell?: any): () => void {
     unsubs.push(chart.on("market:changed", onMarketChanged));
     unsubs.push(chart.on("history:complete", onHistoryComplete));
     return () => {
+      setHistoryBackfillLoading(chart, false);
       unsubs.forEach((u) => {
         try { u(); } catch {}
       });
