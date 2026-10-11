@@ -32,7 +32,7 @@ import { installCrosshairPlacement } from "../lib/crosshairPlacement";
 import { restoreLuxIndicators } from "../lib/luxPersist";
 import { restorePineIndicators } from "../lib/pinePersist";
 import { trackSelection } from "../lib/drawingPresets";
-import { mountMarket } from "../lib/marketData";
+import { mountMarket, liveBars } from "../lib/marketData";
 import { installDrawingIsolation } from "../lib/drawingInteractions";
 import { AlpacaProvider } from "../lib/alpacaProvider";
 import { TwelveDataProvider } from "../lib/twelveDataProvider";
@@ -183,32 +183,90 @@ function canonicalSymbol(symbol: string | undefined): string {
   return (separator >= 0 ? symbol.slice(separator + 1) : symbol).toUpperCase();
 }
 
-function wireAutoBackfill(chart: any): () => void {
-  if (!chart) return () => {};
+function wireAutoBackfill(chart: any, cell?: any): () => void {
+  if (!chart || typeof chart.on !== "function") return () => {};
+
   let loading = false;
-  const onViewport = (vp: { from: number; to: number }) => {
-    if (loading || !vp || typeof vp.from !== "number") return;
-    try {
-      const bars = chart.bars;
-      if (!bars || !bars.length) return;
-      const oldestBarTime = bars[0].time;
-      const span = vp.to - vp.from;
-      // When visible window scrolls within 25% of the oldest bar, load more past candles
-      if (vp.from <= oldestBarTime + span * 0.25) {
-        const currentBars = chart.market?.bars ?? 2500;
-        if (currentBars < 5000) {
-          loading = true;
-          const nextBars = Math.min(5000, currentBars + 1500);
-          chart.setMarket({ bars: nextBars }).finally(() => {
-            setTimeout(() => { loading = false; }, 600);
-          });
-        }
-      }
-    } catch {}
+  let lastFetchTime = 0;
+  let reachedGenesis = false;
+
+  const onHistoryComplete = (evt: any) => {
+    if (evt?.reason === "genesis") {
+      reachedGenesis = true;
+    }
   };
+
+  const onMarketChanged = () => {
+    reachedGenesis = false;
+    loading = false;
+  };
+
+  const onViewport = (vp: { from: number; to: number }) => {
+    if (loading || reachedGenesis || !vp || typeof vp.from !== "number" || typeof vp.to !== "number") return;
+    const now = Date.now();
+    if (now - lastFetchTime < 1000) return;
+
+    try {
+      // Find oldest loaded bar timestamp from replay bounds
+      const bounds = chart.replay?.bounds;
+      let oldestTime = bounds?.first;
+      if (typeof oldestTime !== "number" || oldestTime <= 0) {
+        // Fallback to marketData store
+        const lBars = liveBars();
+        if (lBars.length > 0) oldestTime = lBars[0].time;
+      }
+
+      if (typeof oldestTime !== "number" || oldestTime <= 0) return;
+
+      const span = vp.to - vp.from;
+      if (span <= 0) return;
+
+      // Trigger backfill when the visible viewport scrolls within 1.2 screen spans of the oldest candle
+      if (vp.from <= oldestTime + span * 1.2) {
+        const currentBars = cell?.state?.bars ?? chart.market?.bars ?? 2500;
+        if (currentBars >= 30000) return;
+
+        loading = true;
+        lastFetchTime = now;
+        const nextBars = Math.min(30000, currentBars + 2500);
+        const savedRange = chart.getVisibleRange?.() ?? { ...vp };
+
+        if (cell?.state) {
+          cell.state.bars = nextBars;
+        }
+
+        chart
+          .setMarket({ bars: nextBars })
+          .then(() => {
+            // Anchor viewport smoothly at user's scroll position
+            if (savedRange && typeof chart.setVisibleRange === "function") {
+              chart.setVisibleRange(savedRange);
+            }
+          })
+          .catch((err: any) => {
+            console.warn("[trade-pro] backfill setMarket failed:", err);
+          })
+          .finally(() => {
+            setTimeout(() => {
+              loading = false;
+            }, 600);
+          });
+      }
+    } catch {
+      loading = false;
+    }
+  };
+
   try {
-    const off = chart.on("viewport:changed", onViewport);
-    return typeof off === "function" ? off : () => {};
+    const unsubs: (() => void)[] = [];
+    unsubs.push(chart.on("viewport:changed", onViewport));
+    unsubs.push(chart.on("market:changed", onMarketChanged));
+    unsubs.push(chart.on("history:complete", onHistoryComplete));
+    return () => {
+      unsubs.forEach((u) => {
+        try { u(); } catch {}
+      });
+    };
   } catch {
     return () => {};
   }
@@ -290,9 +348,20 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     ws.on("cell:created", () => {
       try {
         installDrawingIsolation(ws);
+        for (const c of ws.cells()) {
+          wireAutoBackfill(c.chart, c);
+        }
       } catch (e) {
         console.warn("[trade-pro] cell isolation install failed:", e);
       }
+    });
+
+    ws.on("layout:changed", () => {
+      try {
+        for (const c of ws.cells()) {
+          wireAutoBackfill(c.chart, c);
+        }
+      } catch {}
     });
 
     const initCell = () => {
@@ -321,7 +390,8 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
               console.warn("[trade-pro] drawing isolation install failed:", e);
             }
             try {
-              wireAutoBackfill(chart);
+              const activeCell = (ws as any).active;
+              wireAutoBackfill(chart, activeCell);
             } catch {}
 
             onReadyRef.current?.(ws);
@@ -394,6 +464,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     };
 
     const setupMarket = () => {
+      let switchPromise: Promise<void> | null = null;
       try {
         const chart = (ws as any).active ? ws.chart : null;
         if (chart) {
@@ -401,20 +472,33 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
           const sameIdentity = canonicalSymbol(market?.symbol) === canonicalSymbol(coin)
             && market?.timeframe === timeframe;
           if (!sameIdentity) {
-            chart.setMarket({ symbol: coin, timeframe, bars: barsForTf(timeframe) });
+            switchPromise = chart.setMarket({ symbol: coin, timeframe, bars: barsForTf(timeframe) });
           } else if (!ws.replay.state.active && market?.bars !== barsForTf(timeframe)) {
             // The native topbar already applied this timeframe. A depth-only
             // setMarket during replay ends the cell's replay but emits no
             // market:changed event for WorkspaceReplay to rejoin on.
-            chart.setMarket({ bars: barsForTf(timeframe) });
+            switchPromise = chart.setMarket({ bars: barsForTf(timeframe) });
           }
         }
       } catch (e) {
         console.error("[trade-pro] setMarket failed", e);
       }
 
-      restoreLux();
-      restorePine();
+      if (switchPromise) {
+        switchPromise
+          .then(() => {
+            restoreLux();
+            restorePine();
+          })
+          .catch(() => {
+            restoreLux();
+            restorePine();
+          });
+      } else {
+        restoreLux();
+        restorePine();
+      }
+
       stopMarket = mountMarket(ws, { symbol: coin, timeframe });
 
       try {

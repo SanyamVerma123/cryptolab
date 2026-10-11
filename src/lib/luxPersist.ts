@@ -155,35 +155,53 @@ export async function restoreLuxIndicators(
   // they would write `visible: true` before the saved state is replayed.
   beginRestore();
   try {
-    for (const slug of slugs) {
+    const LUX_CACHE_KEY = "trade-pro:lux-library-cache";
+    const readCached = (slug: string): string | null => {
       try {
-        const { source, available } = await getIndicatorSource(slug);
-        if (!available || !source) {
-          failed.push({ slug, reason: "no public source (premium-tier indicators are excluded)" });
-          continue;
+        const raw = localStorage.getItem(LUX_CACHE_KEY);
+        const list = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(list)) {
+          const item = list.find((x) => x?.slug === slug && x?.script);
+          if (item) return item.script;
         }
-        // Idempotency: skip a script already mounted on THIS chart. Strict Mode
-        // destroys the first chart and creates a fresh one, so a coin-level flag
-        // would wrongly skip the live chart and leave its new ids unregistered.
-        const existing = (ws.chart.indicators() || []).find((h) => h.source === source);
-        if (existing) {
-          if (existing.id) rememberLuxIndicator(symbol, slug, existing.id);
-          continue;
+      } catch {}
+      return null;
+    };
+
+    const tasks = slugs.map(async (slug) => {
+      try {
+        let source = readCached(slug);
+        if (!source) {
+          const timeout = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("indicator fetch timeout")), 4000)
+          );
+          const res = await Promise.race([getIndicatorSource(slug), timeout]);
+          if (res?.available && res?.source) {
+            source = res.source;
+          }
+        }
+        if (!source) {
+          failed.push({ slug, reason: "source unavailable" });
+          return;
         }
 
-        const handle = ws.chart.addIndicator(source);
-        // Re-register the new per-session id -> slug, so:
-        //   - `keyOf` gives this indicator its OWN record (all library scripts
-        //     compile to the same title "Indicator", so without the slug they
-        //     would share one record and trample each other's settings)
-        //   - a delete in THIS session can be traced back to the library script
-        // Must happen BEFORE the snapshot below, which reads the id map.
+        const chart = (ws as any).active ? ws.chart : null;
+        if (!chart) return;
+        const existing = (chart.indicators?.() || []).find((h: any) => h.source === source);
+        if (existing) {
+          if (existing.id) rememberLuxIndicator(symbol, slug, existing.id);
+          return;
+        }
+
+        const handle = chart.addIndicator(source);
         if (handle?.id) rememberLuxIndicator(symbol, slug, handle.id);
         restored.push(slug);
       } catch (e) {
         failed.push({ slug, reason: (e as Error).message || "fetch failed" });
       }
-    }
+    });
+
+    await Promise.allSettled(tasks);
   } finally {
     // Now that every id map is populated, replay the saved visibility/inputs
     // onto the freshly mounted handles — this keeps the "eye" toggle and input

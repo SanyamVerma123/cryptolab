@@ -84,67 +84,13 @@ export function syncCustomLibrary(ws: VelaWorkspace): void {
   }
 }
 
-/** Populate Vela's native Indicators picker with the public LuxAlgo library. */
+/** Populate Vela's native Indicators picker with custom scripts & cached indicators. */
 export function preloadLuxLibrary(ws: VelaWorkspace): Promise<void> {
   const existing = luxPreloadByWorkspace.get(ws);
   if (existing) return existing;
-  const task = (async () => {
-    const readCache = (): Array<{ slug: string; name: string; script: string }> => {
-      try {
-        const raw = localStorage.getItem(LUX_LIBRARY_KEY);
-        const items = raw ? JSON.parse(raw) : [];
-        return Array.isArray(items) ? items.filter((x) => x?.slug && x?.name && x?.script) : [];
-      } catch { return []; }
-    };
-    let cached = readCache();
+  const task = Promise.resolve().then(() => {
     syncCustomLibrary(ws);
-    if (localStorage.getItem(LUX_COMPLETE_KEY) === "1") return;
-
-    try {
-      const first = await listIndicators("", 0, 100);
-      const catalog = [...first.indicators];
-      for (let page = 1; page * first.pageSize < first.total; page += 1) {
-        const next = await listIndicators("", page, first.pageSize);
-        catalog.push(...next.indicators);
-      }
-      const uniqueCatalog = [...new Map(catalog.filter((x) => x.slug).map((item) => [item.slug, item])).values()];
-      const known = new Set(cached.map((x) => x.slug));
-      const pending = uniqueCatalog.filter((x) => !known.has(x.slug));
-      let cursor = 0;
-      let dirtyCount = 0;
-      let transientFailure = false;
-      const workers = Array.from({ length: 3 }, async () => {
-        while (cursor < pending.length) {
-          const item = pending[cursor++];
-          try {
-            const result = await getIndicatorSource(item.slug);
-            if (result.available && result.source) {
-              cached.push({ slug: item.slug, name: item.name, script: result.source });
-              known.add(item.slug);
-              dirtyCount += 1;
-            }
-          } catch (error) {
-            const reason = (error as Error).message || "";
-            if (!reason.includes("not publicly available")) transientFailure = true;
-          }
-          if (dirtyCount >= 30) {
-            try { localStorage.setItem(LUX_LIBRARY_KEY, JSON.stringify(cached)); } catch { /* cache is optional */ }
-            dirtyCount = 0;
-          }
-        }
-      });
-      await Promise.all(workers);
-      try {
-        localStorage.setItem(LUX_LIBRARY_KEY, JSON.stringify(cached));
-        if (!transientFailure) localStorage.setItem(LUX_COMPLETE_KEY, "1");
-      } catch { /* the current session catalog still works */ }
-      syncCustomLibrary(ws);
-      if (transientFailure) luxPreloadByWorkspace.delete(ws);
-    } catch (error) {
-      console.warn("[trade-pro] LuxAlgo catalog preload failed:", error);
-      luxPreloadByWorkspace.delete(ws);
-    }
-  })();
+  });
   luxPreloadByWorkspace.set(ws, task);
   return task;
 }

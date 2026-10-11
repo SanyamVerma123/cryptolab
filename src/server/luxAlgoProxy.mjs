@@ -52,6 +52,7 @@ async function rpc(method, params) {
       Accept: "application/json, text/event-stream",
     },
     body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+    signal: AbortSignal.timeout(6000),
   });
   const text = await res.text();
   if (!res.ok && !text.includes('"result"')) {
@@ -170,9 +171,15 @@ export async function handleIndicators(url, res) {
   });
 }
 
+const sourceCache = new Map();
+
 export async function handleSource(slug, res) {
   if (!slug) {
     sendJson(res, 400, { ok: false, error: "missing slug" });
+    return;
+  }
+  if (sourceCache.has(slug)) {
+    sendJson(res, 200, sourceCache.get(slug));
     return;
   }
   const payload = await callTool("library_get_source_code", {
@@ -188,13 +195,15 @@ export async function handleSource(slug, res) {
     });
     return;
   }
-  sendJson(res, 200, {
+  const result = {
     ok: true,
     slug: payload.slug,
     name: payload.name,
     available: true,
     source: payload.source,
-  });
+  };
+  sourceCache.set(slug, result);
+  sendJson(res, 200, result);
 }
 
 // ---- entry point (mirrors handleRelay's contract) --------------------------
