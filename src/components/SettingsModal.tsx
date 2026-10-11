@@ -134,6 +134,18 @@ export function SettingsModal({ open, onClose, onInstallApp }: Props) {
           >
             Download App
           </button>
+          <button
+            type="button"
+            className="sm-tab"
+            style={{ marginLeft: "auto", color: "#5d92ff", fontWeight: 600 }}
+            onClick={() => {
+              onClose();
+              window.dispatchEvent(new CustomEvent("tradepro:open-chart-settings"));
+            }}
+            title="Open Chart Settings (Bars to fetch, Scales, Canvas, Watermark)"
+          >
+            📊 Chart Settings ↗
+          </button>
         </div>
 
         {/* Content Body */}

@@ -569,7 +569,7 @@ html, body, #root {
 }
 .ind-clear:hover { color: var(--down); }
 
-.ind-list {
+.legacy-ind-picker .ind-list {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -737,7 +737,7 @@ html, body, #root {
   outline: none;
 }
 .ind-search:focus { border-color: #2962ff; }
-.ind-list { overflow-y: auto; max-height: 280px; }
+.legacy-picker .ind-list { overflow-y: auto; max-height: 280px; }
 .ind-item {
   display: flex;
   align-items: center;
@@ -6177,6 +6177,86 @@ body.resizing-col .market-panel {
 }
 @media (max-width: 374px) {
   .replay-toolbar { zoom: .85; }
+}
+
+/* Replay controls should never steal the chart's pointer gestures. */
+.replay-toolbar { touch-action: auto; }
+.replay-progress-control { z-index: 2; height: 18px; top: 10px; }
+.replay-progress-control input { z-index: 3; touch-action: pan-y; }
+.replay-toolbar .drag-handle { touch-action: none; }
+
+/* AI assistant — clear hierarchy, readable transcript, and a real composer. */
+.ai-panel:not(.inline) {
+  width: min(390px, calc(100% - 24px));
+  height: min(560px, calc(100% - 24px));
+  max-height: 78vh;
+  background: #11151c;
+  border-color: #2b3441;
+  border-radius: 14px;
+  box-shadow: 0 18px 54px #0009, 0 2px 8px #0005;
+}
+.ai-panel .ai-head {
+  min-height: 58px;
+  padding: 10px 12px;
+  gap: 9px;
+  background: #171c24;
+  border-color: #29313d;
+}
+.ai-brand-icon, .ai-empty-icon, .ai-message-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: #a9c5ff;
+  background: #263a5a;
+  border: 1px solid #405a7d;
+}
+.ai-brand-icon { width: 30px; height: 30px; border-radius: 9px; }
+.ai-heading-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.ai-panel .ai-title { color: #edf2fa; font-size: 12px; line-height: 1.2; }
+.ai-subtitle { color: #8995a7; font-size: 10px; }
+.ai-connection { display: inline-flex; align-items: center; gap: 5px; margin-right: 2px; color: #9ca7b5; white-space: nowrap; font-size: 9px; }
+.ai-connection i { width: 6px; height: 6px; border-radius: 50%; background: #e0a84b; box-shadow: 0 0 7px #e0a84b66; }
+.ai-connection.is-ready i { background: #48c995; box-shadow: 0 0 7px #48c99566; }
+.ai-panel .ai-icon-btn { width: 27px; height: 27px; display: grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 7px; color: #9ca8b9; background: transparent; cursor: pointer; }
+.ai-panel .ai-icon-btn:hover, .ai-panel .ai-icon-btn.is-active { color: #ecf2fb; background: #252d39; border-color: #3a4656; }
+.ai-panel .ai-log { min-height: 0; padding: 16px 14px; gap: 14px; background: radial-gradient(ellipse at 50% 0, #1c2635 0, #11151c 48%); }
+.ai-empty-state { max-width: 280px; margin: auto; padding: 22px 12px; text-align: center; }
+.ai-empty-icon { width: 42px; height: 42px; margin: 0 auto 12px; border-radius: 13px; color: #c1d4ff; background: #243751; }
+.ai-empty-state strong { display: block; color: #e6edf7; font-size: 14px; letter-spacing: -.01em; }
+.ai-empty-state p { margin: 7px 0 13px; color: #a0adbd; font-size: 11px; line-height: 1.65; }
+.ai-empty-note { color: #75849a; font-size: 10px; }
+.ai-message-row { display: flex; align-items: flex-start; gap: 8px; max-width: 100%; }
+.ai-message-row.user { justify-content: flex-end; }
+.ai-message-avatar { width: 23px; height: 23px; margin-top: 17px; border-radius: 7px; color: #b8cefb; background: #202d40; border-color: #33465f; }
+.ai-message-body { min-width: 0; max-width: 88%; }
+.ai-message-row.user .ai-message-body { max-width: 88%; }
+.ai-message-meta { display: flex; align-items: center; gap: 7px; margin: 0 2px 4px; color: #8c9aab; font-size: 9px; }
+.ai-message-row.user .ai-message-meta { justify-content: flex-end; }
+.ai-message-meta time { color: #657286; font-size: 9px; }
+.ai-panel .ai-msg { max-width: 100%; margin: 0; padding: 9px 11px; border: 1px solid #2d3745; border-radius: 4px 12px 12px 12px; color: #d4deeb; background: #1b222c; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; line-height: 1.65; }
+.ai-panel .ai-message-row.user .ai-msg { border-color: #3264bc; border-radius: 12px 4px 12px 12px; color: #f2f6ff; background: #2859a8; }
+.ai-working { display: flex; align-items: center; gap: 8px; margin: 2px 0 2px 31px; color: #9aabc2; font-size: 10px; }
+.ai-spinner { animation: ai-spin .9s linear infinite; color: #85afff; }
+@keyframes ai-spin { to { transform: rotate(360deg); } }
+.ai-panel .ai-quick-prompts { flex-wrap: nowrap; overflow-x: auto; padding: 9px 12px; gap: 6px; border-color: #272f3a; background: #141920; scrollbar-width: none; }
+.ai-panel .ai-qp-chip { flex: none; padding: 6px 9px; border-radius: 999px; border-color: #303a48; color: #b8c4d4; background: #1b222c; font-size: 10px; font-weight: 500; }
+.ai-panel .ai-qp-chip:hover:not(:disabled) { border-color: #527bb5; color: #eaf2ff; background: #263a55; }
+.ai-panel .ai-qp-chip:disabled { opacity: .45; cursor: default; }
+.ai-composer { padding: 10px 12px 8px; border-top: 1px solid #29313d; background: #171c24; }
+.ai-composer-box { display: flex; align-items: flex-end; gap: 8px; padding: 8px; border: 1px solid #343f4d; border-radius: 11px; background: #10141a; transition: border-color .15s, box-shadow .15s; }
+.ai-composer-box:focus-within { border-color: #4b79c4; box-shadow: 0 0 0 2px #3f70b622; }
+.ai-composer-box textarea { min-width: 0; flex: 1; resize: vertical; max-height: 110px; border: 0; outline: none; color: #e6edf7; background: transparent; font: inherit; font-size: 11px; line-height: 1.55; }
+.ai-composer-box textarea::placeholder { color: #728095; }
+.ai-send-btn { width: 29px; height: 29px; display: grid; flex: none; place-items: center; border: 0; border-radius: 8px; color: #fff; background: #3974cc; cursor: pointer; transition: background .15s, transform .15s; }
+.ai-send-btn:hover:not(:disabled) { transform: translateY(-1px); background: #4b89e5; }
+.ai-send-btn:disabled { color: #69788d; background: #28313d; cursor: default; }
+.ai-composer-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 2px 0; color: #6f7c8d; font-size: 9px; }
+.ai-composer-footer .ai-pine-btn { padding: 2px 0; border: 0; color: #9dbcf2; background: transparent; font: inherit; font-size: 10px; cursor: pointer; }
+.ai-composer-footer .ai-pine-btn:hover { color: #d7e5ff; }
+.ai-panel.inline { height: 100%; max-height: none; }
+.ai-panel.inline .ai-head { min-height: 58px; }
+@media (max-width: 560px) {
+  .ai-panel:not(.inline) { width: calc(100% - 16px); height: min(70vh, 560px); max-height: calc(100% - 16px); top: 8px !important; right: 8px !important; left: 8px !important; }
 }
 
 /* --- Topbar & Right Actions Positioning (Market, Settings, Account pinned at top right) --- */

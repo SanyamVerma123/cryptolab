@@ -147,7 +147,7 @@ export function pineNameForIndicatorId(id: string | undefined): string | undefin
   return idToName.get(id);
 }
 
-/** Forget the script named `name` — removes from coin (or ALL coins if symbol omitted) and library. */
+/** Remove a script from the chart-applied restore list, keeping its saved library copy. */
 export function forgetPineIndicator(
   symbol: string | undefined,
   name: string
@@ -170,8 +170,7 @@ export function forgetPineIndicator(
   }
 
   save(store);
-  removePineFromLibrary(name);
-  console.info("[trade-pro:pine] forgetPineIndicator", coin || "all", name);
+  console.info("[trade-pro:pine] removed chart instance", coin || "all", name);
 }
 
 /** Scrub a deleted script completely from all coins, library, and storage */

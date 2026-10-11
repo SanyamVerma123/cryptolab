@@ -28,6 +28,7 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const positionRef = useRef<DockPosition | null>(null);
   const lastCursorRef = useRef<number | null>(null);
+  const scrubbingRef = useRef(false);
   const [cutMode, setCutMode] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -64,7 +65,7 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
       setCursorTime(null);
     }
     setRemaining(s.remaining ?? 0);
-    if (s.cursorTime && bounds && range) {
+    if (!scrubbingRef.current && s.cursorTime != null && bounds && range) {
       setScrubValue(Math.max(0, Math.min(1000, ((s.cursorTime - bounds.first) / range) * 1000)));
     }
   }, [replay, bounds, range]);
@@ -285,9 +286,21 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
     void startAt(cursorTime - 1);
   };
 
-  const commitScrub = () => {
+  const beginScrub = () => {
+    scrubbingRef.current = true;
+    // A playing replay was updating the controlled range input every tick,
+    // which pulled the thumb away from the pointer and made scrubbing feel
+    // broken. Pause as soon as the user takes control of the timeline.
+    if (replay?.state.playing) replay.pause();
+    setPlaying(false);
+  };
+
+  const commitScrub = (value = scrubValue) => {
+    scrubbingRef.current = false;
     if (!bounds || !range) return;
-    void startAt(bounds.first + (scrubValue / 1000) * range);
+    const next = Math.max(0, Math.min(1000, value));
+    setScrubValue(next);
+    void startAt(bounds.first + (next / 1000) * range);
   };
 
   useEffect(() => {
@@ -337,7 +350,11 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
           <span className="progress-thumb" style={{ left: `${(scrubValue / 1000) * 76}px` }} />
           <input aria-label="Replay progress" type="range" min="0" max="1000" value={scrubValue}
             disabled={!bounds || !range} onChange={(event) => setScrubValue(Number(event.target.value))}
-            onPointerUp={commitScrub} onKeyUp={commitScrub} />
+            onPointerDown={beginScrub}
+            onPointerUp={(event) => commitScrub(Number(event.currentTarget.value))}
+            onPointerCancel={(event) => commitScrub(Number(event.currentTarget.value))}
+            onKeyDown={beginScrub}
+            onKeyUp={(event) => commitScrub(Number(event.currentTarget.value))} />
         </div>
         <button className="replay-icon previous" onClick={stepBack} disabled={!state?.active || !cursorTime || !bounds || cursorTime <= bounds.first} title="Previous bar" aria-label="Previous bar">
           <img src="/replay-icons/previous-bar.svg" alt="" />

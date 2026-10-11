@@ -15,7 +15,7 @@
  * configured, "mark fvg" / "add macd" still land on the chart.
  */
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
-import { liveBars } from "./marketData";
+import { getChartBars, liveBars } from "./marketData";
 
 /** One thing the AI may ask the chart to do. */
 export interface ChartAction {
@@ -166,6 +166,12 @@ export function resolveLocally(text: string): AiReply {
   const t = text.toLowerCase();
   const actions: ChartAction[] = [];
 
+  // Levels are chart drawings, never indicators. Their coordinates are
+  // resolved by the panel against the active workspace's canonical bars.
+  if (/\b(support|resistance|s\/r|key levels?)\b/.test(t)) {
+    return { reply: "I’ll mark the requested support/resistance level on the chart.", actions };
+  }
+
   if (t.includes("fvg") || t.includes("fair value gap")) {
     actions.push({ type: "draw", tool: "box" });
     return {
@@ -282,7 +288,7 @@ export interface ChartState {
   visibleRange?: { from: number; to: number };
 }
 
-export function readChartState(ws: VelaWorkspace): ChartState {
+export function readChartState(ws: VelaWorkspace, activeBars?: readonly Bar[]): ChartState {
   const out: ChartState = { drawings: [], indicators: [] };
   try {
     const docs = ws.chart.drawings.all();
@@ -350,7 +356,7 @@ export function readChartState(ws: VelaWorkspace): ChartState {
 
   try {
     // Vela has no `price()` accessor — the last bar's close IS the latest price.
-    const all = liveBars();
+    const all = activeBars?.length ? activeBars : liveBars();
     const l = all[all.length - 1];
     if (l) out.price = l.close;
   } catch {
@@ -480,18 +486,78 @@ export function findFVGs(bars: Bar[], max = 12): { up: boolean; from: number; to
 }
 
 /**
- * Pull the visible bars off Vela so the AI (and FVG detection) sees real data.
- *
- * Vela owns the canonical bar array internally and exposes no host-facing bar
- * reader (`DataControl` is a provider registry, not a bar reader). So the app
- * keeps its own live copy in `marketData.ts` — fed by the same Hyperliquid
- * provider Vela loads from, kept live over its WebSocket stream. That store
- * has real bars BEFORE the AI is asked to draw, which is why "mark the FVG"
- * used to stall on "let the data load".
+ * Pull the active market's visible history from the resolved market-data
+ * provider. The public workspace API intentionally doesn't expose Vela's
+ * internal bar array, so this mirrors the current chart identity and viewport.
  */
-export function visibleBars(_ws: VelaWorkspace): Bar[] {
-  // The store is the source of truth for AI reads; the workspace is unused.
-  return liveBars();
+export async function visibleBars(ws: VelaWorkspace): Promise<Bar[]> {
+  try {
+    const market = ws.chart.market;
+    const symbol = String(market?.symbol ?? "");
+    const timeframe = String(market?.timeframe ?? "");
+    const range = ws.chart.getVisibleRange();
+    const all = (await getChartBars(
+      symbol,
+      timeframe,
+      market?.provider,
+      range ? { from: range.from, to: range.to } : undefined,
+    )).map((b) => ({
+      time: b.time, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume,
+    }));
+    if (!all.length) return [];
+    if (range && Number.isFinite(range.from) && Number.isFinite(range.to)) {
+      const visible = all.filter((b) => b.time >= range.from && b.time <= range.to);
+      if (visible.length >= 5) return visible;
+    }
+    return all.slice(-240);
+  } catch {
+    return [];
+  }
+}
+
+/** Resolve support/resistance to concrete active-chart swing levels. */
+export function supportResistanceActions(text: string, bars: Bar[]): { actions: ChartAction[]; labels: string[] } {
+  const t = text.toLowerCase();
+  const wantsBoth = /support\s*(?:and|&|\/|,|\+)\s*resistance|resistance\s*(?:and|&|\/|,|\+)\s*support|\bs\/r\b|\bkey levels?\b/.test(t);
+  const wantsSupport = wantsBoth || /\bsupport\b/.test(t);
+  const wantsResistance = wantsBoth || /\bresistance\b/.test(t);
+  const actions: ChartAction[] = [];
+  const labels: string[] = [];
+  if (bars.length < 5) return { actions, labels };
+
+  const recent = bars.slice(-240);
+  const latest = recent[recent.length - 1];
+  const ranges = recent.slice(-20).map((b) => Math.max(0, b.high - b.low));
+  const avgRange = ranges.reduce((sum, value) => sum + value, 0) / Math.max(1, ranges.length);
+  const tolerance = Math.max(avgRange * 0.35, Math.abs(latest.close) * 0.0001);
+  const highs: { time: number; price: number; index: number }[] = [];
+  const lows: { time: number; price: number; index: number }[] = [];
+  for (let i = 2; i < recent.length - 2; i++) {
+    const bar = recent[i];
+    if (recent.slice(i - 2, i + 3).every((other, j) => j === 2 || bar.high >= other.high)) highs.push({ time: bar.time, price: bar.high, index: i });
+    if (recent.slice(i - 2, i + 3).every((other, j) => j === 2 || bar.low <= other.low)) lows.push({ time: bar.time, price: bar.low, index: i });
+  }
+  const pick = (points: typeof highs, side: "above" | "below") => {
+    const eligible = points.filter((p) => side === "above" ? p.price >= latest.close : p.price <= latest.close);
+    const pool = eligible.length ? eligible : points;
+    if (!pool.length) {
+      const price = side === "above" ? Math.max(...recent.map((b) => b.high)) : Math.min(...recent.map((b) => b.low));
+      const bar = recent.find((b) => (side === "above" ? b.high : b.low) === price) ?? latest;
+      return { time: bar.time, price };
+    }
+    return pool.map((point) => ({
+      ...point,
+      touches: points.filter((other) => Math.abs(other.price - point.price) <= tolerance).length,
+      distance: Math.abs(point.price - latest.close),
+    })).sort((a, b) => a.distance - b.distance || b.touches - a.touches || b.index - a.index)[0];
+  };
+  const add = (kind: "support" | "resistance", point: { time: number; price: number }) => {
+    actions.push({ type: "plotAt", tool: "hline", anchors: [{ time: point.time, price: point.price }] });
+    labels.push(`${kind} at ${Number(point.price.toPrecision(8))}`);
+  };
+  if (wantsResistance) add("resistance", pick(highs, "above"));
+  if (wantsSupport) add("support", pick(lows, "below"));
+  return { actions, labels };
 }
 
 /**
@@ -507,6 +573,14 @@ export function applyActions(ws: VelaWorkspace, actions: ChartAction[]): string[
         c.drawings.setTool(a.tool as never);
         out.push(`Armed ${a.tool}.`);
       } else if (a.type === "plotAt" && a.tool && a.anchors?.length) {
+        const valid = a.anchors.every((p) =>
+          Number.isFinite(p.time) && p.time >= 946684800000 &&
+          Number.isFinite(p.price) && p.price > 0,
+        );
+        if (!valid) {
+          out.push(`Skipped ${a.tool}: its coordinates were invalid or missing.`);
+          continue;
+        }
         const h = c.drawings.add(a.tool as never, {
           anchors: a.anchors.map((p) => ({ time: p.time, price: p.price })),
         });

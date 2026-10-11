@@ -20,7 +20,7 @@ import {
   ensureLayout,
 } from "@luxalgo/vela/workspace";
 import { registerIcon, registerWidgetAction } from "@luxalgo/vela/plugin";
-import { HyperliquidProvider } from "@luxalgo/vela/providers/hyperliquid";
+import { SafeHyperliquidProvider } from "../lib/safeHyperliquidProvider";
 import { BinanceProvider } from "@luxalgo/vela/providers/binance";
 import { CoinbaseProvider } from "@luxalgo/vela/providers/coinbase";
 import { PineEngine } from "@luxalgo/vela-pinets";
@@ -31,8 +31,9 @@ import { installIndicatorState } from "../lib/indicatorState";
 import { installCrosshairPlacement } from "../lib/crosshairPlacement";
 import { restoreLuxIndicators } from "../lib/luxPersist";
 import { restorePineIndicators } from "../lib/pinePersist";
+import { suppressEthForecasterAutoRestore } from "../lib/indicatorRestoreSafety";
 import { trackSelection } from "../lib/drawingPresets";
-import { mountMarket, liveBars } from "../lib/marketData";
+import { mountMarket } from "../lib/marketData";
 import { installDrawingIsolation } from "../lib/drawingInteractions";
 import { AlpacaProvider } from "../lib/alpacaProvider";
 import { TwelveDataProvider } from "../lib/twelveDataProvider";
@@ -117,6 +118,7 @@ try {
   registerIcon("tradepro-tools", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="m2 13 3-3m-1-6 6 6m-2-7 2-2 4 4-2 2M2 4l2-2 3 3-2 2z"/></svg>`);
   registerIcon("tradepro-account", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="5" r="2.5"/><path d="M2.5 14c.5-3 2.3-4.5 5.5-4.5s5 1.5 5.5 4.5"/></svg>`);
   registerIcon("tradepro-install", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 1.5v9m-3-3 3 3 3-3M2 11.5v3h12v-3"/></svg>`);
+  registerIcon("tradepro-chart-settings", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/><circle cx="5" cy="4" r="1.5" fill="currentColor"/><circle cx="11" cy="8" r="1.5" fill="currentColor"/><circle cx="7" cy="12" r="1.5" fill="currentColor"/></svg>`);
 } catch {
   // icons already registered
 }
@@ -145,6 +147,7 @@ try {
   });
   registerWidgetAction({ id: "tradepro-tools", target: "topbar", align: "left", order: 11, icon: "tradepro-tools", iconOnly: true, label: "Favorite tools", run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-favorites")) });
   registerWidgetAction({ id: "tradepro-market", target: "topbar", align: "right", order: 1, icon: "tradepro-market", iconOnly: true, label: "Market panel", run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-market")) });
+  registerWidgetAction({ id: "tradepro-chart-settings", target: "topbar", align: "right", order: 1.5, icon: "tradepro-chart-settings", iconOnly: true, label: "Chart settings", run: () => window.dispatchEvent(new CustomEvent("tradepro:open-chart-settings")) });
   registerWidgetAction({ id: "tradepro-settings", target: "topbar", align: "right", order: 2, icon: "tradepro-settings", iconOnly: true, label: "Trading settings", run: () => window.dispatchEvent(new CustomEvent("tradepro:open-settings")) });
   registerWidgetAction({ id: "tradepro-account", target: "topbar", align: "right", order: 3, icon: "tradepro-account", iconOnly: true, label: "Account and cloud sync", run: () => window.dispatchEvent(new CustomEvent("tradepro:open-account")) });
 } catch {
@@ -193,11 +196,29 @@ function canonicalSymbol(symbol: string | undefined): string {
   return (separator >= 0 ? symbol.slice(separator + 1) : symbol).toUpperCase();
 }
 
+const autoBackfillBindings = new WeakSet<object>();
+
 function wireAutoBackfill(chart: any, cell?: any): () => void {
   if (!chart || typeof chart.on !== "function") return () => {};
+  // Workspace events can announce the same cell through ready, cell:created,
+  // and layout:changed. Bind once per chart or repeated pan handlers race their
+  // own setMarket calls and can make the history edge appear stuck.
+  if (autoBackfillBindings.has(chart)) return () => {};
+  autoBackfillBindings.add(chart);
 
   let loading = false;
-  let lastFetchTime = 0;
+  const maxHistoryForMarket = () => {
+    const market = chart.market;
+    const provider = String(market?.provider ?? "").toLowerCase();
+    const symbol = String(market?.symbol ?? "").toLowerCase();
+    // Hyperliquid returns at most ~5,000 candles for an interval. Repeatedly
+    // asking for more cannot extend history and can saturate the chart on ETH.
+    return provider === "hyperliquid" || symbol.startsWith("hyperliquid:") ? 5000 : 30000;
+  };
+  let requestedBars = Math.min(
+    Number(chart.market?.bars) || Number(cell?.state?.bars) || 2500,
+    maxHistoryForMarket(),
+  );
   let reachedGenesis = false;
 
   const onHistoryComplete = (evt: any) => {
@@ -209,59 +230,59 @@ function wireAutoBackfill(chart: any, cell?: any): () => void {
   const onMarketChanged = () => {
     reachedGenesis = false;
     loading = false;
+    requestedBars = Math.min(
+      Number(chart.market?.bars) || Number(cell?.state?.bars) || 2500,
+      maxHistoryForMarket(),
+    );
   };
 
   const onViewport = (vp: { from: number; to: number }) => {
     if (loading || reachedGenesis || !vp || typeof vp.from !== "number" || typeof vp.to !== "number") return;
-    const now = Date.now();
-    if (now - lastFetchTime < 1000) return;
 
     try {
-      // Find oldest loaded bar timestamp from replay bounds
+      // Replay bounds describe the complete in-memory history, including bars
+      // hidden by replay. Use them as the history edge, not the separate AI
+      // market-data cache (which intentionally only keeps a small recent slice).
       const bounds = chart.replay?.bounds;
       let oldestTime = bounds?.first;
-      if (typeof oldestTime !== "number" || oldestTime <= 0) {
-        // Fallback to marketData store
-        const lBars = liveBars();
-        if (lBars.length > 0) oldestTime = lBars[0].time;
-      }
-
       if (typeof oldestTime !== "number" || oldestTime <= 0) return;
 
       const span = vp.to - vp.from;
       if (span <= 0) return;
 
-      // Trigger backfill when the visible viewport scrolls within 1.2 screen spans of the oldest candle
-      if (vp.from <= oldestTime + span * 1.2) {
-        const currentBars = cell?.state?.bars ?? chart.market?.bars ?? 2500;
-        if (currentBars >= 30000) return;
+      // Request another page before the oldest loaded bar reaches the left
+      // edge. This check is time-based, so it works for every timeframe.
+      const historyCap = maxHistoryForMarket();
+      if (vp.from > oldestTime + span * 1.25 || requestedBars >= historyCap) return;
 
-        loading = true;
-        lastFetchTime = now;
-        const nextBars = Math.min(30000, currentBars + 2500);
-        const savedRange = chart.getVisibleRange?.() ?? { ...vp };
-
-        if (cell?.state) {
-          cell.state.bars = nextBars;
-        }
-
-        chart
-          .setMarket({ bars: nextBars })
-          .then(() => {
-            // Anchor viewport smoothly at user's scroll position
-            if (savedRange && typeof chart.setVisibleRange === "function") {
-              chart.setVisibleRange(savedRange);
-            }
-          })
-          .catch((err: any) => {
-            console.warn("[trade-pro] backfill setMarket failed:", err);
-          })
-          .finally(() => {
-            setTimeout(() => {
-              loading = false;
-            }, 600);
-          });
+      loading = true;
+      const nextBars = Math.min(historyCap, requestedBars + 5000);
+      if (nextBars <= requestedBars) {
+        loading = false;
+        return;
       }
+      const savedRange = chart.getVisibleRange?.() ?? { ...vp };
+      requestedBars = nextBars;
+      if (cell?.state) cell.state.bars = nextBars;
+
+      void (async () => {
+        try {
+          // `setMarket` resolves on the first painted chunk; historyComplete()
+          // keeps the loading lock until Vela finishes paginating the older
+          // bars. Releasing on a fixed timeout used to race a still-running
+          // backfill and discard the user's viewport.
+          await chart.setMarket({ bars: nextBars });
+          await chart.historyComplete?.();
+          if (savedRange && typeof chart.setVisibleRange === "function") {
+            chart.setVisibleRange(savedRange);
+          }
+        } catch (err) {
+          requestedBars = Math.max(2500, nextBars - 5000);
+          console.warn("[trade-pro] backfill setMarket failed:", err);
+        } finally {
+          loading = false;
+        }
+      })();
     } catch {
       loading = false;
     }
@@ -280,6 +301,83 @@ function wireAutoBackfill(chart: any, cell?: any): () => void {
   } catch {
     return () => {};
   }
+}
+
+/**
+ * Fix Vela's built-in Chart Settings dialog for "Bars to fetch" and other select controls.
+ * Upstream Vela passes plain string arrays (e.g. ["500", "1000", ...]) into row.options,
+ * but its internal Select component expects { value, label } objects. This caused the
+ * dropdown buttons to render empty/unclickable and set NaN on selection.
+ */
+function patchSettingsSections(chart: any, cell: any): void {
+  if (!chart?.renderer) return;
+  const renderer = chart.renderer;
+  if ((renderer as any).__barsPatchInstalled) return;
+  (renderer as any).__barsPatchInstalled = true;
+
+  const origSet = renderer.setSettingsSections?.bind(renderer);
+  if (!origSet) return;
+
+  renderer.setSettingsSections = function (sections: any[]) {
+    if (!Array.isArray(sections)) return origSet(sections);
+
+    const patched = sections.map((sec) => {
+      if (!sec?.rows || !Array.isArray(sec.rows)) return sec;
+      const patchedRows = sec.rows.map((row: any) => {
+        if (row?.kind === "select" && Array.isArray(row.options)) {
+          const normalized = row.options.map((opt: any) => {
+            if (typeof opt === "string" || typeof opt === "number") {
+              return { value: String(opt), label: String(opt) };
+            }
+            if (Array.isArray(opt)) {
+              return { value: String(opt[0]), label: String(opt[1] ?? opt[0]) };
+            }
+            if (opt && typeof opt === "object") {
+              return {
+                value: String(opt.value ?? opt.label ?? ""),
+                label: String(opt.label ?? opt.value ?? ""),
+              };
+            }
+            return opt;
+          });
+
+          const origRowSet = row.set;
+          return {
+            ...row,
+            options: normalized,
+            set: (v: any) => {
+              if (v === undefined || v === null) return;
+              const strVal = String(v);
+              if (row.id === "bars") {
+                const num = Number(strVal);
+                if (!isNaN(num) && num > 0) {
+                  if (cell?.state) {
+                    cell.state.bars = num;
+                  }
+                  origRowSet?.(strVal);
+                  try {
+                    chart.setMarket({ bars: num });
+                  } catch {}
+                }
+              } else {
+                origRowSet?.(strVal);
+              }
+            },
+          };
+        }
+        return row;
+      });
+      return { ...sec, rows: patchedRows };
+    });
+
+    return origSet(patched);
+  };
+
+  try {
+    if (typeof (cell as any)?.pushSettingsSections === "function") {
+      (cell as any).pushSettingsSections();
+    }
+  } catch {}
 }
 
 const VALID_TIMEFRAMES = new Set([
@@ -345,6 +443,10 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     const el = ref.current;
     if (!el || wsRef.current) return;
 
+    // This saved ETH forecaster has been causing a startup lockup. Clear only
+    // its chart auto-restore pointers before Vela mounts; keep the library copy.
+    suppressEthForecasterAutoRestore(coin);
+
     const ws = new VelaWorkspace(el, {
       layout: "1", // Single chart initial, native layout picker & sync engine active!
       engines: {
@@ -363,7 +465,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       bottombar: true,
       // Multi-provider feed: all providers provided by Vela + Alpaca + TwelveData + AlphaVantage
       providers: {
-        hyperliquid: () => new HyperliquidProvider(),
+        hyperliquid: () => new SafeHyperliquidProvider(),
         binance: () => new BinanceProvider(),
         coinbase: () => new CoinbaseProvider(),
         alpaca: () => new AlpacaProvider(),
@@ -402,6 +504,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
         installDrawingIsolation(ws);
         for (const c of ws.cells()) {
           wireAutoBackfill(c.chart, c);
+          patchSettingsSections(c.chart, c);
         }
       } catch (e) {
         console.warn("[trade-pro] cell isolation install failed:", e);
@@ -412,6 +515,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       try {
         for (const c of ws.cells()) {
           wireAutoBackfill(c.chart, c);
+          patchSettingsSections(c.chart, c);
         }
       } catch {}
     });
@@ -444,6 +548,10 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
             try {
               const activeCell = (ws as any).active;
               wireAutoBackfill(chart, activeCell);
+              patchSettingsSections(chart, activeCell);
+              for (const c of ws.cells()) {
+                patchSettingsSections(c.chart, c);
+              }
             } catch {}
 
             onReadyRef.current?.(ws);
@@ -457,9 +565,28 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     initCell();
     ws.on("cell:active", initCell);
 
+    const handleOpenChartSettings = () => {
+      try {
+        const ws = wsRef.current;
+        if (!ws) return;
+        const chart = (ws as any).active?.chart || ws.chart;
+        if (chart) {
+          if (typeof chart.openSettings === "function") {
+            chart.openSettings();
+          } else if (chart.renderer?.openSettingsDialog) {
+            chart.renderer.openSettingsDialog();
+          }
+        }
+      } catch (e) {
+        console.warn("[trade-pro] error opening chart settings:", e);
+      }
+    };
+    window.addEventListener("tradepro:open-chart-settings", handleOpenChartSettings);
+
     const stopTf = installTimeframeInteractionFix(ws, el);
 
     return () => {
+      window.removeEventListener("tradepro:open-chart-settings", handleOpenChartSettings);
       try {
         stopTf();
       } catch {}
@@ -486,38 +613,41 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     let stopCrosshair: (() => void) | undefined;
     let stopIsolation: (() => void) | undefined;
 
-    const restoreLux = () => {
+    const restoreLux = async () => {
       try {
         const sym = (ws as any).active ? ws.chart?.market?.symbol : undefined;
         if (!sym) return;
-        void restoreLuxIndicators(ws, sym).then((r) => {
-          if (r.failed.length) {
-            console.warn(
-              "[trade-pro] some library indicators could not be restored:",
-              r.failed
-            );
-          }
-        });
+        const r = await restoreLuxIndicators(ws, sym);
+        if (r.failed.length) {
+          console.warn("[trade-pro] some library indicators could not be restored:", r.failed);
+        }
       } catch (e) {
         console.warn("[trade-pro] lux restore failed:", e);
       }
     };
 
-    const restorePine = () => {
+    const restorePine = async () => {
       try {
         const sym = (ws as any).active ? ws.chart?.market?.symbol : undefined;
         if (!sym) return;
-        void restorePineIndicators(ws, sym).then((r) => {
-          if (r.failed.length) {
-            console.warn(
-              "[trade-pro] some custom indicators could not be restored:",
-              r.failed
-            );
-          }
-        });
+        const r = await restorePineIndicators(ws, sym);
+        if (r.failed.length) {
+          console.warn("[trade-pro] some custom indicators could not be restored:", r.failed);
+        }
       } catch (e) {
         console.warn("[trade-pro] pine restore failed:", e);
       }
+    };
+
+    // Restore indicator families one at a time. LuxAlgo and custom Pine
+    // scripts both prepare workers and render state; starting both restore
+    // loops together can starve the main thread on busy markets like ETH.
+    const restoreIndicators = async () => {
+      const sym = (ws as any).active ? ws.chart?.market?.symbol : undefined;
+      suppressEthForecasterAutoRestore(sym ?? coin);
+      await restoreLux();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      await restorePine();
     };
 
     const setupMarket = () => {
@@ -544,16 +674,13 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       if (switchPromise) {
         switchPromise
           .then(() => {
-            restoreLux();
-            restorePine();
+            void restoreIndicators();
           })
           .catch(() => {
-            restoreLux();
-            restorePine();
+            void restoreIndicators();
           });
       } else {
-        restoreLux();
-        restorePine();
+        void restoreIndicators();
       }
 
       stopMarket = mountMarket(ws, { symbol: coin, timeframe });

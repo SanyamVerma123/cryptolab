@@ -498,24 +498,31 @@ function planActions(msg, bars) {
 
   // 4. Support / resistance from swing points → horizontal lines.
   if (/support|resistance|s\/r|key level/.test(t)) {
-    const { highs, lows } = swings(bars);
-    const resistance = highs.at(-1);
-    const support = lows.at(-1);
-    if (resistance) {
-      actions.push({
-        type: "plotAt",
-        tool: "hline",
-        anchors: [{ time: bars[0].time, price: resistance.price }],
-      });
-      note.push(`drew resistance at ${resistance.price}`);
+    if (bars.length < 5) {
+      note.push("the active chart has not loaded enough bars to find support or resistance");
+      return { actions, note };
     }
-    if (support) {
-      actions.push({
-        type: "plotAt",
-        tool: "hline",
-        anchors: [{ time: bars[0].time, price: support.price }],
-      });
-      note.push(`drew support at ${support.price}`);
+    const { highs, lows } = swings(bars);
+    const wantsBoth = /support\s*(?:and|&|\/|,|\+)\s*resistance|resistance\s*(?:and|&|\/|,|\+)\s*support|\bs\/r\b|\bkey levels?\b/.test(t);
+    const wantsResistance = wantsBoth || /resistance/.test(t);
+    const wantsSupport = wantsBoth || /support/.test(t);
+    const latest = bars.at(-1);
+    const select = (points, side) => {
+      const eligible = points.filter((p) => side === "above" ? p.price >= latest.close : p.price <= latest.close);
+      const pool = eligible.length ? eligible : points;
+      if (!pool.length) {
+        const price = side === "above" ? Math.max(...bars.map((b) => b.high)) : Math.min(...bars.map((b) => b.low));
+        const bar = bars.find((b) => (side === "above" ? b.high : b.low) === price) ?? latest;
+        return { time: bar.time, price };
+      }
+      return pool.sort((a, b) => Math.abs(a.price - latest.close) - Math.abs(b.price - latest.close)).at(0);
+    };
+    const resistance = wantsResistance ? select(highs, "above") : null;
+    const support = wantsSupport ? select(lows, "below") : null;
+    for (const [kind, level] of [["resistance", resistance], ["support", support]]) {
+      if (!level) continue;
+      actions.push({ type: "plotAt", tool: "hline", anchors: [{ time: level.time, price: level.price }] });
+      note.push(`drew ${kind} at ${level.price}`);
     }
     if (actions.length) return { actions, note };
     note.push("no clear swing levels found");
@@ -836,7 +843,7 @@ export async function handleRelay(req, res) {
       "scripts, or clear drawings. Just say plainly what you would do.\n" +
       "If you want a drawing the built-in commands don't cover, emit a fenced " +
       "```json block with an array of actions, e.g.\n" +
-      '```json\n[{ "type": "plotAt", "tool": "box", "anchors": [{ "time": 1790000000, "price": 83000 }, { "time": 1790001000, "price": 82000 }] }]\n```' +
+      '```json\n[{ "type": "plotAt", "tool": "box", "anchors": [{ "time": 1790000000000, "price": 83000 }, { "time": 1790001000000, "price": 82000 }] }]\n```' +
       "\nValid action types: draw (needs tool), plotAt (needs tool + anchors " +
       "of {time, price}), indicator (needs indicator id, optional inputs), " +
       "pine (needs source), clearDrawings.";

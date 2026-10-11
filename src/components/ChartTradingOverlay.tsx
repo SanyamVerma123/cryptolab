@@ -720,7 +720,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
     // Computer / Desktop: Double right-click opens the trade shortcut menu (double left-click is disabled)
     const onContextMenu = (e: MouseEvent) => {
       if ((e.target as HTMLElement).closest(".tv-trade-line, .chart-ctx-menu, button")) return;
-      e.preventDefault();
+      // allow native contextmenu on single click
 
       const now = performance.now();
       if (
@@ -729,6 +729,7 @@ export function ChartTradingOverlay({ ws, coin, data }: Props) {
         Math.hypot(e.clientX - lastRightClickRef.current.x, e.clientY - lastRightClickRef.current.y) < 25
       ) {
         // Desktop Double Right-Click detected!
+        e.preventDefault();
         lastRightClickRef.current = null;
         triggerMenuAt(e.clientX, e.clientY);
       } else {

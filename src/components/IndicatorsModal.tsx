@@ -33,13 +33,12 @@ import {
 } from "../lib/indicatorsCatalog";
 import {
   loadPineLibrary,
-  forgetPineIndicator,
   forgetPineIndicatorEverywhere,
   rememberPineIndicator,
   type SavedPineScript,
 } from "../lib/pinePersist";
 import { getIndicatorSource } from "../lib/luxAlgoClient";
-import { rememberLuxIndicator, forgetLuxIndicator } from "../lib/luxPersist";
+import { rememberLuxIndicator } from "../lib/luxPersist";
 import { pushToCloud, scheduleCloudPush } from "../lib/cloudSync";
 import { syncCustomLibrary } from "./PineEditor";
 import "../styles/indicatorsModal.css";
@@ -200,15 +199,6 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
         (ws.active as any).removeFromChart(item.index);
       } else if (ws?.chart && typeof (ws.chart as any).removeIndicator === "function") {
         (ws.chart as any).removeIndicator(item.handle || item.id);
-      }
-
-      // Clear from persistence tracking
-      const sym = (ws as any)?.chart?.market?.symbol;
-      if (sym && item.id) {
-        try {
-          forgetPineIndicator(sym, item.id);
-          forgetLuxIndicator(sym, item.id);
-        } catch {}
       }
 
       setFeedback(`Removed "${item.name}" from chart`);

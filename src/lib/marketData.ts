@@ -18,6 +18,8 @@
  *   // later: stop()
  */
 import { HyperliquidProvider } from "@luxalgo/vela/providers/hyperliquid";
+import { BinanceProvider } from "@luxalgo/vela/providers/binance";
+import { CoinbaseProvider } from "@luxalgo/vela/providers/coinbase";
 import { AlpacaProvider, isAlpacaEquity } from "./alpacaProvider";
 import { TwelveDataProvider, isForexSymbol } from "./twelveDataProvider";
 import { AlphaVantageProvider, isCommoditySymbol } from "./alphaVantageProvider";
@@ -25,6 +27,8 @@ import { AlphaVantageProvider, isCommoditySymbol } from "./alphaVantageProvider"
 import type { OHLCV, BarRange } from "@luxalgo/vela/plugin";
 
 const provider = new HyperliquidProvider();
+const binanceProvider = new BinanceProvider();
+const coinbaseProvider = new CoinbaseProvider();
 const alpacaProvider = new AlpacaProvider();
 const twelveDataProvider = new TwelveDataProvider();
 const alphaVantageProvider = new AlphaVantageProvider();
@@ -78,6 +82,30 @@ export function liveBars(): OHLCV[] {
     (window as unknown as { __bars?: number }).__bars = bars.length;
   }
   return bars;
+}
+
+/** Fetch bars for the chart's actual active market/provider on demand. */
+export async function getChartBars(
+  symbol: string,
+  timeframe: string,
+  providerName?: string,
+  window?: { from?: number; to?: number },
+): Promise<OHLCV[]> {
+  const name = (providerName ?? "").toLowerCase();
+  const range: BarRange = { limit: 1500, ...window };
+  try {
+    let result: OHLCV[];
+    if (isForexSymbol(symbol)) result = await twelveDataProvider.getBars(symbol, timeframe, range);
+    else if (isCommoditySymbol(symbol)) result = await alphaVantageProvider.getBars(symbol, timeframe, range);
+    else if (isAlpacaEquity(symbol) || name === "alpaca") result = await alpacaProvider.getBars(symbol, timeframe, range);
+    else if (name === "binance") result = await binanceProvider.getBars(symbol, timeframe, range);
+    else if (name === "coinbase") result = await coinbaseProvider.getBars(symbol, timeframe, range);
+    else result = await provider.getBars(symbol, timeframe, range);
+    return result.slice().sort((a, b) => a.time - b.time);
+  } catch (error) {
+    console.warn("[trade-pro] active chart bar fetch failed:", error);
+    return [];
+  }
 }
 
 /** True once history has landed (guards "wait for data" paths). */
