@@ -314,6 +314,17 @@ function installTimeframeInteractionFix(ws: VelaWorkspace, container: HTMLElemen
             ws.chart?.setMarket({ timeframe: tfVal, bars: barsForTf(tfVal) });
           } catch {}
         }
+        // Ensure dropdown closes smoothly after selection
+        try {
+          const caret = container.querySelector(".vela-widget-tf-caret") as HTMLButtonElement | null;
+          if (caret && (caret.getAttribute("data-state") === "open" || caret.getAttribute("aria-expanded") === "true")) {
+            setTimeout(() => {
+              if (caret.getAttribute("data-state") === "open" || caret.getAttribute("aria-expanded") === "true") {
+                caret.click();
+              }
+            }, 60);
+          }
+        } catch {}
       }
     }
   };

@@ -6172,7 +6172,7 @@ body.resizing-col .market-panel {
 .vela-widget-topbar {
   max-width: 100%;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
   scrollbar-width: none;
   -ms-overflow-style: none;
   position: relative;
@@ -6193,14 +6193,37 @@ body.resizing-col .market-panel {
   gap: 4px;
 }
 .vela-widget-tf-group {
-  max-width: 280px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  flex-shrink: 1;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  overflow: visible;
+  min-width: max-content;
 }
-.vela-widget-tf-group::-webkit-scrollbar {
-  display: none;
+
+/* --- Zag.js / Vela Dropdown Menus & Positioners Stacking Fix --- */
+/* Zag.js sets --z-index inline on [data-part="positioner"] (e.g. --z-index: 50),
+   but lacks an explicit z-index in CSS, causing menus to be trapped behind the chart canvas.
+   Elevating positioners ensures dropdown menus float above all chart canvases and overlay layers. */
+.vela-workspace .vela-ui-layer[data-part="positioner"],
+.vela-workspace [data-part="positioner"] {
+  z-index: var(--z-index, 120) !important;
 }
+.vela-workspace [data-scope="menu"][data-part="positioner"],
+.vela-ui-layer[data-scope="menu"] {
+  z-index: 150 !important;
+}
+.vela-workspace [data-scope="tooltip"][data-part="positioner"] {
+  z-index: 200 !important;
+}
+.vela-menu {
+  position: relative;
+  z-index: var(--vela-z-menu, 150) !important;
+  pointer-events: auto !important;
+}
+.vela-menu-item {
+  pointer-events: auto !important;
+  cursor: pointer;
+}
+
 
 
