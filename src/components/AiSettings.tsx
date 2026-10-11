@@ -1,10 +1,9 @@
 /**
  * AiSettings — the "bring your own model" panel.
  *
- * The user enters an Endpoint URL + API key, the app persists them via the
- * local relay (which stores them in ai.config.json, never in the browser),
- * fetches the provider's model list for a dropdown, and lets the user pick one
- * — or type a custom model id the list doesn't include.
+ * The user enters an Endpoint URL + API key, the app stores them in this
+ * browser, fetches the provider's model list through the relay, and lets the
+ * user pick one — or type a custom model id the list doesn't include.
  */
 import { useEffect, useState } from "react";
 import {
@@ -27,7 +26,9 @@ export function AiSettings({ onStatus, onClose }: Props) {
   const [models, setModels] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelError, setModelError] = useState("");
+  const [relayError, setRelayError] = useState("");
   const [hasKey, setHasKey] = useState(false);
+  const [clearKey, setClearKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -41,9 +42,22 @@ export function AiSettings({ onStatus, onClose }: Props) {
         setEndpoint(c.endpoint);
         setModel(c.model);
         setHasKey(c.hasKey);
+        setRelayError("");
+        if (c.endpoint) {
+          setLoadingModels(true);
+          void listModels().then((list) => {
+            if (alive) setModels(c.model && !list.includes(c.model) ? [c.model, ...list] : list);
+          }).catch((e) => {
+            if (alive) setModelError(e instanceof Error ? e.message : String(e));
+          }).finally(() => {
+            if (alive) setLoadingModels(false);
+          });
+        }
       })
-      .catch(() => {
-        /* relay not up yet — the fields stay editable */
+      .catch((e) => {
+        if (alive) {
+          setRelayError(e instanceof Error ? e.message : String(e));
+        }
       });
     return () => {
       alive = false;
@@ -52,8 +66,8 @@ export function AiSettings({ onStatus, onClose }: Props) {
 
   // Fetch the model dropdown whenever the endpoint or key changes and the
   // user hasn't typed a custom id.
-  const refreshModels = async (ep: string, key: string) => {
-    if (!ep.trim()) {
+  const refreshModels = async () => {
+    if (!endpoint.trim()) {
       setModels([]);
       setModelError("");
       return;
@@ -62,9 +76,7 @@ export function AiSettings({ onStatus, onClose }: Props) {
     setModelError("");
     try {
       const list = await listModels();
-      setModels(list);
-      // If the stored model isn't in the list, keep it (custom id).
-      if (model && !list.includes(model)) setModels((m) => [model, ...m]);
+      setModels(model && !list.includes(model) ? [model, ...list] : list);
     } catch (e) {
       setModels([]);
       setModelError(e instanceof Error ? e.message : String(e));
@@ -72,14 +84,6 @@ export function AiSettings({ onStatus, onClose }: Props) {
       setLoadingModels(false);
     }
   };
-
-  // Auto-fetch once the config is loaded with an endpoint in place.
-  useEffect(() => {
-    if (endpoint && !models.length && !modelError) {
-      void refreshModels(endpoint, apiKey);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpoint]);
 
   const save = async () => {
     setSaving(true);
@@ -89,18 +93,22 @@ export function AiSettings({ onStatus, onClose }: Props) {
         endpoint: endpoint.trim(),
         // An empty string clears a stored key; leaving the field untouched
         // (placeholder shown) preserves it.
-        apiKey: apiKey === "" && hasKey ? undefined : apiKey,
+        apiKey: clearKey ? "" : apiKey === "" && hasKey ? undefined : apiKey,
         model: model.trim(),
       });
       setHasKey(c.hasKey);
       setSaved(true);
+      setRelayError("");
+      if (apiKey || clearKey) setApiKey("");
+      setClearKey(false);
       onStatus(
         `AI endpoint saved: ${c.endpoint || "(none)"}` +
           (c.model ? ` · model: ${c.model}` : "") +
           (c.hasKey ? " · key stored" : ""),
       );
-      if (c.endpoint) void refreshModels(c.endpoint, apiKey);
+      if (c.endpoint) void refreshModels();
     } catch (e) {
+      setRelayError(e instanceof Error ? e.message : String(e));
       onStatus(`Couldn't save the AI settings: ${e instanceof Error ? e.message : e}`);
     } finally {
       setSaving(false);
@@ -126,7 +134,9 @@ export function AiSettings({ onStatus, onClose }: Props) {
         placeholder="https://api.openai.com/v1"
         value={endpoint}
         onChange={(e) => setEndpoint(e.target.value)}
-        onBlur={() => refreshModels(endpoint, apiKey)}
+        onBlur={() => {
+          if (hasKey) void refreshModels();
+        }}
       />
       <div className="ai-settings-hint">
         Any OpenAI-compatible server: OpenAI, Groq, OpenRouter, LM Studio, Ollama…
@@ -135,19 +145,35 @@ export function AiSettings({ onStatus, onClose }: Props) {
       <label className="ai-settings-label" htmlFor="ai-key">
         API key
       </label>
+      {hasKey && (
+        <button
+          type="button"
+          className="ai-key-clear"
+          aria-pressed={clearKey}
+          onClick={() => {
+            setClearKey((value) => !value);
+            setApiKey("");
+          }}
+        >
+          {clearKey ? "Keep saved key" : "Remove saved key"}
+        </button>
+      )}
       <input
         id="ai-key"
         className="ai-settings-input"
         type="password"
         spellCheck={false}
-        placeholder={hasKey ? "•••• stored — type to replace" : "sk-…"}
+        placeholder={clearKey ? "Saved key will be removed" : hasKey ? "•••• stored — type to replace" : "sk-…"}
         value={apiKey}
-        onChange={(e) => setApiKey(e.target.value)}
+        onChange={(e) => {
+          setApiKey(e.target.value);
+          if (e.target.value) setClearKey(false);
+        }}
       />
       <div className="ai-settings-hint">
         {hasKey
-          ? "A key is stored on this machine only. Clear the field and save to remove it."
-          : "Stored locally in ai.config.json — never in the browser, never sent anywhere but the endpoint."}
+        ? "Saved locally for this app. Leave it blank to keep it, or remove it and save to clear it."
+          : "Saved locally for this app and sent only through the relay to the endpoint you choose."}
       </div>
 
       <label className="ai-settings-label" htmlFor="ai-model">
@@ -180,6 +206,11 @@ export function AiSettings({ onStatus, onClose }: Props) {
           Couldn't list models: {modelError}
         </div>
       )}
+      {relayError && (
+        <div className="ai-settings-hint ai-settings-err" role="status">
+          {relayError}
+        </div>
+      )}
 
       <label className="ai-settings-label" htmlFor="ai-model-custom">
         Custom model id
@@ -200,7 +231,7 @@ export function AiSettings({ onStatus, onClose }: Props) {
         <button
           className="ai-settings-save"
           onClick={save}
-          disabled={saving || (!endpoint.trim() && !model.trim() && apiKey === "")}
+          disabled={saving || (!endpoint.trim() && !model.trim() && apiKey === "" && !clearKey)}
         >
           {saving ? "Saving…" : "Save"}
         </button>

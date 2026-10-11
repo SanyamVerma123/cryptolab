@@ -7,15 +7,15 @@
  *                          so `npm run dev` needs NO second process, no port,
  *                          no CORS. That's why the app is served at /ai etc.
  *
- * The user owns the model: they paste an Endpoint URL + API key in the app's AI
- * settings; we persist them to `ai.config.json` next to this file and never
- * echo the key back over HTTP (only a boolean hasKey).
+ * Hosted clients send their browser-local BYOK config with each request; the
+ * relay never logs or returns the key. Local desktop installs can still use
+ * the optional ai.config.json-backed /config endpoint for compatibility.
  *
  * Routes:
- *   GET  /config  → { endpoint, model, hasKey }   (never echoes the key)
- *   POST /config  → { endpoint?, apiKey?, model? }  (persist to ai.config.json)
- *   GET  /models  → proxy `${endpoint}/models`     (model dropdown source)
- *   POST /ai      → { message, context } → { reply, actions }
+ *   GET  /config      → { endpoint, model, hasKey } (local compatibility)
+ *   POST /config      → { endpoint?, apiKey?, model? } (local compatibility)
+ *   POST /api/models  → { config } → { models } (stateless hosted route)
+ *   POST /api/ai      → { config, message, context } → { reply, actions }
  *
  * Chart actions: the relay plans WHAT to draw from the real bars the app sends
  * (FVGs, order blocks, trend lines, S/R, indicators). That layer is
@@ -439,6 +439,12 @@ function planActions(msg, bars) {
     }
   }
 
+  // Questions and explanations should go to the configured model. Only take
+  // the deterministic chart-action path when the user explicitly asks to act.
+  if (!/\b(add|insert|mark|draw|plot|show|place|arm|run|clear|remove|delete|erase|create|make|put|apply|find|detect|identify)\b/.test(t)) {
+    return { actions, note };
+  }
+
   // 2. Order blocks — box the last opposite candle before each impulse.
   if (/\border ?block|\bob\b|smart money|smc/.test(t)) {
     const obs = findOrderBlocks(bars);
@@ -623,6 +629,15 @@ function send(res, code, obj) {
 }
 
 function readBody(req) {
+  // Vercel's Node runtime may parse JSON before invoking the function, while
+  // Vite and the standalone relay provide a normal incoming request stream.
+  if (req.body !== undefined) {
+    const body = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+    if (Buffer.byteLength(body) > 1_000_000) {
+      return Promise.reject(new Error("payload too large"));
+    }
+    return Promise.resolve(body);
+  }
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
@@ -656,13 +671,43 @@ export async function handleRelay(req, res) {
   }
 
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
+  const stateless = url.pathname.startsWith("/api/");
+  const pathname = stateless ? url.pathname.slice(4) : url.pathname;
   const ours = ["/config", "/models", "/ai"];
-  if (!ours.includes(url.pathname)) return false;
+  if (!ours.includes(pathname)) return false;
 
   // GET /config — the app reads this on open to pre-fill the settings form.
   // The API key is never returned; only whether one is stored.
   if (req.method === "GET" && url.pathname === "/config") {
     send(res, 200, redacted(loadConfig()));
+    return true;
+  }
+
+  // Hosted builds are stateless: the browser keeps each user's BYOK settings
+  // locally and sends them with model/chat requests. This route never writes
+  // one visitor's key into a shared server file.
+  if (stateless && pathname === "/models" && req.method === "POST") {
+    try {
+      const payload = JSON.parse(await readBody(req));
+      const supplied = payload?.config;
+      const cfg = supplied && typeof supplied === "object"
+        ? {
+            endpoint: String(supplied.endpoint ?? "").trim(),
+            apiKey: String(supplied.apiKey ?? "").trim(),
+            model: String(supplied.model ?? "").trim(),
+          }
+        : process.env.VERCEL
+          ? { endpoint: "", apiKey: "", model: "" }
+          : loadConfig();
+      const models = await fetchModels(cfg.endpoint, cfg.apiKey);
+      send(res, 200, { ok: true, models });
+    } catch (e) {
+      send(res, 502, {
+        ok: false,
+        models: [],
+        error: String(e instanceof Error ? e.message : e),
+      });
+    }
     return true;
   }
 
@@ -687,7 +732,7 @@ export async function handleRelay(req, res) {
 
   // GET /models — the model dropdown. Proxied server-side so the browser never
   // holds the key and CORS is never a problem.
-  if (req.method === "GET" && url.pathname === "/models") {
+  if (!stateless && req.method === "GET" && pathname === "/models") {
     try {
       const cfg = loadConfig();
       const models = await fetchModels(cfg.endpoint, cfg.apiKey);
@@ -703,7 +748,7 @@ export async function handleRelay(req, res) {
   }
 
   // POST /ai — the chat itself.
-  if (req.method === "POST" && url.pathname === "/ai") {
+  if (req.method === "POST" && pathname === "/ai") {
     let payload;
     try {
       payload = JSON.parse(await readBody(req));
@@ -718,7 +763,16 @@ export async function handleRelay(req, res) {
       return true;
     }
 
-    const cfg = loadConfig();
+    const supplied = payload?.config;
+    const cfg = supplied && typeof supplied === "object"
+      ? {
+          endpoint: String(supplied.endpoint ?? "").trim(),
+          apiKey: String(supplied.apiKey ?? "").trim(),
+          model: String(supplied.model ?? "").trim(),
+        }
+      : process.env.VERCEL
+        ? { endpoint: "", apiKey: "", model: "" }
+        : loadConfig();
     const ctx = payload?.context ?? {};
     const bars = Array.isArray(ctx.bars) ? ctx.bars : [];
     const last = bars.at(-1);

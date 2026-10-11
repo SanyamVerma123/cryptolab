@@ -1244,6 +1244,17 @@ html, body, #root {
 /* === AI settings (webhook) === */
 .ai-settings { padding: 9px 10px; border-bottom: 1px solid #232a3a; display: flex; flex-direction: column; gap: 6px; }
 .ai-settings-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #5b6478; }
+.ai-key-clear {
+  align-self: flex-end;
+  margin: -4px 0 2px;
+  border: 0;
+  background: transparent;
+  color: #8b94a3;
+  font-size: 10px;
+  cursor: pointer;
+}
+.ai-key-clear:hover { color: #f6465d; }
+.ai-key-clear[aria-pressed="true"] { color: #f6465d; }
 .ai-settings-input {
   background: #0f131c; border: 1px solid #232a3a; border-radius: 7px;
   color: #e6e9f0; font-size: 12px; padding: 7px 9px; outline: none;
@@ -6200,30 +6211,252 @@ body.resizing-col .market-panel {
   min-width: max-content;
 }
 
-/* --- Zag.js / Vela Dropdown Menus & Positioners Stacking Fix --- */
-/* Zag.js sets --z-index inline on [data-part="positioner"] (e.g. --z-index: 50),
-   but lacks an explicit z-index in CSS, causing menus to be trapped behind the chart canvas.
-   Elevating positioners ensures dropdown menus float above all chart canvases and overlay layers. */
+/* --- Zag.js / Vela Dropdown Menus, Dialogs & Positioners Stacking Fix --- */
+[data-scope="menu"][data-part="positioner"],
 .vela-workspace .vela-ui-layer[data-part="positioner"],
-.vela-workspace [data-part="positioner"] {
-  z-index: var(--z-index, 120) !important;
-}
-.vela-workspace [data-scope="menu"][data-part="positioner"],
-.vela-ui-layer[data-scope="menu"] {
-  z-index: 150 !important;
-}
-.vela-workspace [data-scope="tooltip"][data-part="positioner"] {
-  z-index: 200 !important;
-}
-.vela-menu {
-  position: relative;
-  z-index: var(--vela-z-menu, 150) !important;
+.vela-workspace [data-part="positioner"],
+.vela-ui-layer[data-scope="menu"],
+.vela-menu-positioner {
+  z-index: 9999 !important;
   pointer-events: auto !important;
 }
+
+[data-scope="tooltip"][data-part="positioner"] {
+  z-index: 10002 !important;
+}
+
+.vela-menu,
+[data-scope="menu"][data-part="content"] {
+  position: relative;
+  z-index: 10000 !important;
+  pointer-events: auto !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6) !important;
+}
+
 .vela-menu-item {
   pointer-events: auto !important;
-  cursor: pointer;
+  cursor: pointer !important;
 }
 
+/* Vela Chart Settings & Zag Dialogs */
+[data-scope="dialog"][data-part="positioner"],
+.vela-dialog-positioner {
+  z-index: 10000 !important;
+  pointer-events: auto !important;
+}
 
+[data-scope="dialog"][data-part="backdrop"],
+.vela-dialog-backdrop {
+  z-index: 9999 !important;
+  pointer-events: auto !important;
+  backdrop-filter: blur(3px);
+}
 
+[data-scope="dialog"][data-part="content"],
+.vela-dialog-content {
+  z-index: 10001 !important;
+  pointer-events: auto !important;
+}
+
+/* --- TradingView-Style Change Interval Modal --- */
+.change-interval-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  animation: change-interval-fadein 0.15s ease-out;
+}
+
+@keyframes change-interval-fadein {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.change-interval-card {
+  width: 320px;
+  max-width: 90vw;
+  background: #1e222d;
+  border: 1px solid #2a2e39;
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65);
+  overflow: hidden;
+  font-family: inherit;
+  color: #d1d4dc;
+  animation: change-interval-pop 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes change-interval-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.change-interval-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #2a2e39;
+  background: #191c24;
+}
+
+.change-interval-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f0f3fa;
+}
+
+.change-interval-close {
+  background: transparent;
+  border: none;
+  color: #787b86;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  transition: all 0.12s ease;
+}
+
+.change-interval-close:hover {
+  color: #f0f3fa;
+  background: #2a2e39;
+}
+
+.change-interval-form {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.change-interval-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.change-interval-input {
+  flex: 1;
+  height: 38px;
+  background: #131722;
+  border: 1px solid #363c4e;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 0 12px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.change-interval-input:focus {
+  border-color: #2962ff;
+  box-shadow: 0 0 0 1px #2962ff;
+}
+
+.change-interval-select {
+  height: 38px;
+  background: #131722;
+  border: 1px solid #363c4e;
+  border-radius: 5px;
+  color: #d1d4dc;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 0 8px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.change-interval-select:focus {
+  border-color: #2962ff;
+}
+
+.change-interval-presets-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #787b86;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.change-interval-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.change-interval-pill {
+  padding: 4px 8px;
+  background: #2a2e39;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #b2b5be;
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.change-interval-pill:hover {
+  background: #363c4e;
+  color: #f0f3fa;
+}
+
+.change-interval-pill.active {
+  background: #2962ff;
+  color: #fff;
+  border-color: #2962ff;
+}
+
+.change-interval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid #2a2e39;
+}
+
+.change-interval-btn {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.12s ease;
+}
+
+.change-interval-btn.cancel {
+  background: #2a2e39;
+  color: #d1d4dc;
+}
+
+.change-interval-btn.cancel:hover {
+  background: #363c4e;
+  color: #fff;
+}
+
+.change-interval-btn.apply {
+  background: #2962ff;
+  color: #fff;
+}
+
+.change-interval-btn.apply:hover {
+  background: #1e4fc4;
+}

@@ -127,6 +127,7 @@ export function loadPineLibrary(): SavedPineScript[] {
 export function savePineLibrary(lib: SavedPineScript[]): void {
   try {
     localStorage.setItem(PINE_LIB_KEY, JSON.stringify(lib));
+    window.dispatchEvent(new CustomEvent("pine-lib-changed"));
   } catch {
     /* ignore */
   }
@@ -146,22 +147,44 @@ export function pineNameForIndicatorId(id: string | undefined): string | undefin
   return idToName.get(id);
 }
 
-/** Forget the script named `name` for `symbol` — it will not come back. */
+/** Forget the script named `name` — removes from coin (or ALL coins if symbol omitted) and library. */
 export function forgetPineIndicator(
   symbol: string | undefined,
   name: string
 ): void {
+  if (!name) return;
   const coin = bareSymbol(symbol);
-  if (!coin || !name) return;
   const store = load();
-  const list = store[coin] || [];
-  if (list.length) {
-    store[coin] = list.filter((s) => s.name !== name);
-    save(store);
+
+  if (coin && store[coin]) {
+    store[coin] = store[coin].filter((s) => s.name !== name);
   }
+
+  // Always scrub across all coins if symbol is omitted or to ensure no orphans
+  if (!coin) {
+    for (const c of Object.keys(store)) {
+      if (Array.isArray(store[c])) {
+        store[c] = store[c].filter((s) => s.name !== name);
+      }
+    }
+  }
+
+  save(store);
   removePineFromLibrary(name);
-  console.info("[trade-pro:pine] forgetPineIndicator", coin, name,
-    "-> remaining:", (store[coin] || []).map((s) => s.name));
+  console.info("[trade-pro:pine] forgetPineIndicator", coin || "all", name);
+}
+
+/** Scrub a deleted script completely from all coins, library, and storage */
+export function forgetPineIndicatorEverywhere(name: string): void {
+  if (!name) return;
+  const store = load();
+  for (const c of Object.keys(store)) {
+    if (Array.isArray(store[c])) {
+      store[c] = store[c].filter((s) => s.name !== name);
+    }
+  }
+  save(store);
+  removePineFromLibrary(name);
 }
 
 export interface PineRestoreResult {

@@ -25,11 +25,14 @@ import {
   loadPineLibrary,
   removePineFromLibrary,
   forgetPineIndicator,
+  forgetPineIndicatorEverywhere,
   rememberPineIndicator,
   type SavedPineScript,
 } from "../lib/pinePersist";
 import { getIndicatorSource } from "../lib/luxAlgoClient";
 import { rememberLuxIndicator } from "../lib/luxPersist";
+import { pushToCloud, scheduleCloudPush } from "../lib/cloudSync";
+import { syncCustomLibrary } from "./PineEditor";
 import "../styles/indicatorsModal.css";
 
 interface Props {
@@ -99,32 +102,52 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
     });
   };
 
-  // Delete custom indicator (allowed ONLY for custom scripts)
-  const handleDeleteCustom = (name: string, e: React.MouseEvent) => {
+  // Delete custom indicator permanently from panel, chart, and database
+  const handleDeleteCustom = async (name: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm(`Are you sure you want to delete custom script "${name}"?`)) return;
+    if (!confirm(`Are you sure you want to permanently delete custom script "${name}"?`)) return;
 
-    removePineFromLibrary(name);
+    // 1. Remove from local pine library and scrub from all coins
+    forgetPineIndicatorEverywhere(name);
     setCustomScripts(loadPineLibrary());
 
-    // Also forget and unmount from chart if currently active
+    // 2. Remove from favorites if favorited
+    setFavs((prev) => {
+      const next = prev.filter((id) => id !== name && !id.includes(name));
+      saveIndicatorFavorites(next);
+      return next;
+    });
+
+    // 3. Remove from live chart across ALL cells in workspace
     try {
-      const sym = (ws as any)?.active ? ws?.chart?.market?.symbol : undefined;
-      forgetPineIndicator(sym, name);
-
-      // Remove from live chart if present
-      const handles = ws?.chart?.indicators?.() || [];
-      for (const h of handles) {
-        if (h.title === name || (h as any).name === name) {
-          try {
-            ws?.chart?.removeIndicator?.(h);
-          } catch {}
+      if (ws) {
+        for (const cell of ws.cells()) {
+          const handles = cell.chart?.indicators?.() || [];
+          for (const h of handles) {
+            if (h.title === name || (h as any).name === name) {
+              try {
+                cell.chart.removeIndicator?.(h);
+              } catch {}
+            }
+          }
         }
+        // Re-sync library manifest to Vela
+        syncCustomLibrary(ws);
       }
-    } catch {}
+    } catch (err) {
+      console.warn("[trade-pro] error removing indicator from chart:", err);
+    }
 
-    setFeedback(`Deleted "${name}"`);
-    setTimeout(() => setFeedback(null), 2500);
+    // 4. Instantly push changes to Supabase Cloud Database
+    try {
+      await pushToCloud();
+      setFeedback(`Permanently deleted "${name}" from panel & database`);
+    } catch {
+      scheduleCloudPush(0);
+      setFeedback(`Deleted "${name}"`);
+    }
+
+    setTimeout(() => setFeedback(null), 3000);
   };
 
   // Add indicator to the chart

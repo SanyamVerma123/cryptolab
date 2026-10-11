@@ -52,8 +52,8 @@ interface Msg {
 
 export function AiPanel({ ws, open = true, onOpenChange, onPineOpen, inline = false }: Props) {
   const [log, setLog] = useState<Msg[]>([]);
-  const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   // The "endpoint URL + API key + model" settings, inline above the chat.
   const [showSettings, setSettingsOpen] = useState(false);
   const logRef = useRef<HTMLDivElement | null>(null);
@@ -112,85 +112,79 @@ export function AiPanel({ ws, open = true, onOpenChange, onPineOpen, inline = fa
 
   const respond = async (raw: string) => {
     const say = (text: string) => setLog((l) => [...l, { who: "bot", text }]);
+    if (busyRef.current) return;
     if (!ws) {
       say("Chart isn't ready yet — try again in a moment.");
       return;
     }
-
-    // Pull the bars ON SCREEN so the AI marks where the user is looking, not
-    // hundreds of bars back in history. `getVisibleRange` is the chart's own
-    // viewport; if it's unavailable we fall back to the recent tail.
-    let range: { from: number; to: number } | null = null;
-    try {
-      range = ws.chart.getVisibleRange();
-    } catch {
-      range = null;
-    }
-    const bars = visibleBarsInRange(range);
-
-    // READ THE CHART: describe what's actually on it — drawings, indicators,
-    // price — so the AI can answer "what do you see". Without this it only
-    // knows the symbol and can only guess, which is why it said there's
-    // nothing on the chart.
-    const chartState = readChartState(ws);
-
-    const ctx = {
-      symbol: (ws.chart.market?.symbol as string) ?? "?",
-      timeframe: (ws.chart.market?.timeframe as string) ?? "?",
-      bars,
-      chart: chartState,
-    };
-
+    busyRef.current = true;
     setBusy(true);
-    let reply;
-    try {
-      reply = await sendToAI(raw, ctx);
-    } finally {
-      setBusy(false);
-    }
 
-    // FVG is special-cased: the AI decides to mark gaps, but detection runs
-    // here on real bars (the model can't see them unless the webhook asks).
-    const wantsFVG = /fvg|fair value gap/i.test(raw);
-    if (wantsFVG && bars.length > 2) {
-      const gaps = findFVGs(bars);
-      if (gaps.length) {
-        const acts: ChartAction[] = gaps.map((g) => ({
-          type: "plotAt",
-          tool: "box",
-          anchors: [
-            { time: g.from, price: g.top },
-            { time: g.to, price: g.bottom },
-          ],
-        }));
-        const done = applyActions(ws, acts);
-        say(
-          `Marked ${gaps.length} fair value gap${gaps.length > 1 ? "s" : ""} on the visible bars (${gaps[0].up ? "bullish" : "bearish"} most recent). ` +
-            reply.reply,
-        );
-        void done;
+    try {
+      // Pull the bars ON SCREEN so the AI marks where the user is looking, not
+      // hundreds of bars back in history. Fall back to the recent tail if the
+      // chart viewport isn't ready yet.
+      let range: { from: number; to: number } | null = null;
+      try {
+        range = ws.chart.getVisibleRange();
+      } catch {
+        range = null;
+      }
+      const bars = visibleBarsInRange(range);
+
+      // Include actual drawings, indicators and price so chart questions use
+      // the current workspace instead of guessing.
+      const chartState = readChartState(ws);
+
+      const ctx = {
+        symbol: (ws.chart.market?.symbol as string) ?? "?",
+        timeframe: (ws.chart.market?.timeframe as string) ?? "?",
+        bars,
+        chart: chartState,
+      };
+
+      const reply = await sendToAI(raw, ctx);
+
+      // FVG detection stays deterministic and uses the visible bars. The LLM
+      // describes the result; it does not guess coordinates for the boxes.
+      const wantsFVG = /\b(mark|draw|plot|show|find|detect|identify)\b/i.test(raw) && /fvg|fair value gap/i.test(raw);
+      if (wantsFVG && bars.length > 2) {
+        const gaps = findFVGs(bars);
+        if (gaps.length) {
+          const acts: ChartAction[] = gaps.map((g) => ({
+            type: "plotAt",
+            tool: "box",
+            anchors: [
+              { time: g.from, price: g.top },
+              { time: g.to, price: g.bottom },
+            ],
+          }));
+          const done = applyActions(ws, acts);
+          say(
+            `Marked ${gaps.length} fair value gap${gaps.length > 1 ? "s" : ""} on the visible bars (${gaps[0].up ? "bullish" : "bearish"} most recent).` +
+              (done.length ? `\n${done.join("\n")}` : "") + `\n${reply.reply}`,
+          );
+          return;
+        }
+        say("No clean fair value gaps on the visible bars. I armed the Box tool so you can mark one manually.");
+        const done = applyActions(ws, [{ type: "draw", tool: "box" }]);
+        if (done.length) say(done.join("\n"));
         return;
       }
-      say("No clean fair value gaps on the visible bars. I armed the Box tool so you can mark one manually.");
-      applyActions(ws, [{ type: "draw", tool: "box" }]);
-      return;
+
+      const done = applyActions(ws, reply.actions ?? []);
+      say(reply.reply + (done.length ? "\n" + done.join("\n") : ""));
+    } catch (e) {
+      say(`The AI request failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
     }
-
-    const done = applyActions(ws, reply.actions ?? []);
-    say(reply.reply + (done.length ? "\n" + done.join("\n") : ""));
-  };
-
-  const send = () => {
-    const v = draft.trim();
-    if (!v || busy) return;
-    setLog((l) => [...l, { who: "user", text: v }]);
-    setDraft("");
-    void respond(v);
   };
 
   if (!open && !inline) return null;
 
-  const quickPrompts = ["mark fvg", "trend line", "ema 200", "support and resistance"];
+  const quickPrompts = ["mark fvg", "draw trend line", "add ema 200", "mark support and resistance"];
 
   return (
     <div
@@ -233,7 +227,7 @@ export function AiPanel({ ws, open = true, onOpenChange, onPineOpen, inline = fa
           <div className="ai-msg bot">
             Hi — I'm the chart AI. I can read the live chart, mark fair value
             gaps, arm drawing tools, add indicators, and run Pine scripts. Ask
-            in plain English: “mark fvg”, “trend line”, “ema 200”, “pine
+            in plain English: “mark fvg”, “draw trend line”, “add ema 200”, “pine
             plot(ta.rsi(close,14))”.
           </div>
         )}
@@ -279,7 +273,9 @@ export function AiPanel({ ws, open = true, onOpenChange, onPineOpen, inline = fa
             key={qp}
             type="button"
             className="ai-qp-chip"
+            disabled={busy}
             onClick={() => {
+              if (busyRef.current) return;
               setLog((l) => [...l, { who: "user", text: qp }]);
               void respond(qp);
             }}
@@ -291,10 +287,10 @@ export function AiPanel({ ws, open = true, onOpenChange, onPineOpen, inline = fa
 
       <div className="p-2 border-t border-border flex flex-col gap-1.5 bg-card/75 backdrop-blur-sm">
         <PromptInput
-          placeholder="Ask anything (e.g. mark fvg, trend line, ema 200)..."
+          placeholder="Ask anything (e.g. mark fvg, draw trend line, add ema 200)..."
           onSubmit={(message) => {
             const v = message.trim();
-            if (!v || busy) return;
+            if (!v || busyRef.current) return;
             setLog((l) => [...l, { who: "user", text: v }]);
             void respond(v);
           }}

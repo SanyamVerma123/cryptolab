@@ -39,6 +39,7 @@ import { TwelveDataProvider } from "../lib/twelveDataProvider";
 import { AlphaVantageProvider } from "../lib/alphaVantageProvider";
 import { ChartBarReplay } from "./ChartBarReplay";
 import { ChartRadialMenu } from "./ChartRadialMenu";
+import { ChangeIntervalModal } from "./ChangeIntervalModal";
 import { ErrorBoundary } from "./ErrorBoundary";
 
 // Register Vela's built-in presets ('1', '2h', '2v', '4', '8')
@@ -281,57 +282,45 @@ function wireAutoBackfill(chart: any, cell?: any): () => void {
   }
 }
 
-function installTimeframeInteractionFix(ws: VelaWorkspace, container: HTMLElement): () => void {
+const VALID_TIMEFRAMES = new Set([
+  "1", "3", "5", "15", "30", "45", "60", "120", "180", "240", "360", "480", "720", "D", "W", "M"
+]);
+
+function installTimeframeInteractionFix(ws: VelaWorkspace, _container: HTMLElement): () => void {
   const onClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement | null;
     if (!target) return;
 
-    // 1. If clicking the active timeframe chip, open the dropdown
-    const activeChip = target.closest(".vela-widget-tf[data-current='1']") as HTMLElement | null;
-    if (activeChip) {
-      const caret = container.querySelector(".vela-widget-tf-caret") as HTMLButtonElement | null;
-      if (caret) {
-        e.preventDefault();
-        e.stopPropagation();
-        caret.click();
-        return;
-      }
+    // Check if clicked item is inside a menu item
+    const menuItem = target.closest(".vela-menu-item") as HTMLElement | null;
+    if (!menuItem || target.closest(".vela-menu-star") || target.closest(".vela-fav")) return;
+
+    // Only proceed if this menu item explicitly holds a recognized timeframe value
+    const rawVal = menuItem.dataset.value || menuItem.dataset.veiId || menuItem.id?.split("/")?.pop();
+    if (!rawVal || !VALID_TIMEFRAMES.has(rawVal)) {
+      // Not a timeframe (e.g. chart style 'candles'/'line', settings tab 'symbol'/'scales', etc.)
+      // DO NOT touch it! Allow native Zag/Vela handlers to execute uninterrupted.
+      return;
     }
 
-    // 2. If clicking on an item inside the timeframe dropdown menu (.vela-menu)
-    const menuItem = target.closest(".vela-menu-item") as HTMLElement | null;
-    if (menuItem && !target.closest(".vela-menu-star") && !target.closest(".vela-fav")) {
-      const tfVal = menuItem.dataset.value || menuItem.dataset.veiId || menuItem.id?.split("/")?.pop();
-      if (tfVal) {
-        try {
-          if (ws.active) {
-            ws.active.setTimeframe(tfVal);
-          } else {
-            ws.chart?.setMarket({ timeframe: tfVal, bars: barsForTf(tfVal) });
-          }
-        } catch {
-          try {
-            ws.chart?.setMarket({ timeframe: tfVal, bars: barsForTf(tfVal) });
-          } catch {}
-        }
-        // Ensure dropdown closes smoothly after selection
-        try {
-          const caret = container.querySelector(".vela-widget-tf-caret") as HTMLButtonElement | null;
-          if (caret && (caret.getAttribute("data-state") === "open" || caret.getAttribute("aria-expanded") === "true")) {
-            setTimeout(() => {
-              if (caret.getAttribute("data-state") === "open" || caret.getAttribute("aria-expanded") === "true") {
-                caret.click();
-              }
-            }, 60);
-          }
-        } catch {}
+    try {
+      if (ws.active) {
+        ws.active.setTimeframe(rawVal);
+      } else {
+        ws.chart?.setMarket({ timeframe: rawVal, bars: barsForTf(rawVal) });
       }
+      window.dispatchEvent(new CustomEvent("tradepro:change-timeframe", { detail: { timeframe: rawVal } }));
+    } catch {
+      try {
+        ws.chart?.setMarket({ timeframe: rawVal, bars: barsForTf(rawVal) });
+      } catch {}
     }
   };
 
-  document.addEventListener("click", onClick, true);
+  // Run in bubble phase, NOT capture, so native Zag handlers run first
+  document.addEventListener("click", onClick, false);
   return () => {
-    document.removeEventListener("click", onClick, true);
+    document.removeEventListener("click", onClick, false);
   };
 }
 
@@ -652,6 +641,49 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     } catch { /* Vela may be remounting its topbar */ }
   }, [replayActive]);
 
+  // TradingView-Style Quick Interval hotkey: Typing any digit (0-9) or shortcut key (d, w, m, comma)
+  // while viewing the chart opens the Change Interval dialog.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if modifier keys are pressed (Ctrl, Meta/Cmd, Alt)
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      // Ignore if user is currently typing in an input, textarea, select, or editable element
+      const active = document.activeElement;
+      if (active) {
+        const tag = active.tagName.toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select") return;
+        if (active.getAttribute("contenteditable") === "true") return;
+        if (active.getAttribute("role") === "textbox" || active.getAttribute("role") === "combobox") return;
+      }
+
+      // Ignore if any modal or dialog is already open
+      const hasOpenModal = document.querySelector(
+        ".indicators-modal-overlay, .settings-modal-overlay, .auth-modal-overlay, .pine-editor-overlay, [data-scope='dialog'][data-part='content'], .change-interval-modal-overlay"
+      );
+      if (hasOpenModal) return;
+
+      const key = e.key;
+      const isDigit = /^[0-9]$/.test(key);
+      const isTimeframeLetter = /^[dwmDWM]$/.test(key);
+      const isComma = key === ",";
+
+      if (isDigit || isTimeframeLetter || isComma) {
+        e.preventDefault();
+        e.stopPropagation();
+        const initialVal = isComma ? "" : key;
+        window.dispatchEvent(
+          new CustomEvent("tradepro:open-change-interval", {
+            detail: { initialValue: initialVal },
+          })
+        );
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   return (
     <div
       className="vela-chart-container"
@@ -670,6 +702,9 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       </ErrorBoundary>
       <ErrorBoundary>
         <ChartRadialMenu ws={wsInstance} />
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <ChangeIntervalModal ws={wsInstance} currentTf={timeframe} />
       </ErrorBoundary>
     </div>
   );

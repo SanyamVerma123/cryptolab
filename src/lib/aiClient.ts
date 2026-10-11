@@ -1,16 +1,14 @@
 /**
  * aiClient — the AI bridge.
  *
- * The user owns the model: they paste an Endpoint URL + API key into the AI
- * settings panel; this client persists them via the local relay and pulls the
- * provider's model list for a dropdown. The connection to the agent brain is
- * gone — the only AI served is the provider the user configures.
+ * The user owns the model: they enter an endpoint, API key and model in AI
+ * settings. Settings stay in this browser and travel only to the app's relay,
+ * which calls the provider and returns chart actions.
  *
- * Routes on the relay (src/server/aiRelay.mjs, 127.0.0.1:8791):
- *   GET  /config → { endpoint, model, hasKey }
- *   POST /config → { endpoint?, apiKey?, model? }
- *   GET  /models → { models: string[] }
- *   POST /ai     → { message, context } → { reply, actions }
+ * Routes on the relay:
+ *   GET  /config      → { endpoint, model, hasKey } (legacy local config)
+ *   POST /api/models  → { config } → { models: string[] }
+ *   POST /api/ai      → { config, message, context } → { reply, actions }
  *
  * Chart actions are the small protocol between the AI and the chart, and the
  * deterministic resolver below is the reliable floor: even with no endpoint
@@ -59,32 +57,102 @@ export interface AiConfig {
   hasKey: boolean;
 }
 
-export function getRelayConfig(): Promise<AiConfig> {
-  return fetch(`${RELAY_URL}/config`)
-    .then((r) => (r.ok ? r.json() : { endpoint: "", model: "", hasKey: false }))
-    .catch(() => ({ endpoint: "", model: "", hasKey: false }));
+interface StoredAiConfig extends AiConfig { apiKey: string }
+const AI_CONFIG_KEY = "trade-pro:ai-config";
+let legacyRelayConfig = false;
+
+function readStoredAiConfig(): StoredAiConfig | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(AI_CONFIG_KEY) ?? "null");
+    if (!value || typeof value.endpoint !== "string") return null;
+    return {
+      endpoint: value.endpoint,
+      model: String(value.model ?? ""),
+      apiKey: String(value.apiKey ?? ""),
+      hasKey: Boolean(value.apiKey),
+    };
+  } catch {
+    return null;
+  }
 }
 
-export function setRelayConfig(patch: {
+function safeRelayConfig(value: unknown): AiConfig {
+  const config = value as Partial<AiConfig> | null;
+  if (!config || typeof config.endpoint !== "string") {
+    throw new Error("AI relay returned an invalid configuration.");
+  }
+  return {
+    endpoint: config.endpoint,
+    model: String(config.model ?? ""),
+    hasKey: Boolean(config.hasKey),
+  };
+}
+
+export async function getRelayConfig(): Promise<AiConfig> {
+  const stored = readStoredAiConfig();
+  if (stored) return { endpoint: stored.endpoint, model: stored.model, hasKey: stored.hasKey };
+
+  // Keep compatibility with desktop installs that still have a relay config.
+  // Hosted builds have no persistent server config, so start with blank fields.
+  try {
+    const response = await fetch(`${RELAY_URL}/config`);
+    if (response.ok) {
+      const config = safeRelayConfig(await response.json());
+      legacyRelayConfig = true;
+      return config;
+    }
+  } catch {
+    /* hosted app config is stored per browser */
+  }
+  return { endpoint: "", model: "", hasKey: false };
+}
+
+export async function setRelayConfig(patch: {
   endpoint?: string;
   apiKey?: string;
   model?: string;
 }): Promise<AiConfig> {
-  return fetch(`${RELAY_URL}/config`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  })
-    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`relay ${r.status}`))))
-    .then((j) => j.config as AiConfig);
+  const current = readStoredAiConfig();
+  if (legacyRelayConfig && !current) {
+    const response = await fetch(`${RELAY_URL}/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok || !result?.config) {
+      throw new Error(result?.error || `AI relay returned HTTP ${response.status}.`);
+    }
+    return safeRelayConfig(result.config);
+  }
+  const next: StoredAiConfig = {
+    endpoint: patch.endpoint ?? current?.endpoint ?? "",
+    model: patch.model ?? current?.model ?? "",
+    apiKey: patch.apiKey === undefined ? current?.apiKey ?? "" : patch.apiKey.trim(),
+    hasKey: false,
+  };
+  next.hasKey = Boolean(next.apiKey);
+  try {
+    localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(next));
+  } catch {
+    throw new Error("Could not save AI settings in this browser. Check that site storage is enabled.");
+  }
+  return { endpoint: next.endpoint, model: next.model, hasKey: next.hasKey };
 }
 
 /** Fetch the provider's model list for the dropdown. */
 export async function listModels(): Promise<string[]> {
-  const r = await fetch(`${RELAY_URL}/models`);
-  const j = (await r.json()) as { models?: string[]; error?: string };
-  if (!r.ok || !j.models?.length) {
-    throw new Error(j.error || `relay returned ${r.status}`);
+  const config = readStoredAiConfig();
+  const r = await fetch(`${RELAY_URL}/api/models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ config: config ? { endpoint: config.endpoint, apiKey: config.apiKey, model: config.model } : undefined }),
+  });
+  const j = (await r.json().catch(() => null)) as
+    | { models?: string[]; error?: string }
+    | null;
+  if (!r.ok || !j?.models?.length) {
+    throw new Error(j?.error || `AI relay returned HTTP ${r.status}.`);
   }
   return j.models;
 }
@@ -140,6 +208,12 @@ export function resolveLocally(text: string): AiReply {
     if (!src) return { reply: "Paste a Pine script after `pine` — e.g. `pine plot(ta.ema(close, 20))`." };
     actions.push({ type: "pine", source: src });
     return { reply: "Running that Pine script on the chart now.", actions };
+  }
+
+  if (!/\b(add|insert|mark|draw|plot|show|place|arm|run|clear|remove|delete|erase|create|make|put|apply|find|detect|identify)\b/.test(t)) {
+    return {
+      reply: "The AI relay is unavailable, so I couldn't answer that question. Reconnect the relay or ask for a direct chart action such as “mark fvg” or “add macd”.",
+    };
   }
 
   return {
@@ -325,31 +399,53 @@ export async function sendToAI(
   text: string,
   context: { symbol: string; timeframe: string; bars: Bar[] },
 ): Promise<AiReply> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 180_000);
   try {
-    // The model can take a while to answer, so allow up to 3 min.
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 180_000);
-    const res = await fetch(`${RELAY_URL}/ai`, {
+    const config = readStoredAiConfig();
+    const res = await fetch(`${RELAY_URL}/api/ai`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, context }),
+      body: JSON.stringify({ message: text, context, config: config ? { endpoint: config.endpoint, apiKey: config.apiKey, model: config.model } : undefined }),
       signal: controller.signal,
     });
-    clearTimeout(timeout);
-    if (!res.ok) throw new Error(`relay returned ${res.status}`);
-    const data = (await res.json()) as AiReply;
+    const data = (await res.json().catch(() => null)) as
+      | (AiReply & { error?: string })
+      | null;
+    if (!res.ok) {
+      // The relay includes useful provider diagnostics (bad key, missing
+      // model, quota, etc.) in its JSON body. Preserve those instead of
+      // hiding them behind the local command parser.
+      return {
+        reply:
+          data?.reply ||
+          data?.error ||
+          `The AI request failed (HTTP ${res.status}). Check the endpoint and model in AI settings.`,
+        actions: Array.isArray(data?.actions) ? data.actions : [],
+      };
+    }
+    if (!data || typeof data.reply !== "string") {
+      throw new Error("The AI relay returned an invalid response.");
+    }
     return {
-      reply: data.reply ?? "(empty reply)",
+      reply: data.reply || "The model returned an empty reply.",
       actions: Array.isArray(data.actions) ? data.actions : [],
     };
   } catch (e) {
+    const reason = e instanceof Error
+      ? e.name === "AbortError"
+        ? "The AI request timed out after 3 minutes. Try a shorter prompt or check the provider."
+        : e.message
+      : "unknown error";
     const local = resolveLocally(text);
     return {
       ...local,
       reply:
-        `Couldn't reach the AI relay (${e instanceof Error ? e.message : "unknown"}). Start it with \`node src/server/aiRelay.mjs\`. Falling back to the built-in parser.\n\n` +
+        `Couldn't reach the AI relay (${reason}). In development, start the app with \`npm run dev\`; for preview, start \`node src/server/aiRelay.mjs\`. Falling back to the built-in chart-command parser.\n\n` +
         local.reply,
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
