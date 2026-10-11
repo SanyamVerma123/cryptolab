@@ -15,7 +15,7 @@
     "update:all": "npm update"
   },
   "dependencies": {
-    "@getcandlekit/charts": "^0.1.0",
+    "@getcandlekit/charts": "^0.2.0",
     "@luxalgo/vela": "^0.8.0",
     "@luxalgo/vela-pinets": "^0.2.13",
     "@radix-ui/react-collapsible": "^1.1.21",
