@@ -132,8 +132,8 @@ export function visibleBarsInRange(
 }
 
 /**
- * Load the same history Vela loads, straight from the provider.
- * ~5000 candles is Hyperliquid's cap — plenty for FVGs and S/R.
+ * Load recent history for AI and drawing context. The chart itself can page
+ * farther back through SafeHyperliquidProvider as the user scrolls.
  */
 async function loadHistory(symbol: string, timeframe: string): Promise<void> {
   try {

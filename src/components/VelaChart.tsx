@@ -193,6 +193,10 @@ const TF_BARS: Record<string, number> = {
   D: 2500, W: 1200, M: 600,
 };
 
+const HYPERLIQUID_HISTORY_PAGE = 1_000;
+const HYPERLIQUID_HISTORY_LIMIT = 30_000;
+const HYPERLIQUID_PREFETCH_VIEWPORTS = 6;
+
 function barsForTf(tf: string): number {
   return TF_BARS[tf] ?? 2500;
 }
@@ -218,10 +222,13 @@ function wireAutoBackfill(chart: any, cell?: any): () => void {
     const market = chart.market;
     const provider = String(market?.provider ?? "").toLowerCase();
     const symbol = String(market?.symbol ?? "").toLowerCase();
-    // Hyperliquid returns at most ~5,000 candles for an interval. Repeatedly
-    // asking for more cannot extend history and can saturate the chart on ETH.
-    return provider === "hyperliquid" || symbol.startsWith("hyperliquid:") ? 5000 : 30000;
+    // SafeHyperliquidProvider pages the exchange's candleSnapshot windows, so
+    // history can grow past one response while remaining bounded in memory.
+    return provider === "hyperliquid" || symbol.startsWith("hyperliquid:") ? HYPERLIQUID_HISTORY_LIMIT : 30000;
   };
+  const prefetchLead = () => maxHistoryForMarket() === HYPERLIQUID_HISTORY_LIMIT
+    ? HYPERLIQUID_PREFETCH_VIEWPORTS
+    : 1.25;
   let requestedBars = Math.min(
     Number(chart.market?.bars) || Number(cell?.state?.bars) || 2500,
     maxHistoryForMarket(),
@@ -260,31 +267,31 @@ function wireAutoBackfill(chart: any, cell?: any): () => void {
       // Request another page before the oldest loaded bar reaches the left
       // edge. This check is time-based, so it works for every timeframe.
       const historyCap = maxHistoryForMarket();
-      if (vp.from > oldestTime + span * 1.25 || requestedBars >= historyCap) return;
+      // Start Hyperliquid backfill several screens before the loaded edge so
+      // fast pans don't expose a blank/loading region before the next page lands.
+      if (vp.from > oldestTime + span * prefetchLead() || requestedBars >= historyCap) return;
 
       loading = true;
-      const nextBars = Math.min(historyCap, requestedBars + 5000);
+      const pageSize = maxHistoryForMarket() === HYPERLIQUID_HISTORY_LIMIT
+        ? HYPERLIQUID_HISTORY_PAGE
+        : 5000;
+      const nextBars = Math.min(historyCap, requestedBars + pageSize);
       if (nextBars <= requestedBars) {
         loading = false;
         return;
       }
-      const savedRange = chart.getVisibleRange?.() ?? { ...vp };
       requestedBars = nextBars;
       if (cell?.state) cell.state.bars = nextBars;
 
       void (async () => {
         try {
-          // `setMarket` resolves on the first painted chunk; historyComplete()
-          // keeps the loading lock until Vela finishes paginating the older
-          // bars. Releasing on a fixed timeout used to race a still-running
-          // backfill and discard the user's viewport.
+          // `setMarket` resolves before the detached prepend finishes;
+          // `historyComplete()` keeps this lock until Vela finishes the page so
+          // repeated viewport events cannot start overlapping history loads.
           await chart.setMarket({ bars: nextBars });
           await chart.historyComplete?.();
-          if (savedRange && typeof chart.setVisibleRange === "function") {
-            chart.setVisibleRange(savedRange);
-          }
         } catch (err) {
-          requestedBars = Math.max(2500, nextBars - 5000);
+          requestedBars = Math.max(2500, nextBars - pageSize);
           console.warn("[trade-pro] backfill setMarket failed:", err);
         } finally {
           loading = false;

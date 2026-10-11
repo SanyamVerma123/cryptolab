@@ -4,6 +4,8 @@ import {
 import type { OHLCV, BarRange } from "@luxalgo/vela/plugin";
 
 const REQUEST_TIMEOUT_MS = 12_000;
+const HISTORY_PAGE_SIZE = 1_000;
+const MAX_HISTORY_BARS = 30_000;
 
 /**
  * Vela's built-in provider can wait indefinitely on a stalled HTTP request.
@@ -12,17 +14,90 @@ const REQUEST_TIMEOUT_MS = 12_000;
  * provider's own reconnect/fallback behavior.
  */
 export class SafeHyperliquidProvider extends HyperliquidProvider {
-  override getBars(ticker: string, timeframe: string, range: BarRange): Promise<OHLCV[]> {
-    return withTimeout(
-      super.getBars(ticker, timeframe, range),
-      [],
-      `history ${ticker} ${timeframe}`,
-    );
+  private readonly historyCache = new Map<string, {
+    bars: Map<number, OHLCV>;
+    oldest: number;
+  }>();
+
+  override async getBars(ticker: string, timeframe: string, range: BarRange): Promise<OHLCV[]> {
+    // A `from` range is Vela's incremental refresh for already loaded bars.
+    // Preserve that direct lookup. Initial loads and larger `limit` requests
+    // are paged backward because candleSnapshot only returns a bounded window.
+    if (range.from != null || range.limit == null || range.limit <= HISTORY_PAGE_SIZE) {
+      return withTimeout(
+        super.getBars(ticker, timeframe, range),
+        [],
+        `history ${ticker} ${timeframe}`,
+      );
+    }
+
+    const limit = Math.min(Math.floor(range.limit), MAX_HISTORY_BARS);
+    const intervalMs = timeframeMilliseconds(timeframe);
+    const requestedEnd = range.to ?? Date.now();
+    const historyStart = Math.max(0, requestedEnd - (limit + 2) * intervalMs);
+    const cacheKey = `${ticker.toUpperCase()}|${timeframe.toUpperCase()}`;
+    let cached = this.historyCache.get(cacheKey);
+    if (!cached) {
+      cached = { bars: new Map<number, OHLCV>(), oldest: Number.POSITIVE_INFINITY };
+      this.historyCache.set(cacheKey, cached);
+    }
+
+    // Reuse prior pages on each scroll. Only fetch the next older page instead
+    // of re-downloading all recent candles every time Vela raises its limit.
+    let pageEnd = cached.bars.size
+      ? Math.min(requestedEnd, cached.oldest - 1)
+      : requestedEnd;
+    let pages = 0;
+
+    // Fetch in bounded 1k-bar windows from newest to oldest, like the
+    // Binance provider. Stop on the first empty/non-progressing page (for
+    // example, when this market predates the symbol's listing on Hyperliquid).
+    while (
+      pageEnd > historyStart &&
+      pages < Math.ceil((limit + 2) / HISTORY_PAGE_SIZE) + 1
+    ) {
+      const pageStart = Math.max(historyStart, pageEnd - (HISTORY_PAGE_SIZE - 1) * intervalMs);
+      const page = await withTimeout(
+        super.getBars(ticker, timeframe, { from: pageStart, to: pageEnd, limit: HISTORY_PAGE_SIZE }),
+        [],
+        `history page ${ticker} ${timeframe}`,
+      );
+      pages += 1;
+      if (!page.length) break;
+
+      const sorted = page.slice().sort((a, b) => a.time - b.time);
+      for (const bar of sorted) cached.bars.set(bar.time, bar);
+      const oldest = sorted[0]?.time;
+      if (typeof oldest !== "number" || oldest >= pageEnd) break;
+      cached.oldest = Math.min(cached.oldest, oldest);
+      pageEnd = oldest - 1;
+      if (oldest <= historyStart) break;
+    }
+
+    if (cached.bars.size > MAX_HISTORY_BARS) {
+      const retained = [...cached.bars.values()].sort((a, b) => a.time - b.time).slice(-MAX_HISTORY_BARS);
+      cached.bars = new Map(retained.map((bar) => [bar.time, bar]));
+      cached.oldest = retained[0]?.time ?? Number.POSITIVE_INFINITY;
+    }
+
+    return [...cached.bars.values()]
+      .filter((bar) => bar.time <= requestedEnd)
+      .sort((a, b) => a.time - b.time)
+      .slice(-limit);
   }
 
   override getSymbolInfo(ticker: string): ReturnType<HyperliquidProvider["getSymbolInfo"]> {
     return withTimeout(super.getSymbolInfo(ticker), undefined, `metadata ${ticker}`);
   }
+}
+
+function timeframeMilliseconds(timeframe: string): number {
+  const normalized = timeframe.trim().toUpperCase();
+  if (normalized === "D" || normalized === "1D") return 24 * 60 * 60 * 1000;
+  if (normalized === "W" || normalized === "1W") return 7 * 24 * 60 * 60 * 1000;
+  if (normalized === "M" || normalized === "1M") return 30 * 24 * 60 * 60 * 1000;
+  const minutes = Number.parseInt(normalized, 10);
+  return Number.isFinite(minutes) && minutes > 0 ? minutes * 60 * 1000 : 60 * 60 * 1000;
 }
 
 function withTimeout<T>(request: Promise<T>, fallback: T, label: string): Promise<T> {

@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="780" viewBox="0 0 1440 780" role="img" aria-labelledby="title desc">
+  <title id="title">Trade Pro charting workspace preview</title>
+  <desc id="desc">A dark crypto trading workspace with a candlestick chart, chart toolbar, market data, and AI assistant panel.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="#0a0e16"/></linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#151c29"/><stop offset="1" stop-color="#111722"/></linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#24d5bb" stop-opacity=".17"/><stop offset="1" stop-color="#24d5bb" stop-opacity="0"/></linearGradient>
+    <pattern id="grid" width="90" height="70" patternUnits="userSpaceOnUse"><path d="M90 0H0V70" fill="none" stroke="#263143" stroke-width="1"/></pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000" flood-opacity=".26"/></filter>
+  </defs>
+
+  <rect width="1440" height="780" rx="22" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1438" height="778" rx="21" fill="none" stroke="#263142"/>
+
+  <!-- app top bar -->
+  <path d="M22 1h1396a21 21 0 0 1 21 21v58H1V22A21 21 0 0 1 22 1Z" fill="#111722"/>
+  <path d="M1 80h1438" stroke="#252e3c"/>
+  <rect x="25" y="20" width="36" height="36" rx="11" fill="#21cdb4"/>
+  <path d="m35 44 8-17 8 17h-5l-3-7-3 7z" fill="#08131a"/>
+  <text x="73" y="45" fill="#f4f7fb" font-family="Inter,Segoe UI,sans-serif" font-size="20" font-weight="700">Trade Pro</text>
+  <rect x="216" y="18" width="192" height="42" rx="11" fill="#0d131d" stroke="#293447"/>
+  <circle cx="237" cy="39" r="7" fill="#f6a23b"/><text x="254" y="45" fill="#e7edf5" font-family="Inter,Segoe UI,sans-serif" font-size="16" font-weight="600">BTC / USD</text>
+  <path d="m388 35 5 5 5-5" fill="none" stroke="#8b98aa" stroke-width="1.5"/>
+  <rect x="421" y="18" width="56" height="42" rx="10" fill="#183b47" stroke="#236471"/><text x="449" y="45" text-anchor="middle" fill="#69e3d1" font-family="Inter,Segoe UI,sans-serif" font-size="15" font-weight="700">1H</text>
+  <rect x="492" y="18" width="143" height="42" rx="10" fill="#171f2c" stroke="#2b3545"/><path d="m510 43 6-12 6 12 6-8 6 8" fill="none" stroke="#b9c4d3" stroke-width="1.6"/><text x="546" y="45" fill="#d8e0eb" font-family="Inter,Segoe UI,sans-serif" font-size="14">Indicators</text>
+  <rect x="649" y="18" width="111" height="42" rx="10" fill="#171f2c" stroke="#2b3545"/><path d="M669 32v14m-5-5 5 5 5-5" fill="none" stroke="#d8e0eb" stroke-width="1.5"/><text x="686" y="45" fill="#d8e0eb" font-family="Inter,Segoe UI,sans-serif" font-size="14">Replay</text>
+  <rect x="1243" y="18" width="163" height="42" rx="10" fill="#183b47" stroke="#236471"/><circle cx="1265" cy="39" r="5" fill="#51d9c2"/><text x="1280" y="45" fill="#d8e0eb" font-family="Inter,Segoe UI,sans-serif" font-size="14">Live market</text>
+
+  <!-- left tools rail -->
+  <rect x="1" y="81" width="58" height="634" fill="#101621"/>
+  <path d="M59 81v634" stroke="#252e3c"/>
+  <g fill="none" stroke="#9aa8bb" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="14" y="101" width="32" height="32" rx="9" fill="#183b47" stroke="#236471"/><path d="M22 117h16m-8-8v16" stroke="#65ddcc"/>
+    <path d="m23 165 13-13m-10 0h10v10M18 202h22m-22 7h22m-22 7h22M20 254l8-8 5 5 8-11"/>
+    <rect x="20" y="278" width="20" height="16" rx="2"/><path d="M20 285h20M27 278v16M34 278v16M19 326l9-9 5 5-9 9zM18 354h24m-12-12v24"/>
+    <path d="m19 398 21 0m-17-6v12m9-12v12m8-6h3"/><circle cx="29" cy="444" r="10"/><path d="M24 444h10m-5-5v10"/>
+    <path d="M18 488h23v17H18zM22 483h15M22 510h15"/>
+    <path d="M19 548h21l-11 18zM22 579h15m-12-5v11m8-11v11"/>
+    <circle cx="29" cy="626" r="10"/><path d="M25 626h8m-4-4v8"/>
+  </g>
+
+  <!-- chart panel -->
+  <rect x="60" y="81" width="941" height="634" fill="#0d131c"/>
+  <rect x="60" y="81" width="941" height="634" fill="url(#grid)"/>
+  <rect x="60" y="81" width="941" height="634" fill="url(#glow)"/>
+  <text x="84" y="111" fill="#edf2f7" font-family="Inter,Segoe UI,sans-serif" font-size="16" font-weight="700">Bitcoin · 1H · Hyperliquid</text>
+  <text x="84" y="136" fill="#8795a9" font-family="Inter,Segoe UI,sans-serif" font-size="12">O 67,241.8  H 67,388.0  L 67,190.2  C </text><text x="397" y="136" fill="#3dd6bd" font-family="Inter,Segoe UI,sans-serif" font-size="12" font-weight="600">67,352.4  +0.16%</text>
+
+  <!-- chart volume bars -->
+  <g fill="#18b99f" opacity=".35"><rect x="93" y="604" width="9" height="31"/><rect x="151" y="594" width="9" height="41"/><rect x="209" y="611" width="9" height="24"/><rect x="267" y="581" width="9" height="54"/><rect x="325" y="597" width="9" height="38"/><rect x="383" y="562" width="9" height="73"/><rect x="441" y="587" width="9" height="48"/><rect x="499" y="569" width="9" height="66"/><rect x="557" y="598" width="9" height="37"/><rect x="615" y="578" width="9" height="57"/><rect x="673" y="551" width="9" height="84"/><rect x="731" y="579" width="9" height="56"/><rect x="789" y="561" width="9" height="74"/><rect x="847" y="543" width="9" height="92"/><rect x="905" y="571" width="9" height="64"/></g>
+  <g stroke-width="2">
+    <path d="M118 469v67m0-58h16v30h-16z" stroke="#ef6670" fill="#ef6670"/><path d="M176 447v63m0-49h16v33h-16z" stroke="#25c6ae" fill="#25c6ae"/><path d="M234 461v80m0-64h16v43h-16z" stroke="#ef6670" fill="#ef6670"/><path d="M292 428v76m0-59h16v39h-16z" stroke="#25c6ae" fill="#25c6ae"/><path d="M350 412v88m0-68h16v50h-16z" stroke="#25c6ae" fill="#25c6ae"/><path d="M408 431v71m0-56h16v32h-16z" stroke="#ef6670" fill="#ef6670"/><path d="M466 389v97m0-77h16v58h-16z" stroke="#25c6ae" fill="#25c6ae"/><path d="M524 367v75m0-58h16v40h-16z" stroke="#25c6ae" fill="#25c6ae"/><path d="M582 393v92m0-73h16v57h-16z" stroke="#ef6670" fill="#ef6670"/><path d="M640 348v91m0-72h16v52h-16z" stroke="#25c6ae" fill="#25c6ae"/><path d="M698 328v101m0-81h16v65h-16z" stroke="#25c6ae" fill="#25c6ae"/><path d="M756 349v76m0-59h16v40h-16z" stroke="#ef6670" fill="#ef6670"/><path d="M814 306v102m0-82h16v63h-16z" stroke="#25c6ae" fill="#25c6ae"/><path d="M872 282v92m0-72h16v54h-16z" stroke="#25c6ae" fill="#25c6ae"/><path d="M930 295v83m0-67h16v50h-16z" stroke="#ef6670" fill="#ef6670"/>
+  </g>
+  <path d="M78 525 C145 500 163 473 230 493 S327 463 385 471 463 428 522 432 601 455 641 419 704 399 756 414 817 375 871 369 915 385 978 356" fill="none" stroke="#38d4be" stroke-width="2.5"/>
+  <path d="M79 558 C151 546 202 565 278 536 S410 529 482 510 598 505 671 482 813 468 979 436" fill="none" stroke="#f1ae52" stroke-width="1.5" stroke-dasharray="5 6" opacity=".8"/>
+  <path d="M77 358h891" stroke="#53637b" stroke-dasharray="4 5" opacity=".6"/>
+  <rect x="925" y="343" width="75" height="29" rx="6" fill="#138f80"/><text x="962" y="362" text-anchor="middle" fill="#f1fffc" font-family="Inter,Segoe UI,sans-serif" font-size="12" font-weight="700">67,352</text>
+  <text x="83" y="687" fill="#8795a9" font-family="Inter,Segoe UI,sans-serif" font-size="12">Sep 18</text><text x="340" y="687" fill="#8795a9" font-family="Inter,Segoe UI,sans-serif" font-size="12">Sep 20</text><text x="600" y="687" fill="#8795a9" font-family="Inter,Segoe UI,sans-serif" font-size="12">Sep 22</text><text x="860" y="687" fill="#8795a9" font-family="Inter,Segoe UI,sans-serif" font-size="12">Sep 24</text>
+  <rect x="75" y="646" width="213" height="34" rx="9" fill="#131b28" stroke="#293447"/><text x="93" y="668" fill="#c8d2df" font-family="Inter,Segoe UI,sans-serif" font-size="12">Replay</text><path d="m151 657 10 6-10 6z" fill="#55ddc7"/><path d="M181 663h89" stroke="#3ed0ba" stroke-width="3" stroke-linecap="round"/><circle cx="222" cy="663" r="6" fill="#fff" stroke="#40d6bf" stroke-width="2"/>
+
+  <!-- AI assistant panel -->
+  <rect x="1002" y="81" width="437" height="634" fill="#101621"/>
+  <path d="M1002 81v634" stroke="#263143"/>
+  <text x="1028" y="115" fill="#f1f5fa" font-family="Inter,Segoe UI,sans-serif" font-size="17" font-weight="700">AI Assistant</text>
+  <rect x="1352" y="94" width="58" height="28" rx="8" fill="#17202d" stroke="#2d394c"/><circle cx="1367" cy="108" r="4" fill="#55d8a5"/><text x="1377" y="112" fill="#c7d1de" font-family="Inter,Segoe UI,sans-serif" font-size="11">Ready</text>
+  <path d="M1023 137h394" stroke="#273243"/>
+  <text x="1028" y="171" fill="#8e9cb0" font-family="Inter,Segoe UI,sans-serif" font-size="11" font-weight="700" letter-spacing="1.2">CHART CONTEXT</text>
+  <rect x="1024" y="186" width="386" height="67" rx="11" fill="#141d2a" stroke="#263346"/>
+  <text x="1041" y="211" fill="#e2e9f2" font-family="Inter,Segoe UI,sans-serif" font-size="13" font-weight="600">BTC · 1H · Hyperliquid</text>
+  <text x="1041" y="234" fill="#91a0b4" font-family="Inter,Segoe UI,sans-serif" font-size="12">Live candles and visible drawings attached</text>
+  <rect x="1024" y="276" width="345" height="117" rx="13" fill="#192333" stroke="#2b3a50"/>
+  <text x="1042" y="302" fill="#dbe5ef" font-family="Inter,Segoe UI,sans-serif" font-size="13" font-weight="600">Find nearby support and resistance</text>
+  <text x="1042" y="329" fill="#a6b3c5" font-family="Inter,Segoe UI,sans-serif" font-size="12">Review the recent swing levels and mark</text><text x="1042" y="348" fill="#a6b3c5" font-family="Inter,Segoe UI,sans-serif" font-size="12">the clearest zones on the chart.</text>
+  <rect x="1024" y="410" width="345" height="132" rx="13" fill="#132721" stroke="#245248"/>
+  <circle cx="1044" cy="433" r="4" fill="#51d6b5"/><text x="1057" y="437" fill="#7ce0c7" font-family="Inter,Segoe UI,sans-serif" font-size="11" font-weight="700" letter-spacing=".8">ANALYSIS</text>
+  <text x="1042" y="467" fill="#e2e9f2" font-family="Inter,Segoe UI,sans-serif" font-size="12">Price is holding above the recent pivot.</text>
+  <text x="1042" y="490" fill="#a6b3c5" font-family="Inter,Segoe UI,sans-serif" font-size="12">A clean break and close above resistance</text><text x="1042" y="509" fill="#a6b3c5" font-family="Inter,Segoe UI,sans-serif" font-size="12">would strengthen the short-term structure.</text>
+  <rect x="1024" y="570" width="386" height="92" rx="13" fill="#131b28" stroke="#2b3547"/>
+  <text x="1042" y="599" fill="#748398" font-family="Inter,Segoe UI,sans-serif" font-size="12">Ask about this chart…</text>
+  <rect x="1350" y="618" width="42" height="30" rx="9" fill="#1da996"/><path d="m1363 633 8-7v5l7 0v4h-7v5z" fill="#f1fffc"/>
+  <text x="1028" y="699" fill="#69778b" font-family="Inter,Segoe UI,sans-serif" font-size="10">AI output is informational. Review chart data before acting.</text>
+
+  <!-- footer status -->
+  <path d="M1 715h1438" stroke="#252e3c"/>
+  <path d="M1 716h1438v42a21 21 0 0 1-21 21H22A21 21 0 0 1 1 758Z" fill="#101621"/>
+  <circle cx="27" cy="747" r="4" fill="#50d6a2"/><text x="41" y="752" fill="#b4c0d0" font-family="Inter,Segoe UI,sans-serif" font-size="12">Market data connected</text>
+  <text x="1175" y="752" fill="#b4c0d0" font-family="Inter,Segoe UI,sans-serif" font-size="12">UTC 14:32:08</text><text x="1302" y="752" fill="#7f8da2" font-family="Inter,Segoe UI,sans-serif" font-size="12">Paper trading</text>
+</svg>
