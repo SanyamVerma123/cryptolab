@@ -9,7 +9,6 @@
   },
   "scripts": {
     "dev": "vite",
-    "prebuild": "npm update || true",
     "build": "vite build",
     "preview": "vite preview",
     "start": "vite --host",

@@ -1,4 +1,4 @@
-import { defineConfig, type PluginOption } from "vite";
+import { defineConfig, loadEnv, type PluginOption } from "vite";
 import react from "@vitejs/plugin-react";
 import { handleRelay } from "./src/server/relayHandler.mjs";
 import { handleUpdate } from "./src/server/updateHandler.mjs";
@@ -59,28 +59,32 @@ function aiRelayPlugin(): PluginOption {
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 
-export default defineConfig({
-  plugins: [tailwindcss(), react(), aiRelayPlugin()],
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "");
+  const allowedHosts = (env.TRADEPRO_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((host) => host.trim())
+    .filter(Boolean);
+
+  return {
+    plugins: [tailwindcss(), react(), aiRelayPlugin()],
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
+      },
     },
-  },
-  server: {
-    host: true,        // expose on LAN so you can open it from your phone/tablet too
-    port: 5173,
-    strictPort: false,
-    // Vite blocks any host it doesn't recognise. ngrok's public URL is served
-    // to the browser as its own random host, so without this the app answers
-    // "Blocked request. This host is not allowed" on every tunnel.
-    allowedHosts: true,
-  },
-  build: {
-    // The launcher used to write its dev-server log INTO dist/. Vite empties
-    // outDir on every build and the open log handle made that fail with
-    // EBUSY, killing the production build while the server was running. The
-    // launcher has since moved its log to the project root, but keep
-    // emptyOutDir off so a stray locked file in dist/ can never break a build.
-    emptyOutDir: false,
-  },
+    server: {
+      host: true, // expose on LAN so you can open it from your phone/tablet too
+      port: 5173,
+      strictPort: false,
+      // Vite allows localhost and local IP addresses by default. Custom tunnel
+      // names must be opted in explicitly to avoid accepting arbitrary hosts.
+      allowedHosts,
+    },
+    build: {
+      // A launcher log may be open during a rebuild, so preserve existing dist
+      // files rather than risking an EBUSY failure on Windows.
+      emptyOutDir: false,
+    },
+  };
 });

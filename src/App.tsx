@@ -13,25 +13,26 @@
  * Vela owns the shared chart shell and topbar. Trade Pro adds chart actions
  * through Vela's widget API and keeps order entry and market data in panels.
  */
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
-import { VelaChart } from "./components/VelaChart";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MarketPanel } from "./components/MarketPanel";
 import { AiPanel } from "./components/AiPanel";
 import { FavoritesBar } from "./components/FavoritesBar";
-import { PineEditor } from "./components/PineEditor";
-import { IndicatorsModal } from "./components/IndicatorsModal";
-import { SettingsModal } from "./components/SettingsModal";
 import { ChartTradingOverlay } from "./components/ChartTradingOverlay";
 import { OrderPlacementPanel } from "./components/OrderPlacementPanel";
 import { BottomOrdersDrawer } from "./components/BottomOrdersDrawer";
 import { UserMenu } from "./components/UserMenu";
-import { AuthModal } from "./components/AuthModal";
 import { initCloudSync } from "./lib/cloudSync";
 import { HyperliquidSocket } from "./lib/hyperliquid";
 import { useLiveData } from "./lib/useLiveData";
 import "./styles/app.css";
+
+const VelaChart = lazy(() => import("./components/VelaChart").then((module) => ({ default: module.VelaChart })));
+const PineEditor = lazy(() => import("./components/PineEditor").then((module) => ({ default: module.PineEditor })));
+const IndicatorsModal = lazy(() => import("./components/IndicatorsModal").then((module) => ({ default: module.IndicatorsModal })));
+const SettingsModal = lazy(() => import("./components/SettingsModal").then((module) => ({ default: module.SettingsModal })));
+const AuthModal = lazy(() => import("./components/AuthModal").then((module) => ({ default: module.AuthModal })));
 
 export default function App() {
   const [coin, setCoin] = useState("BTC");
@@ -284,23 +285,41 @@ export default function App() {
             {accountOpen && <div className="workspace-account-overlay">
               <UserMenu externalOpen onOpenAuth={() => { setAuthOpen(true); setAccountOpen(false); }} />
             </div>}
-            <VelaChart coin={coin} timeframe={tf} onReady={(w) => {
-              // Expose for in-page diagnostics; harmless in production.
-              (window as unknown as { __ws?: VelaWorkspace }).__ws = w;
-              setWs(w);
-            }} />
+            <ErrorBoundary fallback={<div className="chart-module-loading chart-module-error" role="alert">Chart workspace failed to load. Refresh the page to try again.</div>}>
+              <Suspense fallback={<div className="chart-module-loading" role="status">Loading chart workspace…</div>}>
+                <VelaChart coin={coin} timeframe={tf} onReady={(w) => {
+                  // Expose for in-page diagnostics; harmless in production.
+                  (window as unknown as { __ws?: VelaWorkspace }).__ws = w;
+                  setWs(w);
+                }} />
+              </Suspense>
+            </ErrorBoundary>
             {/* Live Chart Trading Overlay: TradingView style Entry, TP, SL Lines */}
             <ErrorBoundary>
               <ChartTradingOverlay ws={ws} coin={coin} data={live} />
             </ErrorBoundary>
             {/* Pine Script editor (PineTS engine registered in VelaChart). */}
-            <ErrorBoundary>
-              <PineEditor ws={ws} open={pineOpen} onOpenChange={setPineOpen} />
-            </ErrorBoundary>
+            {pineOpen && <ErrorBoundary>
+              <Suspense fallback={null}>
+                <PineEditor ws={ws} open onOpenChange={setPineOpen} />
+              </Suspense>
+            </ErrorBoundary>}
             {/* Indicators modal matching screenshot */}
-            <IndicatorsModal open={indicatorsOpen} onClose={() => setIndicatorsOpen(false)} ws={ws} />
-            <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} onInstallApp={() => void handleInstallApp()} />
-            <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+            {indicatorsOpen && <ErrorBoundary>
+              <Suspense fallback={null}>
+                <IndicatorsModal open onClose={() => setIndicatorsOpen(false)} ws={ws} />
+              </Suspense>
+            </ErrorBoundary>}
+            {settingsOpen && <ErrorBoundary>
+              <Suspense fallback={null}>
+                <SettingsModal open onClose={() => setSettingsOpen(false)} onInstallApp={() => void handleInstallApp()} />
+              </Suspense>
+            </ErrorBoundary>}
+            {authOpen && <ErrorBoundary>
+              <Suspense fallback={null}>
+                <AuthModal open onClose={() => setAuthOpen(false)} />
+              </Suspense>
+            </ErrorBoundary>}
           </div>
 
           {/* Bottom Orders Drawer with '^' toggle icon at bottom-right corner */}

@@ -59,7 +59,8 @@ docs/          README preview artwork
 
 ## Configuration notes
 
-- `.env.example` documents the optional `VITE_AI_RELAY_URL` setting.
+- `.env.example` documents the optional `VITE_AI_RELAY_URL` and `TRADEPRO_ALLOWED_HOSTS` settings.
+- If you expose the development server through a tunnel, set `TRADEPRO_ALLOWED_HOSTS` to that exact hostname in `.env.local`.
 - Other integrations may be configured in the app or through their corresponding environment variables.
 - Do not put private API keys in client-side `VITE_` variables; values with that prefix are bundled into the browser app.
 
