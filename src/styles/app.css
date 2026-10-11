@@ -6297,18 +6297,26 @@ body.resizing-col .market-panel {
 .vela-workspace [data-part="positioner"],
 .vela-ui-layer[data-scope="menu"],
 .vela-menu-positioner {
-  z-index: 9999 !important;
+  z-index: 12010 !important;
+  pointer-events: auto !important;
+}
+
+/* Vela's select, color, date, and indicator-input lists are portaled as
+   `.vela-popover` layers. Keep them above the dialog panel that owns the field. */
+.vela-popover,
+.vela-ui-layer.vela-popover {
+  z-index: 12020 !important;
   pointer-events: auto !important;
 }
 
 [data-scope="tooltip"][data-part="positioner"] {
-  z-index: 10002 !important;
+  z-index: 12030 !important;
 }
 
 .vela-menu,
 [data-scope="menu"][data-part="content"] {
   position: relative;
-  z-index: 10000 !important;
+  z-index: 12011 !important;
   pointer-events: auto !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6) !important;
 }
