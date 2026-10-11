@@ -113,24 +113,11 @@ function keyOf(h: {
 }
 
 /**
- * Snapshot every MOUNTED indicator's visibility + inputs under `symbol`.
- * Called after each change so the store is never stale.
- *
- * MERGE, never replace. The previous version overwrote the whole coin's list,
- * which destroyed the record of an indicator the user had just removed — so
- * "change my settings, remove it, add it back" could never restore them (the
- * record was gone the moment the removal snapshot ran). We keep the previous
- * record for any key that is no longer mounted, and refresh the ones that are.
- * Vela's ids change per session, so the match key is `nativeType` (native) or
- * the script `title` (Pine), never the id.
+ * Snapshot mounted indicators under `symbol`, while retaining saved inputs for
+ * indicators currently removed from the chart. Their catalog/applied state is
+ * managed separately; keeping their last inputs lets the user re-add them with
+ * the same configuration.
  */
-/**
- * Keys forgotten by a removal within the last snapshot cycle. `snapshot`'s
- * merge deliberately keeps the record of any unmounted indicator, which would
- * otherwise resurrect the key `onRemoved` just forgot (the indicator came back
- * on every reload). See `onRemoved`.
- */
-const justRemoved = new Set<string>();
 const lastKnownInputs = new Map<string, Record<string, unknown>>();
 
 /**
@@ -162,7 +149,7 @@ function snapshot(ws: VelaWorkspace, sym: string | undefined, chart: VelaWorkspa
     const store = load();
     const prev = new Map((store[coin] || []).map((s) => [s.key, s]));
 
-    const list: SavedIndicator[] = [];
+    const current = new Map(prev);
     for (const h of handles) {
       const rec: SavedIndicator = {
         key: keyOf(h),
@@ -177,21 +164,50 @@ function snapshot(ws: VelaWorkspace, sym: string | undefined, chart: VelaWorkspa
         const old = prev.get(rec.key);
         if (old?.inputs) rec.inputs = old.inputs;
       }
-      list.push(rec);
+      current.set(rec.key, rec);
     }
 
     // Cache last-known inputs so that if the user explicitly re-adds this indicator,
     // their preferred inputs can be restored, but NEVER resurrect unmounted indicators.
-    for (const rec of list) {
+    for (const rec of current.values()) {
       if (rec.inputs) {
         lastKnownInputs.set(`${coin}:${rec.key}`, rec.inputs);
       }
     }
 
-    store[coin] = list;
+    store[coin] = [...current.values()];
     save(store);
   } catch {
     /* chart not ready */
+  }
+}
+
+/** Persist an input edit before any later add/remove event can race the debounce. */
+function rememberInputsNow(chart: VelaWorkspace["chart"], sym: string | undefined, id: string | undefined): void {
+  const coin = bareSymbol(sym);
+  if (!coin || !id) return;
+  try {
+    const handle = (chart.indicators() || []).find((item) => item.id === id);
+    if (!handle) return;
+    const inputs = handle.inputValues();
+    if (!inputs || !Object.keys(inputs).length) return;
+
+    const key = keyOf(handle);
+    lastKnownInputs.set(`${coin}:${key}`, inputs);
+    const store = load();
+    const records = store[coin] || [];
+    const existing = records.find((item) => item.key === key);
+    const updated: SavedIndicator = {
+      key,
+      title: handle.title,
+      visible: handle.visible,
+      ...(existing?.inputs ? { inputs: existing.inputs } : {}),
+      inputs,
+    };
+    store[coin] = [...records.filter((item) => item.key !== key), updated];
+    save(store);
+  } catch {
+    /* indicator may be tearing down */
   }
 }
 
@@ -331,7 +347,7 @@ export function installIndicatorState(ws: VelaWorkspace): () => void {
     dirty();
   };
   const onInputs = (e: { id?: string }) => {
-    void e;
+    rememberInputsNow(chart, coin, e.id);
     dirty();
   };
   const onRemoved = (e: { id?: string }) => {
@@ -342,12 +358,10 @@ export function installIndicatorState(ws: VelaWorkspace): () => void {
     // This covers BOTH foreign script families:
     //   - LuxAlgo library indicators (traced by their slug)
     //   - custom Pine scripts written in the editor (traced by script name)
-    let forgotKey: string | undefined;
     try {
       const slug = e.id ? slugForIndicatorId(e.id) : undefined;
       if (slug) {
         forgetLuxIndicator(coin, slug);
-        forgotKey = `lux:${slug}`;
       }
     } catch {
       /* persistence is best-effort */
@@ -375,20 +389,14 @@ export function installIndicatorState(ws: VelaWorkspace): () => void {
       }
       if (name) {
         forgetPineIndicator(coin, name);
-        forgotKey = `pine:${name}`;
       }
     } catch (e2) {
       console.warn("[trade-pro] forget pine failed:", e2);
     }
 
-    // Suppress the key BEFORE snapshot runs, so snapshot's merge does not
-    // re-insert the removed key into store[coin]!
-    if (forgotKey) {
-      justRemoved.add(forgotKey);
-      setTimeout(() => { justRemoved.delete(forgotKey); }, 1500);
-    }
-
-    // Flush any pending debounce and snapshot with justRemoved active.
+    // Keep the removed indicator's last input record for a later re-add. The
+    // separate LuxAlgo/Pine applied lists above control whether it auto-mounts.
+    // Flush now so its final values reach storage before the handle disappears.
     if (timer) {
       clearTimeout(timer);
       timer = undefined;

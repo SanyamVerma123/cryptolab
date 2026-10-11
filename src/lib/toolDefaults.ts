@@ -37,54 +37,41 @@ function save(map: StyleMap): void {
 }
 
 /**
- * Capture styles from every drawing on the chart (called on edits). We key by
- * tool TYPE, not drawing id, because the default is what a NEW drawing of that
- * type should start with.
+ * Use the edited drawing as the source of truth. Sweeping every drawing after
+ * an edit let an older drawing of the same type overwrite the one just edited.
  */
-function captureStyles(ws: VelaWorkspace, chart: VelaWorkspace["chart"] = ws.chart): void {
+function captureDrawingStyle(chart: VelaWorkspace["chart"], id: string): void {
   try {
-    const docs = chart.drawings.all();
-    if (!docs.length) return;
+    const drawing = chart.drawings.all().find((doc) => doc.id === id);
+    if (!drawing?.style) return;
+    const map = load();
+    // Keep the complete drawing style. Tools add options over time, and a
+    // narrow allowlist silently dropped settings such as per-level toggles.
+    const style = { ...(drawing.style as unknown as Record<string, unknown>) };
+    if (!Object.keys(style).length) return;
+    map[drawing.type] = style;
+    save(map);
+    if (pendingDefault?.type === drawing.type) pendingDefault = { type: drawing.type, style };
+  } catch {
+    /* chart not ready */
+  }
+}
+
+/** Seed defaults from saved drawings only when no explicit tool preference exists. */
+function seedStyles(chart: VelaWorkspace["chart"]): void {
+  try {
     const map = load();
     let changed = false;
-    for (const d of docs) {
-      const style = d.style as unknown as Record<string, unknown> | undefined;
-      if (!style) continue;
-      // Only carry visual keys — colour, width, style, fill, text settings.
-      const picked: Record<string, unknown> = {};
-      for (const k of VISUAL_KEYS) {
-        if (style[k] !== undefined) picked[k] = style[k];
-      }
-      if (Object.keys(picked).length) {
-        map[d.type] = picked;
-        changed = true;
-      }
+    for (const drawing of [...chart.drawings.all()].reverse()) {
+      if (map[drawing.type] || !drawing.style) continue;
+      map[drawing.type] = { ...(drawing.style as unknown as Record<string, unknown>) };
+      changed = true;
     }
     if (changed) save(map);
   } catch {
     /* chart not ready */
   }
 }
-
-/** Style keys worth remembering (Vela's DrawingStyle fields). */
-const VISUAL_KEYS = [
-  "lineColor", "lineWidth", "lineStyle",
-  "fillColor", "fillOpacity", "fill",
-  "textColor", "textSize", "text",
-  "backgroundColor", "backgroundOpacity",
-  "showLabel", "label",
-  "extendLeft", "extendRight",
-  "pointerEvents",
-  /**
-   * Per-type extras. Vela documents `levels` as "a fib tool's levels" but the
-   * same field carries a Fair Value Gap's sub-level toggles — which levels are
-   * drawn and which the user switched off. Without it here, "I removed some
-   * levels in the FVG" never made it into the remembered style, so the next
-   * FVG came back with every level on. `extras` is the generic escape hatch
-   * for anything a future tool adds.
-   */
-  "levels", "extras", "showLevels", "showMid", "extend",
-] as const;
 
 /**
  * Apply the remembered style for the armed tool, if any. Called when a tool is
@@ -147,13 +134,14 @@ export function installToolDefaults(ws: VelaWorkspace): () => void {
   const c = ws.chart;
   const offs: (() => void)[] = [];
 
-  const onEdited = () => void captureStyles(ws, c);
+  const onEdited = (e: { id?: string }) => {
+    if (e.id) captureDrawingStyle(c, e.id);
+  };
   const onCreated = (e: { id: string }) => {
     applyToCreated(ws, e.id, c);
-    // Re-capture right after creation: a NEW drawing of this type inherits the
-    // pending default (above), so the map stays an accurate record of what the
-    // tool currently produces — the next placement reads the same value.
-    void captureStyles(ws, c);
+    // Keep the new tool instance as the current default even if the Vela
+    // toolbar's in-memory `lastStyle` map still held its original values.
+    captureDrawingStyle(c, e.id);
   };
   const onTool = (e: { type: string | null }) => {
     if (e.type) {
@@ -173,7 +161,7 @@ export function installToolDefaults(ws: VelaWorkspace): () => void {
   }
 
   // Seed from anything already on the chart.
-  void captureStyles(ws, c);
+  seedStyles(c);
 
   return () => {
     for (const off of offs) {
