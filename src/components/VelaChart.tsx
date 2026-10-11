@@ -19,7 +19,7 @@ import {
   registerBuiltinLayouts,
   ensureLayout,
 } from "@luxalgo/vela/workspace";
-import { registerIcon, registerWidgetAction } from "@luxalgo/vela/plugin";
+import { registerIcon, registerWidgetAction, unregisterWidgetAction } from "@luxalgo/vela/plugin";
 import { SafeHyperliquidProvider } from "../lib/safeHyperliquidProvider";
 import { BinanceProvider } from "@luxalgo/vela/providers/binance";
 import { CoinbaseProvider } from "@luxalgo/vela/providers/coinbase";
@@ -118,9 +118,17 @@ try {
   registerIcon("tradepro-tools", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="m2 13 3-3m-1-6 6 6m-2-7 2-2 4 4-2 2M2 4l2-2 3 3-2 2z"/></svg>`);
   registerIcon("tradepro-account", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="5" r="2.5"/><path d="M2.5 14c.5-3 2.3-4.5 5.5-4.5s5 1.5 5.5 4.5"/></svg>`);
   registerIcon("tradepro-install", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 1.5v9m-3-3 3 3 3-3M2 11.5v3h12v-3"/></svg>`);
-  registerIcon("tradepro-chart-settings", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/><circle cx="5" cy="4" r="1.5" fill="currentColor"/><circle cx="11" cy="8" r="1.5" fill="currentColor"/><circle cx="7" cy="12" r="1.5" fill="currentColor"/></svg>`);
 } catch {
   // icons already registered
+}
+
+// Remove this retired action from Vela's module-global registry as well. During
+// HMR the old descriptor can survive even after its registration source is gone.
+unregisterWidgetAction("tradepro-chart-settings");
+if (typeof document !== "undefined") {
+  document
+    .querySelectorAll<HTMLElement>('.vela-widget-topbar [aria-label="Chart settings"]')
+    .forEach((button) => button.remove());
 }
 
 // Put scripting and workspace actions into Vela's shared chart topbar.
@@ -147,7 +155,6 @@ try {
   });
   registerWidgetAction({ id: "tradepro-tools", target: "topbar", align: "left", order: 11, icon: "tradepro-tools", iconOnly: true, label: "Favorite tools", run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-favorites")) });
   registerWidgetAction({ id: "tradepro-market", target: "topbar", align: "right", order: 1, icon: "tradepro-market", iconOnly: true, label: "Market panel", run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-market")) });
-  registerWidgetAction({ id: "tradepro-chart-settings", target: "topbar", align: "right", order: 1.5, icon: "tradepro-chart-settings", iconOnly: true, label: "Chart settings", run: () => window.dispatchEvent(new CustomEvent("tradepro:open-chart-settings")) });
   registerWidgetAction({ id: "tradepro-settings", target: "topbar", align: "right", order: 2, icon: "tradepro-settings", iconOnly: true, label: "Trading settings", run: () => window.dispatchEvent(new CustomEvent("tradepro:open-settings")) });
   registerWidgetAction({ id: "tradepro-account", target: "topbar", align: "right", order: 3, icon: "tradepro-account", iconOnly: true, label: "Account and cloud sync", run: () => window.dispatchEvent(new CustomEvent("tradepro:open-account")) });
 } catch {
@@ -303,83 +310,6 @@ function wireAutoBackfill(chart: any, cell?: any): () => void {
   }
 }
 
-/**
- * Fix Vela's built-in Chart Settings dialog for "Bars to fetch" and other select controls.
- * Upstream Vela passes plain string arrays (e.g. ["500", "1000", ...]) into row.options,
- * but its internal Select component expects { value, label } objects. This caused the
- * dropdown buttons to render empty/unclickable and set NaN on selection.
- */
-function patchSettingsSections(chart: any, cell: any): void {
-  if (!chart?.renderer) return;
-  const renderer = chart.renderer;
-  if ((renderer as any).__barsPatchInstalled) return;
-  (renderer as any).__barsPatchInstalled = true;
-
-  const origSet = renderer.setSettingsSections?.bind(renderer);
-  if (!origSet) return;
-
-  renderer.setSettingsSections = function (sections: any[]) {
-    if (!Array.isArray(sections)) return origSet(sections);
-
-    const patched = sections.map((sec) => {
-      if (!sec?.rows || !Array.isArray(sec.rows)) return sec;
-      const patchedRows = sec.rows.map((row: any) => {
-        if (row?.kind === "select" && Array.isArray(row.options)) {
-          const normalized = row.options.map((opt: any) => {
-            if (typeof opt === "string" || typeof opt === "number") {
-              return { value: String(opt), label: String(opt) };
-            }
-            if (Array.isArray(opt)) {
-              return { value: String(opt[0]), label: String(opt[1] ?? opt[0]) };
-            }
-            if (opt && typeof opt === "object") {
-              return {
-                value: String(opt.value ?? opt.label ?? ""),
-                label: String(opt.label ?? opt.value ?? ""),
-              };
-            }
-            return opt;
-          });
-
-          const origRowSet = row.set;
-          return {
-            ...row,
-            options: normalized,
-            set: (v: any) => {
-              if (v === undefined || v === null) return;
-              const strVal = String(v);
-              if (row.id === "bars") {
-                const num = Number(strVal);
-                if (!isNaN(num) && num > 0) {
-                  if (cell?.state) {
-                    cell.state.bars = num;
-                  }
-                  origRowSet?.(strVal);
-                  try {
-                    chart.setMarket({ bars: num });
-                  } catch {}
-                }
-              } else {
-                origRowSet?.(strVal);
-              }
-            },
-          };
-        }
-        return row;
-      });
-      return { ...sec, rows: patchedRows };
-    });
-
-    return origSet(patched);
-  };
-
-  try {
-    if (typeof (cell as any)?.pushSettingsSections === "function") {
-      (cell as any).pushSettingsSections();
-    }
-  } catch {}
-}
-
 const VALID_TIMEFRAMES = new Set([
   "1", "3", "5", "15", "30", "45", "60", "120", "180", "240", "360", "480", "720", "D", "W", "M"
 ]);
@@ -485,6 +415,11 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
         timeframe: false,
       },
     });
+    // If a prior hot-loaded build left the retired control in the current DOM,
+    // remove just that topbar button. Fresh Vela renders no longer include it.
+    ws.root
+      .querySelectorAll<HTMLElement>('.vela-widget-topbar [aria-label="Chart settings"]')
+      .forEach((button) => button.remove());
     wsRef.current = ws;
     setWsInstance(ws);
 
@@ -504,7 +439,6 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
         installDrawingIsolation(ws);
         for (const c of ws.cells()) {
           wireAutoBackfill(c.chart, c);
-          patchSettingsSections(c.chart, c);
         }
       } catch (e) {
         console.warn("[trade-pro] cell isolation install failed:", e);
@@ -515,7 +449,6 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       try {
         for (const c of ws.cells()) {
           wireAutoBackfill(c.chart, c);
-          patchSettingsSections(c.chart, c);
         }
       } catch {}
     });
@@ -548,10 +481,6 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
             try {
               const activeCell = (ws as any).active;
               wireAutoBackfill(chart, activeCell);
-              patchSettingsSections(chart, activeCell);
-              for (const c of ws.cells()) {
-                patchSettingsSections(c.chart, c);
-              }
             } catch {}
 
             onReadyRef.current?.(ws);
