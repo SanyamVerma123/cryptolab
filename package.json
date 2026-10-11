@@ -9,9 +9,11 @@
   },
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm update || true",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "vite --host"
+    "start": "vite --host",
+    "update:all": "npm update"
   },
   "dependencies": {
     "@getcandlekit/charts": "^0.1.0",

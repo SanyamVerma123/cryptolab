@@ -21,11 +21,12 @@ import { useOrders, type TradingMode } from "../lib/orderState";
 interface Props {
   open: boolean;
   onClose: () => void;
+  onInstallApp?: () => void;
 }
 
-type SettingsTab = "environment" | "alpaca" | "defaults" | "wallet";
+type SettingsTab = "environment" | "alpaca" | "defaults" | "wallet" | "download";
 
-export function SettingsModal({ open, onClose }: Props) {
+export function SettingsModal({ open, onClose, onInstallApp }: Props) {
   const { tradingMode, setTradingMode, balances, depositAsset, syncAlpaca } = useOrders();
   const [tab, setTab] = useState<SettingsTab>("environment");
 
@@ -125,6 +126,13 @@ export function SettingsModal({ open, onClose }: Props) {
             onClick={() => setTab("wallet")}
           >
             Paper Wallet
+          </button>
+          <button
+            type="button"
+            className={"sm-tab" + (tab === "download" ? " active" : "")}
+            onClick={() => setTab("download")}
+          >
+            Download App
           </button>
         </div>
 
@@ -365,6 +373,63 @@ export function SettingsModal({ open, onClose }: Props) {
                       </button>
                     </div>
                   ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: DOWNLOAD APP */}
+          {tab === "download" && (
+            <div className="sm-sec">
+              <div className="sm-field-group">
+                <label className="sm-label">Install Trade Pro Desktop / Mobile App</label>
+                <div style={{ background: "#1a1e29", padding: "18px", borderRadius: "8px", border: "1px solid #2a2e39", display: "flex", flexDirection: "column", gap: "14px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{ width: "44px", height: "44px", borderRadius: "8px", background: "linear-gradient(135deg, #2962ff, #00b0ff)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "22px", color: "#fff", flexShrink: 0 }}>
+                      ⚡
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 600, color: "#f0f3fa", fontSize: "15px" }}>Trade Pro Standalone PWA</div>
+                      <div style={{ color: "#787b86", fontSize: "12px", marginTop: "2px" }}>Install Trade Pro directly onto your computer, phone, or tablet for a faster native experience.</div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onInstallApp) {
+                        onInstallApp();
+                      } else {
+                        window.dispatchEvent(new CustomEvent("tradepro:install"));
+                      }
+                    }}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                      background: "#2962ff",
+                      color: "#fff",
+                      border: 0,
+                      borderRadius: "6px",
+                      padding: "11px 18px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontSize: "13.5px",
+                      transition: "background 0.15s ease",
+                    }}
+                  >
+                    <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M8 1.5v9m-3-3 3 3 3-3M2 11.5v3h12v-3" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    Download / Install Trade Pro
+                  </button>
+
+                  <div style={{ fontSize: "12px", color: "#787b86", lineHeight: 1.6, borderTop: "1px solid #2a2e39", paddingTop: "10px" }}>
+                    <b>• Desktop (Chrome / Edge / Brave):</b> Click the button above, or click the Install icon in the browser address bar.<br />
+                    <b>• iOS (iPhone / iPad):</b> Open in Safari, tap the Share icon (<span style={{ fontSize: "14px" }}>⎋</span>), then scroll down and tap <b>Add to Home Screen</b>.<br />
+                    <b>• Android:</b> Open in Chrome, tap the menu (⋮) in the top-right corner, and tap <b>Install app</b>.
+                  </div>
+                </div>
               </div>
             </div>
           )}

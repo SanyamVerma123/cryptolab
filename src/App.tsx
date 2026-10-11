@@ -21,7 +21,7 @@ import { MarketPanel } from "./components/MarketPanel";
 import { AiPanel } from "./components/AiPanel";
 import { FavoritesBar } from "./components/FavoritesBar";
 import { PineEditor } from "./components/PineEditor";
-import { IndicatorToggles } from "./components/IndicatorToggles";
+import { IndicatorsModal } from "./components/IndicatorsModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { ChartTradingOverlay } from "./components/ChartTradingOverlay";
 import { OrderPlacementPanel } from "./components/OrderPlacementPanel";
@@ -43,7 +43,7 @@ export default function App() {
   const [ordersFocusTab, setOrdersFocusTab] = useState<"positions" | "orders">("positions");
   const [ordersFocusRequest, setOrdersFocusRequest] = useState(0);
   const [pineOpen, setPineOpen] = useState(false);
-  const [indOpen, setIndOpen] = useState(false);
+  const [indicatorsOpen, setIndicatorsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [favoritesOpen, setFavoritesOpen] = useState(false);
@@ -118,6 +118,7 @@ export default function App() {
       ["tradepro:open-settings", () => setSettingsOpen(true)],
       ["tradepro:open-account", () => setAccountOpen((v) => !v)],
       ["tradepro:toggle-favorites", () => setFavoritesOpen((v) => !v)],
+      ["tradepro:open-indicators", () => setIndicatorsOpen(true)],
       ["tradepro:install", () => void handleInstallApp()],
     ];
     toggles.forEach(([name, fn]) => window.addEventListener(name, fn));
@@ -261,31 +262,6 @@ export default function App() {
     };
   }, [ws]);
 
-  // Track when Vela's own indicator dialog is open (the toggle injector
-  // re-factors its rows into switches while it is).
-  // SCOPED + DEBOUNCED: observing the whole body subtree fires on every Vela
-  // render tick and made the app hang while the indicator dialog was open.
-  // The host element is created once by VelaChart; observe only it, and
-  // collapse rapid mutations into one check.
-  useEffect(() => {
-    const host = document.querySelector(".vela-host") as HTMLElement | null;
-    if (!host) return;
-    let t: ReturnType<typeof setTimeout> | null = null;
-    const check = () => {
-      setIndOpen(!!host.querySelector(".vela-ip-list"));
-    };
-    const mo = new MutationObserver(() => {
-      if (t) clearTimeout(t);
-      t = setTimeout(check, 120);
-    });
-    mo.observe(host, { childList: true, subtree: true });
-    check();
-    return () => {
-      if (t) clearTimeout(t);
-      mo.disconnect();
-    };
-  }, [ws]);
-
   return (
     <div className="app">
       <main className={"chart-area" + (panelOpen ? "" : " panel-closed")}>
@@ -308,11 +284,9 @@ export default function App() {
             <ErrorBoundary>
               <PineEditor ws={ws} open={pineOpen} onOpenChange={setPineOpen} />
             </ErrorBoundary>
-            {/* Indicator toggles */}
-            <ErrorBoundary>
-              <IndicatorToggles ws={ws} open={indOpen} />
-            </ErrorBoundary>
-            <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+            {/* Indicators modal matching screenshot */}
+            <IndicatorsModal open={indicatorsOpen} onClose={() => setIndicatorsOpen(false)} ws={ws} />
+            <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} onInstallApp={() => void handleInstallApp()} />
             <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
           </div>
 

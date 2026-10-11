@@ -123,6 +123,16 @@ try {
 // Put scripting and workspace actions into Vela's shared chart topbar.
 try {
   registerWidgetAction({
+    id: "indicators",
+    target: "topbar",
+    align: "left",
+    order: 7,
+    icon: "indicators",
+    label: "Indicators",
+    iconOnly: false,
+    run: () => window.dispatchEvent(new CustomEvent("tradepro:open-indicators")),
+  });
+  registerWidgetAction({
     id: "tradepro-scripts",
     target: "topbar",
     align: "left",
@@ -136,7 +146,6 @@ try {
   registerWidgetAction({ id: "tradepro-market", target: "topbar", align: "right", order: 1, icon: "tradepro-market", iconOnly: true, label: "Market panel", run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-market")) });
   registerWidgetAction({ id: "tradepro-settings", target: "topbar", align: "right", order: 2, icon: "tradepro-settings", iconOnly: true, label: "Trading settings", run: () => window.dispatchEvent(new CustomEvent("tradepro:open-settings")) });
   registerWidgetAction({ id: "tradepro-account", target: "topbar", align: "right", order: 3, icon: "tradepro-account", iconOnly: true, label: "Account and cloud sync", run: () => window.dispatchEvent(new CustomEvent("tradepro:open-account")) });
-  registerWidgetAction({ id: "tradepro-install", target: "topbar", align: "right", order: 4, icon: "tradepro-install", iconOnly: true, label: "Install Trade Pro", run: () => window.dispatchEvent(new CustomEvent("tradepro:install")) });
 } catch {
   // actions are refreshed for new workspaces on registration
 }
@@ -272,6 +281,49 @@ function wireAutoBackfill(chart: any, cell?: any): () => void {
   }
 }
 
+function installTimeframeInteractionFix(ws: VelaWorkspace, container: HTMLElement): () => void {
+  const onClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+
+    // 1. If clicking the active timeframe chip, open the dropdown
+    const activeChip = target.closest(".vela-widget-tf[data-current='1']") as HTMLElement | null;
+    if (activeChip) {
+      const caret = container.querySelector(".vela-widget-tf-caret") as HTMLButtonElement | null;
+      if (caret) {
+        e.preventDefault();
+        e.stopPropagation();
+        caret.click();
+        return;
+      }
+    }
+
+    // 2. If clicking on an item inside the timeframe dropdown menu (.vela-menu)
+    const menuItem = target.closest(".vela-menu-item") as HTMLElement | null;
+    if (menuItem && !target.closest(".vela-menu-star") && !target.closest(".vela-fav")) {
+      const tfVal = menuItem.dataset.value || menuItem.dataset.veiId || menuItem.id?.split("/")?.pop();
+      if (tfVal) {
+        try {
+          if (ws.active) {
+            ws.active.setTimeframe(tfVal);
+          } else {
+            ws.chart?.setMarket({ timeframe: tfVal, bars: barsForTf(tfVal) });
+          }
+        } catch {
+          try {
+            ws.chart?.setMarket({ timeframe: tfVal, bars: barsForTf(tfVal) });
+          } catch {}
+        }
+      }
+    }
+  };
+
+  document.addEventListener("click", onClick, true);
+  return () => {
+    document.removeEventListener("click", onClick, true);
+  };
+}
+
 export function VelaChart({ coin, timeframe, onReady }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const wsRef = useRef<VelaWorkspace | null>(null);
@@ -405,7 +457,12 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     initCell();
     ws.on("cell:active", initCell);
 
+    const stopTf = installTimeframeInteractionFix(ws, el);
+
     return () => {
+      try {
+        stopTf();
+      } catch {}
       try {
         ws.destroy();
       } catch {

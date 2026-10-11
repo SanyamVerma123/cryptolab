@@ -257,9 +257,27 @@ export function FavoritesBar({ ws }: Props) {
 
   const tool = (t: string) => VELA_TOOL_MAP[t];
 
+  // Track theme dynamically from body, documentElement or workspace
+  const [isLight, setIsLight] = useState(false);
+  useEffect(() => {
+    const checkTheme = () => {
+      const isL =
+        document.documentElement.classList.contains("light") ||
+        document.body.classList.contains("theme-light") ||
+        document.querySelector(".vela-host")?.getAttribute("data-theme") === "light" ||
+        (ws as any)?.theme === "light";
+      setIsLight(!!isL);
+    };
+    checkTheme();
+    const mo = new MutationObserver(checkTheme);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    mo.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    return () => mo.disconnect();
+  }, [ws]);
+
   return (
     <div
-      className={"favs" + (floating ? " floating" : "")}
+      className={"favs" + (floating ? " floating" : "") + (isLight ? " light" : " dark")}
       ref={barRef}
       role="toolbar"
       aria-label="Favorite drawing tools"
