@@ -2,17 +2,23 @@
  * indicatorsCatalog.ts — Canonical catalog of indicators for the modern Indicators Modal.
  *
  * Categorized matching vela.luxalgo.com:
- * - Yours: Favorites, My scripts
+ * - Yours: Favorites, On chart, My scripts
  * - Built-in: Basic (80), Order flow (17)
  * - Library: Discover, All scripts (817), Concepts (853)
- * - Families: Trend (148), Momentum (105), Volatility (63)
+ * - Families (All 17 MCP Families):
+ *   Trend, Momentum, Volatility, Volume & Flow, Structure, SMC / ICT, Wyckoff,
+ *   Elliott & Harmonics, Patterns, Levels, Statistics, Machine Learning,
+ *   Time & Sessions, Sentiment & Breadth, Risk & Exits, Meta, Validation
  */
+
+import catalogData from "./indicatorsCatalogData.json";
 
 export interface CatalogIndicator {
   id: string;
   name: string;
-  category: "basic" | "order_flow" | "discover" | "concepts" | "trend" | "momentum" | "volatility" | "my_scripts";
-  family?: "trend" | "momentum" | "volatility" | "order_flow";
+  category: string;
+  family?: string;
+  families?: string[];
   author?: string;
   badge?: string;
   description?: string;
@@ -22,23 +28,53 @@ export interface CatalogIndicator {
   isCustom?: boolean;
 }
 
-export const INDICATOR_CATEGORIES = [
+export interface IndicatorCategoryDef {
+  group: "Yours" | "Built-in" | "Library" | "Families";
+  id: string;
+  label: string;
+  icon: string;
+  count?: number;
+}
+
+export const INDICATOR_CATEGORIES: readonly IndicatorCategoryDef[] = [
+  // --- YOURS ---
   { group: "Yours", id: "favorites", label: "Favorites", icon: "star" },
+  { group: "Yours", id: "on_chart", label: "On chart", icon: "check-circle" },
   { group: "Yours", id: "my_scripts", label: "My scripts", icon: "user" },
+
+  // --- BUILT-IN ---
   { group: "Built-in", id: "basic", label: "Basic", count: 80, icon: "line-chart" },
   { group: "Built-in", id: "order_flow", label: "Order flow", count: 17, icon: "bar-chart" },
+
+  // --- LIBRARY ---
   { group: "Library", id: "discover", label: "Discover", icon: "compass" },
   { group: "Library", id: "all_scripts", label: "All scripts", count: 817, icon: "grid" },
   { group: "Library", id: "concepts", label: "Concepts", count: 853, icon: "layers" },
+
+  // --- FAMILIES (All 17 Official MCP Families) ---
   { group: "Families", id: "trend", label: "Trend", count: 148, icon: "activity" },
   { group: "Families", id: "momentum", label: "Momentum", count: 105, icon: "waves" },
   { group: "Families", id: "volatility", label: "Volatility", count: 63, icon: "shield" },
+  { group: "Families", id: "volume-orderflow", label: "Volume & Flow", count: 123, icon: "bar-chart" },
+  { group: "Families", id: "market-structure", label: "Structure", count: 89, icon: "layers" },
+  { group: "Families", id: "smc-ict", label: "SMC / ICT", count: 92, icon: "crosshair" },
+  { group: "Families", id: "wyckoff", label: "Wyckoff", count: 15, icon: "trending-up" },
+  { group: "Families", id: "elliott-harmonics", label: "Elliott & Harmonics", count: 23, icon: "triangle" },
+  { group: "Families", id: "patterns", label: "Patterns", count: 70, icon: "shapes" },
+  { group: "Families", id: "levels", label: "Levels", count: 66, icon: "sliders" },
+  { group: "Families", id: "statistics", label: "Statistics", count: 63, icon: "pie-chart" },
+  { group: "Families", id: "machine-learning", label: "Machine Learning", count: 30, icon: "cpu" },
+  { group: "Families", id: "time-seasonality", label: "Time & Sessions", count: 44, icon: "clock" },
+  { group: "Families", id: "sentiment-breadth", label: "Sentiment & Breadth", count: 25, icon: "gauge" },
+  { group: "Families", id: "risk-exits", label: "Risk & Exits", count: 20, icon: "alert-triangle" },
+  { group: "Families", id: "meta-composition", label: "Meta", count: 34, icon: "box" },
+  { group: "Families", id: "validation", label: "Validation", count: 3, icon: "check-square" },
 ] as const;
 
 export type CategoryId = (typeof INDICATOR_CATEGORIES)[number]["id"];
 
-/** Comprehensive built-in and library indicator presets */
-export const CATALOG_INDICATORS: CatalogIndicator[] = [
+/** Comprehensive built-in indicator presets with native bindings */
+const BUILT_IN_INDICATORS: CatalogIndicator[] = [
   // --- BASIC (Built-in) ---
   { id: "rsi", name: "Relative Strength Index (RSI)", category: "basic", family: "momentum", badge: "Built-in", nativeType: "rsi", description: "Measures the speed and change of price movements between 0 and 100." },
   { id: "macd", name: "Moving Average Convergence Divergence (MACD)", category: "basic", family: "momentum", badge: "Built-in", nativeType: "macd", description: "Trend-following momentum indicator showing relationship between two moving averages." },
@@ -81,41 +117,23 @@ export const CATALOG_INDICATORS: CatalogIndicator[] = [
   { id: "open_interest_delta", name: "Open Interest & Net Delta", category: "order_flow", family: "order_flow", badge: "Order flow", nativeType: "cvd", description: "Correlates contract accumulation with aggressive price moves." },
   { id: "institutional_absorption", name: "Institutional Absorption Detector", category: "order_flow", family: "order_flow", badge: "Order flow", nativeType: "volumeprofile", description: "Pinpoints high-volume bars with narrow price movement indicating passive absorption." },
 
-  // --- DISCOVER / CONCEPTS (Library & LuxAlgo) ---
+  // --- DISCOVER / CONCEPTS (Library & LuxAlgo Flags) ---
   { id: "smc_lux", name: "Smart Money Concepts [LuxAlgo]", category: "discover", family: "trend", author: "LuxAlgo", badge: "Top rated", luxSlug: "smart-money-concepts", description: "The most popular SMC indicator: real-time Market Structure (CHoCH, BOS), Order Blocks, and Fair Value Gaps." },
-  { id: "order_blocks_lux", name: "Order Blocks with Volume [LuxAlgo]", category: "concepts", family: "trend", author: "LuxAlgo", badge: "Concepts", luxSlug: "order-blocks", description: "Automatically detects institutional order blocks with volume confirmation." },
-  { id: "fvg_lux", name: "Fair Value Gaps (FVG) [LuxAlgo]", category: "concepts", family: "volatility", author: "LuxAlgo", badge: "Concepts", luxSlug: "fair-value-gaps", description: "Highlights bullish and bearish imbalance zones with mitigation tracking." },
-  { id: "liquidity_swings", name: "Liquidity Swings & Grabs [LuxAlgo]", category: "concepts", family: "trend", author: "LuxAlgo", badge: "Concepts", luxSlug: "liquidity-swings", description: "Identifies buy-side and sell-side liquidity pools and sweep signals." },
-  { id: "trend_lines_lux", name: "Trend Lines with Breaks [LuxAlgo]", category: "discover", family: "trend", author: "LuxAlgo", badge: "Trending", luxSlug: "trendlines-with-breaks", description: "Smart algorithmic trendlines with breakout detection and volume confirmation." },
   { id: "signals_overlays", name: "Signals & Overlays [LuxAlgo]", category: "discover", family: "trend", author: "LuxAlgo", badge: "Featured", luxSlug: "signals-overlays", description: "All-in-one trading toolkit with adaptive signals, trend confirmation, and dashboard." },
   { id: "oscillator_matrix", name: "Oscillator Matrix [LuxAlgo]", category: "discover", family: "momentum", author: "LuxAlgo", badge: "Popular", luxSlug: "oscillator-matrix", description: "Advanced multi-oscillator confluence engine for timing entries and exits." },
-  { id: "support_resistance_lux", name: "Support and Resistance Levels [LuxAlgo]", category: "concepts", family: "trend", author: "LuxAlgo", badge: "Concepts", luxSlug: "support-resistance", description: "Dynamic support and resistance zones based on pivot clusters and volume." },
-  { id: "wyckoff_engine", name: "Wyckoff Schematic & Range Detector", category: "concepts", family: "trend", author: "LuxAlgo", badge: "Concepts", luxSlug: "wyckoff-engine", description: "Identifies Spring, Upthrust, and Phase breakouts within trading ranges." },
-  { id: "harmonic_patterns", name: "Harmonic Pattern Scanner", category: "concepts", family: "trend", author: "LuxAlgo", badge: "Concepts", luxSlug: "harmonic-patterns", description: "Detects Bat, Gartley, Butterfly, and Crab Fibonacci harmonic formations." },
-  { id: "supply_demand_zones", name: "Supply and Demand Zones Engine", category: "concepts", family: "volatility", author: "LuxAlgo", badge: "Concepts", luxSlug: "supply-demand", description: "Automated institutional supply and demand imbalance zones." },
-  { id: "divergence_engine", name: "Multi-Oscillator Divergence Detector", category: "concepts", family: "momentum", author: "LuxAlgo", badge: "Concepts", luxSlug: "divergence-engine", description: "Automated regular and hidden divergence scanner across RSI, MACD, and OBV." },
-
-  // --- FAMILIES: TREND ---
-  { id: "ema_ribbon", name: "EMA Ribbon (8, 21, 55, 200)", category: "trend", family: "trend", badge: "Trend", nativeType: "ema", description: "Multi-layered EMA ribbon showing trend expansion and compression." },
+  { id: "trend_lines_lux", name: "Trend Lines with Breaks [LuxAlgo]", category: "discover", family: "trend", author: "LuxAlgo", badge: "Trending", luxSlug: "trendlines-with-breaks", description: "Smart algorithmic trendlines with breakout detection and volume confirmation." },
   { id: "supertrend_ai", name: "Supertrend AI [LuxAlgo]", category: "trend", family: "trend", author: "LuxAlgo", badge: "Trend", luxSlug: "supertrend-ai", description: "Machine learning enhanced Supertrend with clustering parameters." },
-  { id: "halftrend", name: "HalfTrend Indicator", category: "trend", family: "trend", badge: "Trend", nativeType: "supertrend", description: "Adaptive trendline using amplitude percentage and ATR channels." },
-  { id: "kama", name: "Kaufman Adaptive Moving Average (KAMA)", category: "trend", family: "trend", badge: "Trend", nativeType: "ema", description: "Accounts for both market trend speed and market volatility." },
-  { id: "linear_regression", name: "Linear Regression Trend Channel", category: "trend", family: "trend", badge: "Trend", nativeType: "sma", description: "Plots statistical trend lines with standard error deviation channels." },
-  { id: "vortex", name: "Vortex Indicator (VI)", category: "trend", family: "trend", badge: "Trend", nativeType: "adx", description: "Identifies the start of a trend and confirms current trend direction." },
+];
 
-  // --- FAMILIES: MOMENTUM ---
-  { id: "rsi_dynamic", name: "RSI with Dynamic Bands", category: "momentum", family: "momentum", badge: "Momentum", nativeType: "rsi", description: "RSI overlaid with volatility bands to highlight extreme oversold/overbought states." },
-  { id: "tsi", name: "True Strength Index (TSI)", category: "momentum", family: "momentum", badge: "Momentum", nativeType: "macd", description: "Double smoothed momentum oscillator based on price changes." },
-  { id: "stc", name: "Schaff Trend Cycle (STC)", category: "momentum", family: "momentum", badge: "Momentum", nativeType: "stoch", description: "Combines MACD and Stochastics for fast cycle turning points." },
-  { id: "smi", name: "Stochastic Momentum Index (SMI)", category: "momentum", family: "momentum", badge: "Momentum", nativeType: "stoch", description: "Refined stochastic oscillator comparing close to the midpoint of the high/low range." },
-  { id: "ultimate_osc", name: "Ultimate Oscillator", category: "momentum", family: "momentum", badge: "Momentum", nativeType: "stoch", description: "Uses three different time frames to avoid false divergence signals." },
+// Merge built-in indicators with official library dataset
+const builtInIds = new Set(BUILT_IN_INDICATORS.map((b) => b.id));
+const libraryCatalog: CatalogIndicator[] = (catalogData as CatalogIndicator[]).filter(
+  (item) => !builtInIds.has(item.id)
+);
 
-  // --- FAMILIES: VOLATILITY ---
-  { id: "bb_width", name: "Bollinger Bands Width (%B)", category: "volatility", family: "volatility", badge: "Volatility", nativeType: "bb", description: "Measures bandwidth to detect impending volatility squeezes." },
-  { id: "keltner_squeeze", name: "Bollinger / Keltner Squeeze Momentum", category: "volatility", family: "volatility", badge: "Volatility", nativeType: "bb", description: "Detects periods of extreme market consolidation prior to explosive breakouts." },
-  { id: "atr_trailing_stop", name: "ATR Trailing Stop Loss", category: "volatility", family: "volatility", badge: "Volatility", nativeType: "atr", description: "Dynamic trailing stop levels scaled to prevailing market volatility." },
-  { id: "chaikin_volatility", name: "Chaikin Volatility Oscillator", category: "volatility", family: "volatility", badge: "Volatility", nativeType: "atr", description: "Calculates the spread between high and low prices to predict tops and bottoms." },
-  { id: "rvi", name: "Relative Volatility Index (RVI)", category: "volatility", family: "volatility", badge: "Volatility", nativeType: "rsi", description: "Measures the direction of volatility instead of price momentum." },
+export const CATALOG_INDICATORS: CatalogIndicator[] = [
+  ...BUILT_IN_INDICATORS,
+  ...libraryCatalog,
 ];
 
 const FAVS_KEY = "trade-pro:indicator-favorites";

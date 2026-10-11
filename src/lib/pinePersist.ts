@@ -242,6 +242,8 @@ export async function restorePineIndicators(
       } catch (e) {
         failed.push({ name, reason: (e as Error).message || "compile failed" });
       }
+      // Keep startup responsive when several saved scripts are restored.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
   } finally {
     // Replay the saved visibility/inputs onto the freshly mounted handles. This

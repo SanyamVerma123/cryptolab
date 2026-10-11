@@ -168,7 +168,12 @@ export async function restoreLuxIndicators(
       return null;
     };
 
-    const tasks = slugs.map(async (slug) => {
+    // Do not mount library indicators concurrently. A few scripts allocate a
+    // substantial amount of chart/worker state while being prepared; mounting
+    // several at once made provider symbols such as Hyperliquid ETH freeze on
+    // startup before the user could interact with the chart.
+    const yieldToBrowser = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+    for (const slug of slugs) {
       try {
         let source = readCached(slug);
         if (!source) {
@@ -182,15 +187,15 @@ export async function restoreLuxIndicators(
         }
         if (!source) {
           failed.push({ slug, reason: "source unavailable" });
-          return;
+          continue;
         }
 
         const chart = (ws as any).active ? ws.chart : null;
-        if (!chart) return;
+        if (!chart) continue;
         const existing = (chart.indicators?.() || []).find((h: any) => h.source === source);
         if (existing) {
           if (existing.id) rememberLuxIndicator(symbol, slug, existing.id);
-          return;
+          continue;
         }
 
         const handle = chart.addIndicator(source);
@@ -199,9 +204,9 @@ export async function restoreLuxIndicators(
       } catch (e) {
         failed.push({ slug, reason: (e as Error).message || "fetch failed" });
       }
-    });
-
-    await Promise.allSettled(tasks);
+      // Let React/Vela paint and process input before preparing the next one.
+      await yieldToBrowser();
+    }
   } finally {
     // Now that every id map is populated, replay the saved visibility/inputs
     // onto the freshly mounted handles — this keeps the "eye" toggle and input
