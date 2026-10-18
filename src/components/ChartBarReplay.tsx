@@ -10,7 +10,7 @@ interface Props {
   onClose: () => void;
 }
 
-const SPEEDS = [0.5, 1, 2, 4, 8];
+const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 3, 5, 8];
 const formatSpeed = (n: number) => `${n}x`;
 
 interface DockPosition { left: number; top: number }
@@ -33,10 +33,12 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [cursorTime, setCursorTime] = useState<number | null>(null);
+  const [hoverBarTime, setHoverBarTime] = useState<number | null>(null);
   const [remaining, setRemaining] = useState(0);
   const [scrubValue, setScrubValue] = useState(0);
   const [speedMenuOpen, setSpeedMenuOpen] = useState(false);
   const [cursorX, setCursorX] = useState<number | null>(null);
+  const [cursorY, setCursorY] = useState<number | null>(null);
   const [dockPosition, setDockPosition] = useState<DockPosition | null>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -135,33 +137,6 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
 
   useEffect(() => () => dragCleanupRef.current?.(), []);
 
-  useEffect(() => {
-    if (!active || !cutMode || !ws) return;
-    let offClick: (() => void) | undefined;
-    const bind = () => {
-      try {
-        const chart = ws.active ? ws.chart : null;
-        offClick?.();
-        offClick = chart?.renderer?.onClick?.(({ time }: { time?: number | null }) => {
-          if (typeof time === "number" && Number.isFinite(time)) void startAt(time);
-        });
-      } catch { /* chart can be rebuilding during a layout or market switch */ }
-    };
-    bind();
-    const offActive = ws.on("cell:active", bind);
-    return () => { offClick?.(); offActive?.(); };
-  }, [active, cutMode, ws]);
-
-  useEffect(() => {
-    if (!active || !cutMode) return;
-    const chart = dockRef.current?.closest<HTMLElement>(".vela-chart-container")
-      ?? document.querySelector<HTMLElement>(".vela-chart-container");
-    if (!chart) return;
-    const move = (e: PointerEvent) => setCursorX(e.clientX - chart.getBoundingClientRect().left);
-    chart.addEventListener("pointermove", move);
-    return () => chart.removeEventListener("pointermove", move);
-  }, [active, cutMode]);
-
   const startAt = useCallback(async (from: number) => {
     if (!replay || !Number.isFinite(from)) return false;
     const min = replay.bounds?.first;
@@ -180,6 +155,42 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
       return false;
     }
   }, [replay, speed, sync]);
+
+  useEffect(() => {
+    if (!active || !cutMode || !ws) return;
+    let offClick: (() => void) | undefined;
+    let offCrosshair: (() => void) | undefined;
+    const bind = () => {
+      try {
+        const chart = ws.active ? ws.chart : null;
+        offClick?.();
+        offCrosshair?.();
+        offClick = chart?.renderer?.onClick?.(({ time }: { time?: number | null }) => {
+          if (typeof time === "number" && Number.isFinite(time)) void startAt(time);
+        });
+        offCrosshair = chart?.renderer?.onCrosshairMove?.(({ time }: { time?: number | null }) => {
+          if (typeof time === "number" && Number.isFinite(time)) setHoverBarTime(time);
+        });
+      } catch { /* chart can be rebuilding during a layout or market switch */ }
+    };
+    bind();
+    const offActive = ws.on("cell:active", bind);
+    return () => { offClick?.(); offCrosshair?.(); offActive?.(); };
+  }, [active, cutMode, ws, startAt]);
+
+  useEffect(() => {
+    if (!active || !cutMode) return;
+    const chart = dockRef.current?.closest<HTMLElement>(".vela-chart-container")
+      ?? document.querySelector<HTMLElement>(".vela-chart-container");
+    if (!chart) return;
+    const move = (e: PointerEvent) => {
+      const rect = chart.getBoundingClientRect();
+      setCursorX(e.clientX - rect.left);
+      setCursorY(e.clientY - rect.top);
+    };
+    chart.addEventListener("pointermove", move);
+    return () => chart.removeEventListener("pointermove", move);
+  }, [active, cutMode]);
 
   const exitReplay = useCallback(() => {
     try { replay?.stop(); } catch (e) { console.warn("[trade-pro replay] stop failed:", e); }
@@ -315,27 +326,92 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
   useEffect(() => {
     if (!active) return;
     const key = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (speedMenuOpen) { setSpeedMenuOpen(false); return; }
-      if (cutMode) { setCutMode(false); return; }
-      try { replay?.stop(); } catch {}
-      setPlaying(false);
-      setCursorTime(null);
-      onClose();
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName.toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select") return;
+        if (target.getAttribute("contenteditable") === "true") return;
+      }
+
+      if (event.key === "Escape") {
+        if (speedMenuOpen) { setSpeedMenuOpen(false); return; }
+        if (cutMode) { setCutMode(false); return; }
+        try { replay?.stop(); } catch {}
+        setPlaying(false);
+        setCursorTime(null);
+        onClose();
+        return;
+      }
+
+      // Space: Toggle Play / Pause
+      if (event.code === "Space" || event.key === " ") {
+        event.preventDefault();
+        event.stopPropagation();
+        void togglePlayback();
+        return;
+      }
+
+      // ArrowRight / KeyL: Step 1 bar forward
+      if (event.key === "ArrowRight" || event.code === "KeyL") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (replay?.step()) sync();
+        return;
+      }
+
+      // ArrowLeft / KeyJ: Step 1 bar backward
+      if (event.key === "ArrowLeft" || event.code === "KeyJ") {
+        event.preventDefault();
+        event.stopPropagation();
+        stepBack();
+        return;
+      }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [active, cutMode, onClose, replay, speedMenuOpen]);
+  }, [active, cutMode, onClose, replay, speedMenuOpen, togglePlayback, sync, stepBack]);
 
   if (!active) return null;
 
   return (
     <>
-      {cutMode && <div className="replay-cut-layer" aria-live="polite">
-        {cursorX != null && <span className="replay-cut-line" style={{ left: cursorX }} />}
-        <div className="replay-cut-hint">Click a candle or scrub to a starting bar <button onClick={() => setCutMode(false)} aria-label="Cancel start-bar selection">Cancel</button></div>
-      </div>}
-      {!cutMode && state?.active && <div className="replay-watermark" aria-hidden="true">{coin} · {timeframe}<small>BAR REPLAY</small></div>}
+      {cutMode && (
+        <div className="replay-cut-layer" aria-live="polite">
+          {cursorX != null && (
+            <div className="replay-cut-indicator" style={{ left: cursorX }}>
+              <span className="replay-cut-line" />
+              <div
+                className="replay-cut-scissors"
+                style={{
+                  top: cursorY != null ? Math.max(30, Math.min(cursorY - 14, (window.innerHeight || 600) - 150)) : 80,
+                }}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M9.64 7.64c.23-.5.36-1.05.36-1.64 0-2.21-1.79-4-4-4S2 3.79 2 6s1.79 4 4 4c.59 0 1.14-.13 1.64-.36L10 12l-2.36 2.36C7.14 14.13 6.59 14 6 14c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4c0-.59-.13-1.14-.36-1.64L12 14l7 7h3v-1L9.64 7.64zM6 8c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm0 12c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm9.64-7.64L22 4V3h-3l-7.36 7.36 4 4z"/>
+                </svg>
+                <span className="replay-cut-badge">
+                  {hoverBarTime ? formatTime(hoverBarTime) : "Click candle to cut"}
+                </span>
+              </div>
+            </div>
+          )}
+          <div className="replay-cut-hint">
+            <span style={{ color: "#f23645", fontWeight: 700, fontSize: "14px" }}>✂</span>
+            <span>Click any candle on the chart to start bar replay from that point</span>
+            <button onClick={() => setCutMode(false)} aria-label="Cancel start-bar selection">Cancel</button>
+          </div>
+        </div>
+      )}
+      {!cutMode && state?.active && (
+        <div className="replay-hud-badge" aria-label="Replay status">
+          <span className="replay-hud-dot" />
+          <span className="replay-hud-title">REPLAY</span>
+          <span className="replay-hud-sep">·</span>
+          <span className="replay-hud-time">{formatTime(cursorTime)}</span>
+          <span className="replay-hud-sep">·</span>
+          <span className="replay-hud-remaining">{remaining.toLocaleString()} bars left</span>
+        </div>
+      )}
       <div ref={dockRef} className={`replay-toolbar${dragging ? " is-dragging" : ""}${cutMode ? " is-selecting" : ""}`} role="toolbar" aria-label="Bar replay controls"
         style={dockPosition ? { left: dockPosition.left, top: dockPosition.top, bottom: "auto" } : undefined}>
         <button className="replay-icon drag-handle" onPointerDown={beginDrag} onKeyDown={moveDockByKeyboard} title="Drag to move · use arrow keys to position" aria-label="Move replay toolbar">

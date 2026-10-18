@@ -41,6 +41,7 @@ import { AlphaVantageProvider } from "../lib/alphaVantageProvider";
 import { ChartBarReplay } from "./ChartBarReplay";
 import { ChartRadialMenu } from "./ChartRadialMenu";
 import { ChangeIntervalModal } from "./ChangeIntervalModal";
+import { ChartBottomRangeBar } from "./ChartBottomRangeBar";
 import { ErrorBoundary } from "./ErrorBoundary";
 
 // Register Vela's built-in presets ('1', '2h', '2v', '4', '8')
@@ -525,6 +526,20 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
               console.warn("[trade-pro] drawing isolation install failed:", e);
             }
             try {
+              if (chart?.drawings?.setToolShortcuts) {
+                chart.drawings.setToolShortcuts({
+                  trendline: "Alt+T",
+                  hline: "Alt+H",
+                  vline: "Alt+V",
+                  fibretracement: "Alt+F",
+                  parallelchannel: "Alt+J",
+                  box: "Alt+B",
+                });
+              }
+            } catch (e) {
+              console.warn("[trade-pro] drawing shortcuts setup failed:", e);
+            }
+            try {
               const activeCell = (ws as any).active;
               wireAutoBackfill(chart, activeCell);
             } catch {}
@@ -743,13 +758,15 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     } catch { /* Vela may be remounting its topbar */ }
   }, [replayActive]);
 
-  // TradingView-Style Quick Interval hotkey: Typing any digit (0-9) or shortcut key (d, w, m, comma)
-  // while viewing the chart opens the Change Interval dialog.
+  // TradingView-Style Chart Hotkeys:
+  // - Shift+R: Toggle Bar Replay
+  // - Alt+T: Trend Line, Alt+H: Horizontal Line, Alt+V: Vertical Line, Alt+F: Fib Retracement, Alt+J: Channel, Alt+B: Box
+  // - Alt+M: Measure Ruler, Alt+R: Reset/Auto Scale, Alt+L: Lock Drawings, Alt+C: Hide Drawings
+  // - Ctrl+Z / Ctrl+Y: Undo/Redo drawing
+  // - Delete / Backspace: Remove selected drawing
+  // - Digits / d,w,m / comma: Change interval modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if modifier keys are pressed (Ctrl, Meta/Cmd, Alt)
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-
       // Ignore if user is currently typing in an input, textarea, select, or editable element
       const active = document.activeElement;
       if (active) {
@@ -759,11 +776,157 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
         if (active.getAttribute("role") === "textbox" || active.getAttribute("role") === "combobox") return;
       }
 
-      // Ignore if any modal or dialog is already open
+      // Ignore if any full-screen modal or dialog is already open
       const hasOpenModal = document.querySelector(
         ".indicators-modal-overlay, .settings-modal-overlay, .auth-modal-overlay, .pine-editor-overlay, [data-scope='dialog'][data-part='content'], .change-interval-modal-overlay"
       );
       if (hasOpenModal) return;
+
+      const ws = wsRef.current;
+      const chart = (ws as any)?.active?.chart || ws?.chart;
+
+      // Shift+R: Toggle Bar Replay
+      if (e.shiftKey && (e.code === "KeyR" || e.key === "R") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent("tradepro:toggle-replay"));
+        return;
+      }
+
+      // Alt+T: Trendline
+      if (e.altKey && (e.code === "KeyT" || e.key?.toLowerCase() === "t")) {
+        e.preventDefault();
+        e.stopPropagation();
+        chart?.drawings?.setTool?.("trendline");
+        return;
+      }
+
+      // Alt+H: Horizontal Line
+      if (e.altKey && (e.code === "KeyH" || e.key?.toLowerCase() === "h")) {
+        e.preventDefault();
+        e.stopPropagation();
+        chart?.drawings?.setTool?.("hline");
+        return;
+      }
+
+      // Alt+V: Vertical Line
+      if (e.altKey && (e.code === "KeyV" || e.key?.toLowerCase() === "v")) {
+        e.preventDefault();
+        e.stopPropagation();
+        chart?.drawings?.setTool?.("vline");
+        return;
+      }
+
+      // Alt+F: Fib Retracement
+      if (e.altKey && (e.code === "KeyF" || e.key?.toLowerCase() === "f")) {
+        e.preventDefault();
+        e.stopPropagation();
+        chart?.drawings?.setTool?.("fibretracement");
+        return;
+      }
+
+      // Alt+J: Parallel Channel
+      if (e.altKey && (e.code === "KeyJ" || e.key?.toLowerCase() === "j")) {
+        e.preventDefault();
+        e.stopPropagation();
+        chart?.drawings?.setTool?.("parallelchannel");
+        return;
+      }
+
+      // Alt+B: Box / Rectangle
+      if (e.altKey && (e.code === "KeyB" || e.key?.toLowerCase() === "b")) {
+        e.preventDefault();
+        e.stopPropagation();
+        chart?.drawings?.setTool?.("box");
+        return;
+      }
+
+      // Alt+M: Measure Tool (Ruler)
+      if (e.altKey && (e.code === "KeyM" || e.key?.toLowerCase() === "m")) {
+        e.preventDefault();
+        e.stopPropagation();
+        const curMode = chart?.drawings?.getMode?.();
+        chart?.drawings?.setMode?.(curMode === "measure" ? null : "measure");
+        return;
+      }
+
+      // Alt+R: Auto Scale / Fit View
+      if (e.altKey && (e.code === "KeyR" || e.key?.toLowerCase() === "r")) {
+        e.preventDefault();
+        e.stopPropagation();
+        chart?.renderer?.resetScale?.();
+        chart?.renderer?.fitContent?.();
+        return;
+      }
+
+      // Alt+L: Lock / Unlock all drawings
+      if (e.altKey && (e.code === "KeyL" || e.key?.toLowerCase() === "l")) {
+        e.preventDefault();
+        e.stopPropagation();
+        const all = chart?.drawings?.all?.() || [];
+        const anyUnlocked = all.some((d: any) => !d.locked);
+        all.forEach((d: any) => {
+          if (typeof chart.drawings.setLocked === "function") {
+            chart.drawings.setLocked(d.id, anyUnlocked);
+          } else if (typeof chart.drawings.lock === "function") {
+            chart.drawings.lock(d.id, anyUnlocked);
+          }
+        });
+        return;
+      }
+
+      // Alt+C: Hide / Show all drawings
+      if (e.altKey && (e.code === "KeyC" || e.key?.toLowerCase() === "c")) {
+        e.preventDefault();
+        e.stopPropagation();
+        const all = chart?.drawings?.all?.() || [];
+        const anyVisible = all.some((d: any) => d.visible !== false);
+        all.forEach((d: any) => {
+          if (typeof chart.drawings.setVisible === "function") {
+            chart.drawings.setVisible(d.id, !anyVisible);
+          } else if (typeof chart.drawings.show === "function") {
+            chart.drawings.show(d.id, !anyVisible);
+          }
+        });
+        return;
+      }
+
+      // Ctrl+Z: Undo drawing
+      if ((e.ctrlKey || e.metaKey) && (e.code === "KeyZ" || e.key?.toLowerCase() === "z") && !e.shiftKey) {
+        if (chart?.drawings?.canUndo?.() || typeof chart?.drawings?.undo === "function") {
+          e.preventDefault();
+          e.stopPropagation();
+          chart.drawings.undo();
+          return;
+        }
+      }
+
+      // Ctrl+Y or Ctrl+Shift+Z: Redo drawing
+      if (
+        ((e.ctrlKey || e.metaKey) && (e.code === "KeyY" || e.key?.toLowerCase() === "y")) ||
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code === "KeyZ" || e.key?.toLowerCase() === "z"))
+      ) {
+        if (chart?.drawings?.canRedo?.() || typeof chart?.drawings?.redo === "function") {
+          e.preventDefault();
+          e.stopPropagation();
+          chart.drawings.redo();
+          return;
+        }
+      }
+
+      // Delete or Backspace: Remove selected drawing
+      if (e.key === "Delete" || e.key === "Backspace") {
+        const sel = chart?.drawings?.selected?.() || [];
+        if (sel.length) {
+          e.preventDefault();
+          e.stopPropagation();
+          chart.drawings.removeMany(sel.map((d: any) => d.id || d));
+          return;
+        }
+      }
+
+      // Ignore if modifier keys are pressed for interval jump
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
 
       const key = e.key;
       const isDigit = /^[0-9]$/.test(key);
@@ -807,6 +970,9 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       </ErrorBoundary>
       <ErrorBoundary>
         <ChangeIntervalModal ws={wsInstance} currentTf={timeframe} />
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <ChartBottomRangeBar ws={wsInstance} />
       </ErrorBoundary>
     </div>
   );

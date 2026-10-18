@@ -1125,6 +1125,36 @@ html, body, #root {
 .fav-add { font-weight: 500; font-size: 15px; line-height: 1; }
 .fav-preset-btn { font-size: 13.5px; }
 
+.favs-util-sep {
+  width: 1px;
+  height: 16px;
+  background: #2a2e39;
+  margin: 0 2px;
+  flex: none;
+}
+.favs.light .favs-util-sep {
+  background: #e0e3e8;
+}
+.fav-util-btn {
+  position: relative;
+}
+.fav-util-badge {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  background: #2962ff;
+  color: #ffffff;
+  border-radius: 2px;
+  padding: 1px 2px;
+}
+.fav-clear-btn:hover {
+  color: #f23645 !important;
+  border-color: rgba(242, 54, 69, 0.3) !important;
+}
+
 /* Tool picker flyout — grouped exactly like Vela's toolbar */
 .fav-picker {
   position: absolute;
@@ -6197,8 +6227,238 @@ body.resizing-col .market-panel {
 .replay-icon.toggle .enabled-toggle span { display: block; width: 16px; height: 16px; margin-left: auto; border-radius: 50%; background: #202527; }
 .replay-watermark { color: rgba(210, 221, 240, .11); text-shadow: 0 2px 16px rgba(0, 0, 0, .18); }
 .replay-watermark small { color: rgba(210, 221, 240, .45); font-size: 10px; letter-spacing: .17em; }
-.replay-cut-hint { border-color: #394354; border-radius: 8px; background: rgba(22, 27, 35, .96); backdrop-filter: blur(10px); }
-.replay-cut-line { width: 1px; background: #5790fa; box-shadow: 0 0 0 1px rgba(87, 144, 250, .12), 0 0 10px rgba(87, 144, 250, .5); }
+/* TradingView Replay Cut Layer & Interactive Scissors Line */
+.replay-cut-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 105;
+}
+
+.replay-cut-indicator {
+  position: absolute;
+  top: 0;
+  bottom: 28px;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.replay-cut-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1.5px;
+  background: #f23645;
+  box-shadow: 0 0 8px rgba(242, 54, 69, 0.6);
+  pointer-events: none;
+}
+
+.replay-cut-scissors {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(19, 23, 34, 0.92);
+  border: 1px solid #f23645;
+  color: #f23645;
+  padding: 4px 8px;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.replay-cut-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #f0f3fa;
+}
+
+.replay-cut-hint {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(19, 23, 34, 0.92);
+  border: 1px solid #363a45;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: #d1d4dc;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+  z-index: 106;
+}
+
+.replay-cut-hint button {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #d1d4dc;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.replay-cut-hint button:hover {
+  background: rgba(242, 54, 69, 0.2);
+  border-color: #f23645;
+  color: #f23645;
+}
+
+/* TradingView Replay HUD Status Badge */
+.replay-hud-badge {
+  position: absolute;
+  top: 12px;
+  left: 60px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(19, 23, 34, 0.85);
+  border: 1px solid #363a45;
+  backdrop-filter: blur(8px);
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #d1d4dc;
+  z-index: 45;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.replay-hud-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f23645;
+  box-shadow: 0 0 6px #f23645;
+  animation: replay-pulse 1.6s infinite ease-in-out;
+}
+
+@keyframes replay-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+
+.replay-hud-title {
+  color: #f23645;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.replay-hud-sep {
+  color: #50535e;
+}
+
+.replay-hud-time {
+  color: #f0f3fa;
+  font-weight: 600;
+}
+
+.replay-hud-remaining {
+  color: #787b86;
+}
+
+/* TradingView-grade Chart Bottom Range Bar */
+.chart-bottom-range-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  background: #131722;
+  border-top: 1px solid #2a2e39;
+  z-index: 30;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif;
+}
+
+.cbr-ranges, .cbr-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.cbr-chip {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #787b86;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  line-height: 18px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.cbr-chip:hover {
+  color: #f0f3fa;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.cbr-chip.on {
+  color: #2962ff;
+  background: rgba(41, 98, 255, 0.15);
+  border-color: rgba(41, 98, 255, 0.3);
+}
+
+.cbr-scale-btn {
+  text-transform: lowercase;
+  font-family: monospace, sans-serif;
+  font-size: 11px;
+}
+
+.cbr-tz {
+  font-size: 10px;
+  font-weight: 600;
+  color: #50535e;
+  padding: 0 4px 0 6px;
+  letter-spacing: 0.03em;
+}
+
+/* Light theme support for bottom range bar */
+.theme-light .chart-bottom-range-bar,
+.light .chart-bottom-range-bar {
+  background: #ffffff;
+  border-top-color: #e0e3eb;
+}
+
+.theme-light .cbr-chip,
+.light .cbr-chip {
+  color: #6a6d78;
+}
+
+.theme-light .cbr-chip:hover,
+.light .cbr-chip:hover {
+  color: #131722;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.theme-light .cbr-chip.on,
+.light .cbr-chip.on {
+  color: #2962ff;
+  background: rgba(41, 98, 255, 0.12);
+  border-color: rgba(41, 98, 255, 0.25);
+}
+
+.theme-light .cbr-tz,
+.light .cbr-tz {
+  color: #9598a1;
+}
 
 /* Shared surface treatment for chart side panels and the lower trading drawer. */
 .market-panel, .bottom-orders-drawer.tv-paper-drawer {

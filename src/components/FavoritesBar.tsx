@@ -245,6 +245,119 @@ export function FavoritesBar({ ws }: Props) {
     };
   }, [ws]);
 
+  const [snapMode, setSnapMode] = useState<"off" | "weak" | "strong">("off");
+  const [stayMode, setStayMode] = useState(false);
+  const [drawingMode, setDrawingMode] = useState<string | null>(null);
+  const [allHidden, setAllHidden] = useState(false);
+  const [allLocked, setAllLocked] = useState(false);
+
+  useEffect(() => {
+    if (!ws) return;
+    let c: any = null;
+    try {
+      c = (ws as any).active ? ws.chart : null;
+    } catch {
+      return;
+    }
+    if (!c?.drawings) return;
+
+    try {
+      setSnapMode(c.drawings.getSnapMode?.() ?? "off");
+      setStayMode(c.drawings.getStayMode?.() ?? false);
+      setDrawingMode(c.drawings.getMode?.() ?? null);
+    } catch {}
+
+    const offSnap = c.on?.("drawing:snap", () => {
+      try { setSnapMode(c.drawings.getSnapMode?.() ?? "off"); } catch {}
+    });
+    const offStay = c.on?.("drawing:stay", () => {
+      try { setStayMode(c.drawings.getStayMode?.() ?? false); } catch {}
+    });
+    const offMode = c.on?.("drawing:mode", () => {
+      try { setDrawingMode(c.drawings.getMode?.() ?? null); } catch {}
+    });
+
+    return () => {
+      offSnap?.();
+      offStay?.();
+      offMode?.();
+    };
+  }, [ws]);
+
+  const toggleSnap = () => {
+    if (!ws) return;
+    try {
+      const next = snapMode === "off" ? "weak" : snapMode === "weak" ? "strong" : "off";
+      ws.chart.drawings.setSnapMode(next as never);
+      setSnapMode(next);
+    } catch {}
+  };
+
+  const toggleStay = () => {
+    if (!ws) return;
+    try {
+      const next = !stayMode;
+      ws.chart.drawings.setStayMode(next);
+      setStayMode(next);
+    } catch {}
+  };
+
+  const toggleMeasure = () => {
+    if (!ws) return;
+    try {
+      const next = drawingMode === "measure" ? null : "measure";
+      ws.chart.drawings.setMode(next as never);
+      setDrawingMode(next);
+    } catch {}
+  };
+
+  const toggleHideAll = () => {
+    if (!ws) return;
+    try {
+      const chart = (ws as any).active?.chart || ws.chart;
+      if (!chart?.drawings) return;
+      const next = !allHidden;
+      const all = chart.drawings.all?.() || [];
+      all.forEach((d: any) => {
+        if (typeof chart.drawings.setVisible === "function") {
+          chart.drawings.setVisible(d.id, !next);
+        } else if (typeof chart.drawings.show === "function") {
+          chart.drawings.show(d.id, !next);
+        }
+      });
+      setAllHidden(next);
+    } catch {}
+  };
+
+  const toggleLockAll = () => {
+    if (!ws) return;
+    try {
+      const chart = (ws as any).active?.chart || ws.chart;
+      if (!chart?.drawings) return;
+      const next = !allLocked;
+      const all = chart.drawings.all?.() || [];
+      all.forEach((d: any) => {
+        if (typeof chart.drawings.setLocked === "function") {
+          chart.drawings.setLocked(d.id, next);
+        } else if (typeof chart.drawings.lock === "function") {
+          chart.drawings.lock(d.id, next);
+        }
+      });
+      setAllLocked(next);
+    } catch {}
+  };
+
+  const removeAll = () => {
+    if (!ws) return;
+    try {
+      const all = ws.chart.drawings.all();
+      if (!all.length) return;
+      if (window.confirm("Remove all drawings on the chart?")) {
+        ws.chart.drawings.removeMany(all.map((d: any) => d.id));
+      }
+    } catch {}
+  };
+
   const arm = (type: string) => {
     if (!ws) return;
     try {
@@ -319,11 +432,7 @@ export function FavoritesBar({ ws }: Props) {
           +
         </button>
 
-        {/* Named drawing-format presets. Sits right after the text tool as the
-            user asked: configure a drawing (yellow box, "fvg" text, levels
-            off…), hit ✥ → Custom → name it → it lands in this dropdown.
-            Picking an entry applies that exact format to the drawing you just
-            made. */}
+        {/* Named drawing-format presets */}
         <button
           className={"fav-btn fav-preset-btn" + (presetOpen ? " on" : "")}
           title="Saved drawing formats — save a configured drawing as a named preset, or apply one"
@@ -335,6 +444,102 @@ export function FavoritesBar({ ws }: Props) {
           }}
         >
           ✥
+        </button>
+
+        <span className="favs-util-sep" />
+
+        {/* TradingView Magnet Snap Mode */}
+        <button
+          className={"fav-btn fav-util-btn" + (snapMode !== "off" ? " on" : "")}
+          title={`Magnet mode: ${snapMode.toUpperCase()} (snaps drawings to OHLC · Hold Ctrl while drawing)`}
+          aria-label={`Magnet mode ${snapMode}`}
+          onClick={toggleSnap}
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 3v7a6 6 0 0 0 12 0V3M6 7h4M14 7h4M6 3h4M14 3h4"/>
+          </svg>
+          {snapMode !== "off" && <span className="fav-util-badge">{snapMode === "strong" ? "S" : "W"}</span>}
+        </button>
+
+        {/* Stay in Drawing Mode */}
+        <button
+          className={"fav-btn fav-util-btn" + (stayMode ? " on" : "")}
+          title={stayMode ? "Stay in drawing mode: ON (click to disable)" : "Stay in drawing mode: OFF (keep tool armed)"}
+          aria-label="Stay in drawing mode"
+          aria-pressed={stayMode}
+          onClick={toggleStay}
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9"/>
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          </svg>
+        </button>
+
+        {/* Measure Tool (Ruler) */}
+        <button
+          className={"fav-btn fav-util-btn" + (drawingMode === "measure" ? " on" : "")}
+          title="Measure tool / Ruler (Shift+Drag or Alt+M)"
+          aria-label="Measure tool"
+          aria-pressed={drawingMode === "measure"}
+          onClick={toggleMeasure}
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21.3 8.7 8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4z"/>
+            <path d="m14.5 5.5-2.5 2.5m-1-1-2 2m5 1-2.5 2.5m-1-1-2 2"/>
+          </svg>
+        </button>
+
+        {/* Hide / Show All Drawings */}
+        <button
+          className={"fav-btn fav-util-btn" + (allHidden ? " on" : "")}
+          title={allHidden ? "Show all drawings (Alt+C or Ctrl+Alt+H)" : "Hide all drawings (Alt+C or Ctrl+Alt+H)"}
+          aria-label="Hide or show all drawings"
+          onClick={toggleHideAll}
+        >
+          {allHidden ? (
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+              <line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          )}
+        </button>
+
+        {/* Lock All Drawings */}
+        <button
+          className={"fav-btn fav-util-btn" + (allLocked ? " on" : "")}
+          title={allLocked ? "Unlock all drawings (Alt+L)" : "Lock all drawings (Alt+L)"}
+          aria-label="Lock or unlock all drawings"
+          onClick={toggleLockAll}
+        >
+          {allLocked ? (
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+            </svg>
+          )}
+        </button>
+
+        {/* Remove All Drawings */}
+        <button
+          className="fav-btn fav-util-btn fav-clear-btn"
+          title="Remove all drawings"
+          aria-label="Remove all drawings"
+          onClick={removeAll}
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+          </svg>
         </button>
       </span>
 
