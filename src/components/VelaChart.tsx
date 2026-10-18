@@ -747,14 +747,18 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     return () => window.removeEventListener("tradepro:toggle-replay", handleToggle);
   }, []);
 
-  // Keep the native toolbar's selected treatment in sync with the dock.
+  // Keep the native toolbar and mobile bar selected treatment in sync with the dock.
   useEffect(() => {
     try {
-      const btn = document.querySelector<HTMLElement>("[data-action-id='replay'], button[aria-label*='Replay']");
-      if (!btn) return;
-      btn.classList.toggle("active", replayActive);
-      if (replayActive) btn.setAttribute("data-active", "true");
-      else btn.removeAttribute("data-active");
+      const btns = document.querySelectorAll<HTMLElement>(
+        "[data-action-id='replay'], button[aria-label*='Replay'], .vela-mb-item[aria-label*='Replay']"
+      );
+      btns.forEach((btn) => {
+        btn.classList.toggle("active", replayActive);
+        btn.classList.toggle("vela-mb-on", replayActive);
+        if (replayActive) btn.setAttribute("data-active", "true");
+        else btn.removeAttribute("data-active");
+      });
     } catch { /* Vela may be remounting its topbar */ }
   }, [replayActive]);
 

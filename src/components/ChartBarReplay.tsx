@@ -41,6 +41,18 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
   const [cursorY, setCursorY] = useState<number | null>(null);
   const [dockPosition, setDockPosition] = useState<DockPosition | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth <= 768 || window.matchMedia("(pointer: coarse)").matches;
+  });
+
+  useEffect(() => {
+    const check = () => {
+      setIsMobile(window.innerWidth <= 768 || window.matchMedia("(pointer: coarse)").matches);
+    };
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   const setPosition = useCallback((next: DockPosition | null) => {
     positionRef.current = next;
@@ -207,6 +219,7 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
   };
 
   const saveDockPosition = (position: DockPosition) => {
+    if (isMobile) return;
     const dock = dockRef.current;
     const root = dock?.closest<HTMLElement>(".vela-chart-container");
     if (!dock || !root) return;
@@ -221,7 +234,7 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
   };
 
   const beginDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0) return;
+    if (isMobile || event.button !== 0) return;
     const dock = dockRef.current;
     const root = dock?.closest<HTMLElement>(".vela-chart-container");
     if (!dock || !root) return;
@@ -254,6 +267,7 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
   };
 
   const moveDockByKeyboard = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (isMobile) return;
     const delta = event.shiftKey ? 40 : 12;
     const direction: Record<string, DockPosition> = {
       ArrowLeft: { left: -delta, top: 0 }, ArrowRight: { left: delta, top: 0 },
@@ -290,12 +304,15 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
     sync();
   };
 
-  const stepBack = () => {
+  const steppingBackRef = useRef(false);
+  const stepBack = useCallback(() => {
+    if (steppingBackRef.current) return;
     if (cursorTime == null || !bounds || cursorTime <= bounds.first) return;
-    // `cursorTime` is the open time of the last visible candle. Seeking one
-    // millisecond before it excludes that candle and reveals the prior one.
-    void startAt(cursorTime - 1);
-  };
+    steppingBackRef.current = true;
+    void startAt(cursorTime - 1).finally(() => {
+      setTimeout(() => { steppingBackRef.current = false; }, 80);
+    });
+  }, [bounds, cursorTime, startAt]);
 
   const beginScrub = () => {
     scrubbingRef.current = true;
@@ -383,7 +400,10 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
               <div
                 className="replay-cut-scissors"
                 style={{
-                  top: cursorY != null ? Math.max(30, Math.min(cursorY - 14, (window.innerHeight || 600) - 150)) : 80,
+                  top:
+                    cursorY != null
+                      ? Math.max(30, Math.min(cursorY - (isMobile ? 65 : 14), (window.innerHeight || 600) - 150))
+                      : 80,
                 }}
               >
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
@@ -397,12 +417,12 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
           )}
           <div className="replay-cut-hint">
             <span style={{ color: "#f23645", fontWeight: 700, fontSize: "14px" }}>✂</span>
-            <span>Click any candle on the chart to start bar replay from that point</span>
+            <span>{isMobile ? "Tap candle to start replay from that point" : "Click any candle on the chart to start bar replay from that point"}</span>
             <button onClick={() => setCutMode(false)} aria-label="Cancel start-bar selection">Cancel</button>
           </div>
         </div>
       )}
-      {!cutMode && state?.active && (
+      {!isMobile && !cutMode && state?.active && (
         <div className="replay-hud-badge" aria-label="Replay status">
           <span className="replay-hud-dot" />
           <span className="replay-hud-title">REPLAY</span>
@@ -412,26 +432,38 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
           <span className="replay-hud-remaining">{remaining.toLocaleString()} bars left</span>
         </div>
       )}
-      <div ref={dockRef} className={`replay-toolbar${dragging ? " is-dragging" : ""}${cutMode ? " is-selecting" : ""}`} role="toolbar" aria-label="Bar replay controls"
-        style={dockPosition ? { left: dockPosition.left, top: dockPosition.top, bottom: "auto" } : undefined}>
-        <button className="replay-icon drag-handle" onPointerDown={beginDrag} onKeyDown={moveDockByKeyboard} title="Drag to move · use arrow keys to position" aria-label="Move replay toolbar">
-          <img src="/replay-icons/drag-handle.svg" alt="" />
-        </button>
+      {speedMenuOpen && (
+        <div className="replay-menu-backdrop" onClick={() => setSpeedMenuOpen(false)} />
+      )}
+      <div
+        ref={dockRef}
+        className={`replay-toolbar${isMobile ? " is-mobile-dock" : ""}${dragging ? " is-dragging" : ""}${cutMode ? " is-selecting" : ""}`}
+        role="toolbar"
+        aria-label="Bar replay controls"
+        style={(!isMobile && dockPosition) ? { left: dockPosition.left, top: dockPosition.top, bottom: "auto" } : undefined}
+      >
+        {!isMobile && (
+          <button className="replay-icon drag-handle" onPointerDown={beginDrag} onKeyDown={moveDockByKeyboard} title="Drag to move · use arrow keys to position" aria-label="Move replay toolbar">
+            <img src="/replay-icons/drag-handle.svg" alt="" />
+          </button>
+        )}
         <button className="replay-icon start-point" onClick={() => cutMode ? setCutMode(false) : enterCutMode()} title={cutMode ? "Cancel start point" : "Select replay starting point"} aria-label={cutMode ? "Cancel start point" : "Select replay starting point"}>
           <img src="/replay-icons/start-point.svg" alt="" />
         </button>
-        <div className="replay-progress-control" title={`${formatTime(cursorTime)} · ${remaining.toLocaleString()} bars remaining`}>
-          <img src="/replay-icons/progress-track.svg" alt="" />
-          <span className="progress-fill" style={{ width: `${5 + (scrubValue / 1000) * 76}px` }} />
-          <span className="progress-thumb" style={{ left: `${(scrubValue / 1000) * 76}px` }} />
-          <input aria-label="Replay progress" type="range" min="0" max="1000" value={scrubValue}
-            disabled={!bounds || !range} onChange={(event) => setScrubValue(Number(event.target.value))}
-            onPointerDown={beginScrub}
-            onPointerUp={(event) => commitScrub(Number(event.currentTarget.value))}
-            onPointerCancel={(event) => commitScrub(Number(event.currentTarget.value))}
-            onKeyDown={beginScrub}
-            onKeyUp={(event) => commitScrub(Number(event.currentTarget.value))} />
-        </div>
+        {!isMobile && (
+          <div className="replay-progress-control" title={`${formatTime(cursorTime)} · ${remaining.toLocaleString()} bars remaining`}>
+            <img src="/replay-icons/progress-track.svg" alt="" />
+            <span className="progress-fill" style={{ width: `${5 + (scrubValue / 1000) * 76}px` }} />
+            <span className="progress-thumb" style={{ left: `${(scrubValue / 1000) * 76}px` }} />
+            <input aria-label="Replay progress" type="range" min="0" max="1000" value={scrubValue}
+              disabled={!bounds || !range} onChange={(event) => setScrubValue(Number(event.target.value))}
+              onPointerDown={beginScrub}
+              onPointerUp={(event) => commitScrub(Number(event.currentTarget.value))}
+              onPointerCancel={(event) => commitScrub(Number(event.currentTarget.value))}
+              onKeyDown={beginScrub}
+              onKeyUp={(event) => commitScrub(Number(event.currentTarget.value))} />
+          </div>
+        )}
         <button className="replay-icon previous" onClick={stepBack} disabled={!state?.active || !cursorTime || !bounds || cursorTime <= bounds.first} title="Previous bar" aria-label="Previous bar">
           <img src="/replay-icons/previous-bar.svg" alt="" />
         </button>
@@ -442,21 +474,41 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
           <button className="replay-icon interval" aria-label={`Replay speed: ${formatSpeed(speed)}`} aria-expanded={speedMenuOpen} onClick={() => setSpeedMenuOpen((open) => !open)}>
             <span>{formatSpeed(speed)}</span><img src="/replay-icons/speed-chevron.svg" alt="" />
           </button>
-          {speedMenuOpen && <div className="replay-interval-menu" role="menu" aria-label="Choose replay speed">
-            {SPEEDS.map((value) => <button key={value} role="menuitemradio" aria-checked={speed === value} onClick={() => {
-              setSpeed(value);
-              if (replay?.state.playing) replay.play(Math.max(50, Math.round(1000 / value)));
-              setSpeedMenuOpen(false);
-            }}>{formatSpeed(value)}</button>)}
-          </div>}
+          {speedMenuOpen && (
+            <div className="replay-interval-menu" role="menu" aria-label="Choose replay speed">
+              {SPEEDS.map((value) => (
+                <button
+                  key={value}
+                  role="menuitemradio"
+                  aria-checked={speed === value}
+                  onClick={() => {
+                    setSpeed(value);
+                    if (replay?.state.playing) replay.play(Math.max(50, Math.round(1000 / value)));
+                    setSpeedMenuOpen(false);
+                  }}
+                >
+                  {formatSpeed(value)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <button className="replay-icon next" onClick={() => { if (replay?.step()) sync(); }} disabled={!state?.active || remaining === 0} title="Next bar" aria-label="Next bar">
           <img src="/replay-icons/next-bar.svg" alt="" />
         </button>
-        <button className="replay-icon toggle" role="switch" aria-checked={active} aria-label="Enable replay" title={active ? "Exit replay" : "Enable replay"} onClick={exitReplay}>
-          <img src="/replay-icons/toggle.svg" alt="" />
-          {active && <span className="enabled-toggle"><span /></span>}
-        </button>
+        {isMobile ? (
+          <button className="replay-icon exit-btn" title="Exit replay" aria-label="Exit replay" onClick={exitReplay}>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        ) : (
+          <button className="replay-icon toggle" role="switch" aria-checked={active} aria-label="Enable replay" title={active ? "Exit replay" : "Enable replay"} onClick={exitReplay}>
+            <img src="/replay-icons/toggle.svg" alt="" />
+            {active && <span className="enabled-toggle"><span /></span>}
+          </button>
+        )}
       </div>
     </>
   );

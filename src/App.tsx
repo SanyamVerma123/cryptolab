@@ -26,6 +26,10 @@ import { UserMenu } from "./components/UserMenu";
 import { initCloudSync } from "./lib/cloudSync";
 import { HyperliquidSocket } from "./lib/hyperliquid";
 import { useLiveData } from "./lib/useLiveData";
+import { DataWindow } from "./components/DataWindow";
+import { ObjectTree } from "./components/ObjectTree";
+import { TechnicalReading } from "./components/TechnicalReading";
+import { downloadChartSnapshot } from "./lib/chartSnapshot";
 import "./styles/app.css";
 
 const VelaChart = lazy(() => import("./components/VelaChart").then((module) => ({ default: module.VelaChart })));
@@ -39,9 +43,9 @@ export default function App() {
   const [tf, setTf] = useState("60");
   const [ws, setWs] = useState<VelaWorkspace | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [panelMode, setPanelMode] = useState<"data" | "order" | "ai">("order");
+  const [panelMode, setPanelMode] = useState<"data" | "order" | "ai" | "data_window" | "object_tree" | "technical">("order");
   const [bottomOrdersOpen, setBottomOrdersOpen] = useState(false);
-  const [ordersFocusTab, setOrdersFocusTab] = useState<"positions" | "orders">("positions");
+  const [ordersFocusTab, setOrdersFocusTab] = useState<"positions" | "orders" | "strategy_tester">("positions");
   const [ordersFocusRequest, setOrdersFocusRequest] = useState(0);
   const [pineOpen, setPineOpen] = useState(false);
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
@@ -121,10 +125,44 @@ export default function App() {
       ["tradepro:toggle-favorites", () => setFavoritesOpen((v) => !v)],
       ["tradepro:open-indicators", () => setIndicatorsOpen(true)],
       ["tradepro:install", () => void handleInstallApp()],
+      [
+        "tradepro:open-strategy-tester",
+        () => {
+          setOrdersFocusTab("strategy_tester");
+          setOrdersFocusRequest((v) => v + 1);
+          setBottomOrdersOpen(true);
+          setTimeout(() => {
+            try {
+              ws?.resize?.();
+            } catch {}
+          }, 120);
+        },
+      ],
+      ["tradepro:open-pine-editor", () => setPineOpen(true)],
+      [
+        "tradepro:open-data-window",
+        () => {
+          setPanelOpen(true);
+          setPanelMode("data_window");
+        },
+      ],
+      [
+        "tradepro:open-object-tree",
+        () => {
+          setPanelOpen(true);
+          setPanelMode("object_tree");
+        },
+      ],
+      [
+        "tradepro:snapshot",
+        () => {
+          void downloadChartSnapshot(ws, coin, tf);
+        },
+      ],
     ];
     toggles.forEach(([name, fn]) => window.addEventListener(name, fn));
     return () => toggles.forEach(([name, fn]) => window.removeEventListener(name, fn));
-  }, [installPrompt, isInstalled]);
+  }, [installPrompt, isInstalled, ws, coin, tf]);
 
   const handlePanelResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -324,6 +362,7 @@ export default function App() {
 
           {/* Bottom Orders Drawer with '^' toggle icon at bottom-right corner */}
           <BottomOrdersDrawer
+            ws={ws}
             currentCoin={coin}
             currentPrice={live.livePrice || live.trades?.[0]?.price || live.book?.mid || live.ctx?.markPx || live.ctx?.midPx || 0}
             isOpen={bottomOrdersOpen}
@@ -382,6 +421,27 @@ export default function App() {
                   Data
                 </button>
                 <button
+                  className={"mp-tab" + (panelMode === "data_window" ? " on" : "")}
+                  title="Inspect cursor bar values and indicator plots"
+                  onClick={() => setPanelMode("data_window")}
+                >
+                  Window
+                </button>
+                <button
+                  className={"mp-tab" + (panelMode === "object_tree" ? " on" : "")}
+                  title="Manage chart drawings and indicators"
+                  onClick={() => setPanelMode("object_tree")}
+                >
+                  Tree
+                </button>
+                <button
+                  className={"mp-tab" + (panelMode === "technical" ? " on" : "")}
+                  title="Technical indicator meter and sentiment analysis"
+                  onClick={() => setPanelMode("technical")}
+                >
+                  Gauge
+                </button>
+                <button
                   className={"mp-tab" + (panelMode === "ai" ? " on" : "")}
                   title="AI Trading Assistant"
                   onClick={() => setPanelMode("ai")}
@@ -399,6 +459,27 @@ export default function App() {
             </div>
             {panelMode === "data" ? (
               <MarketPanel coin={coin} data={live} />
+            ) : panelMode === "data_window" ? (
+              <div className="mp-body">
+                <DataWindow
+                  ws={ws}
+                  coin={coin}
+                  currentPrice={live.livePrice || live.trades?.[0]?.price || 0}
+                  onClose={() => setPanelOpen(false)}
+                />
+              </div>
+            ) : panelMode === "object_tree" ? (
+              <div className="mp-body">
+                <ObjectTree ws={ws} onClose={() => setPanelOpen(false)} />
+              </div>
+            ) : panelMode === "technical" ? (
+              <div className="mp-body">
+                <TechnicalReading
+                  ws={ws}
+                  coin={coin}
+                  currentPrice={live.livePrice || live.trades?.[0]?.price || 0}
+                />
+              </div>
             ) : panelMode === "ai" ? (
               <div className="mp-body mp-ai-body">
                 <AiPanel ws={ws} inline onPineOpen={() => setPineOpen(true)} />

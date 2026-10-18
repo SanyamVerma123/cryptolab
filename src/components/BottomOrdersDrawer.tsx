@@ -13,14 +13,17 @@
  */
 import { useEffect, useState } from "react";
 import { useOrders } from "../lib/orderState";
+import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { StrategyTesterReport } from "./StrategyTesterReport";
 
 interface Props {
+  ws?: VelaWorkspace | null;
   currentCoin: string;
   currentPrice?: number;
   isOpen: boolean;
   onToggle: () => void;
   onResize?: () => void;
-  focusTab?: "positions" | "orders";
+  focusTab?: "positions" | "orders" | "strategy_tester";
   focusRequest?: number;
 }
 
@@ -31,9 +34,11 @@ type BottomTab =
   | "balance_history"
   | "activity_log"
   | "trade_history"
-  | "funds";
+  | "funds"
+  | "strategy_tester";
 
 export function BottomOrdersDrawer({
+  ws,
   currentCoin,
   currentPrice = 0,
   isOpen,
@@ -410,6 +415,14 @@ export function BottomOrdersDrawer({
               onClick={() => setTab("funds")}
             >
               Funds
+            </button>
+            <button
+              type="button"
+              className={"tv-tab-item" + (tab === "strategy_tester" ? " active" : "")}
+              onClick={() => setTab("strategy_tester")}
+              style={tab === "strategy_tester" ? { color: "#2962ff", fontWeight: 700 } : {}}
+            >
+              Strategy Tester
             </button>
           </div>
 
@@ -792,6 +805,13 @@ export function BottomOrdersDrawer({
                     ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* TAB 8: STRATEGY TESTER / INDICATOR REPORT */}
+          {tab === "strategy_tester" && (
+            <div className="bod-table-wrap" style={{ height: "100%", padding: 0 }}>
+              <StrategyTesterReport ws={ws} currentCoin={currentCoin} currentPrice={currentPrice} />
             </div>
           )}
         </div>

@@ -6478,11 +6478,122 @@ body.resizing-col .market-panel {
 .tv-paper-drawer .bod-table tr:hover td { background-color: #1b2028; }
 .vela-chart-container { background: #0d1015; }
 
-@media (max-width: 900px) {
-  .replay-toolbar { left: 10px; bottom: 42px; }
+/* Mobile Replay Dock */
+.replay-toolbar.is-mobile-dock {
+  position: absolute !important;
+  left: 8px !important;
+  right: 8px !important;
+  top: auto !important;
+  bottom: calc(48px + env(safe-area-inset-bottom, 0px)) !important;
+  width: auto !important;
+  max-width: 440px !important;
+  height: 48px !important;
+  margin: 0 auto !important;
+  padding: 0 4px !important;
+  border-radius: 24px !important;
+  background: rgba(19, 23, 34, 0.96) !important;
+  border: 1px solid #363c4e !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 1px rgba(255, 255, 255, 0.15) !important;
+  backdrop-filter: blur(16px);
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-around !important;
+  z-index: 50 !important;
+  touch-action: pan-x;
 }
-@media (max-width: 374px) {
-  .replay-toolbar { zoom: .85; }
+
+.replay-toolbar.is-mobile-dock .replay-icon {
+  position: static !important;
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 50%;
+  color: #d1d4dc;
+  transition: all 0.12s ease;
+}
+
+.replay-toolbar.is-mobile-dock .replay-icon:active {
+  background: rgba(255, 255, 255, 0.12);
+  transform: scale(0.92);
+}
+
+.replay-toolbar.is-mobile-dock .replay-icon.play {
+  background: #2962ff !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(41, 98, 255, 0.4);
+}
+
+.replay-toolbar.is-mobile-dock .replay-icon.play:active {
+  background: #1e4bd8 !important;
+}
+
+.replay-toolbar.is-mobile-dock .replay-icon.exit-btn {
+  color: #9aa0a6;
+}
+
+.replay-toolbar.is-mobile-dock .replay-icon.exit-btn:hover,
+.replay-toolbar.is-mobile-dock .replay-icon.exit-btn:active {
+  color: #f23645;
+}
+
+.replay-toolbar.is-mobile-dock .replay-interval-wrap {
+  position: relative !important;
+  width: auto !important;
+  height: auto !important;
+  left: auto !important;
+  top: auto !important;
+}
+
+.replay-toolbar.is-mobile-dock .replay-interval-menu {
+  top: auto !important;
+  bottom: calc(100% + 10px) !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 140px !important;
+  padding: 6px !important;
+  border-radius: 12px !important;
+  background: rgba(19, 23, 34, 0.98) !important;
+  border: 1px solid #363c4e !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7) !important;
+  z-index: 100 !important;
+}
+
+.replay-toolbar.is-mobile-dock .replay-interval-menu button {
+  min-height: 38px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border-radius: 6px;
+}
+
+.replay-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 48;
+  background: transparent;
+}
+
+@media (max-width: 768px) {
+  .chart-bottom-range-bar {
+    display: none !important;
+  }
+  .replay-hud-badge {
+    display: none !important;
+  }
+  .replay-cut-hint {
+    top: 10px !important;
+    left: 10px !important;
+    right: 10px !important;
+    transform: none !important;
+    width: auto !important;
+    font-size: 11px !important;
+    padding: 6px 10px !important;
+  }
 }
 
 /* Replay controls should never steal the chart's pointer gestures. */
@@ -6854,3 +6965,835 @@ body.resizing-col .market-panel {
 .change-interval-btn.apply:hover {
   background: #1e4fc4;
 }
+
+/* ====================================================================
+   TradingView / LuxAlgo Strategy Tester & Indicator Report Styles
+   ==================================================================== */
+.strategy-tester-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: #131722;
+  color: #d1d4dc;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif;
+}
+
+.st-head-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #171b26;
+  border-bottom: 1px solid #2a2e39;
+}
+
+.st-strategy-select-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.st-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #787b86;
+  text-transform: uppercase;
+}
+
+.st-select {
+  background: #1e222d;
+  border: 1px solid #2a2e39;
+  color: #f0f3fa;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+.st-apply-btn {
+  background: #2962ff;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.st-apply-btn:hover:not(:disabled) {
+  background: #1e4fc4;
+}
+
+.st-apply-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.st-top-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.st-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #1e222d;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.st-pill-k {
+  color: #787b86;
+  font-weight: 500;
+}
+
+.st-pill-v {
+  font-weight: 600;
+}
+
+.st-pill-v.up, .st-card-value.up, .st-table .up {
+  color: #089981 !important;
+}
+
+.st-pill-v.down, .st-card-value.down, .st-table .down {
+  color: #f23645 !important;
+}
+
+.st-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.st-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #1e222d;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
+  color: #d1d4dc;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.st-action-btn:hover {
+  background: #2a2e39;
+  color: #ffffff;
+}
+
+.st-status-banner {
+  padding: 4px 12px;
+  font-size: 11px;
+  background: rgba(41, 98, 255, 0.15);
+  border-bottom: 1px solid rgba(41, 98, 255, 0.3);
+  color: #70a0ff;
+}
+
+.st-subtabs {
+  display: flex;
+  align-items: center;
+  background: #171b26;
+  border-bottom: 1px solid #2a2e39;
+  padding: 0 8px;
+}
+
+.st-subtab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #787b86;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.st-subtab:hover {
+  color: #f0f3fa;
+}
+
+.st-subtab.active {
+  color: #2962ff;
+  border-bottom-color: #2962ff;
+}
+
+.st-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.st-card {
+  background: #171b26;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.st-card-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #787b86;
+  text-transform: uppercase;
+}
+
+.st-card-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f0f3fa;
+}
+
+.st-card-value.large {
+  font-size: 18px;
+}
+
+.st-card-sub {
+  font-size: 11px;
+  color: #787b86;
+}
+
+.st-table-wrap {
+  flex: 1;
+  overflow: auto;
+}
+
+.st-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  text-align: left;
+}
+
+.st-table th {
+  position: sticky;
+  top: 0;
+  background: #171b26;
+  color: #787b86;
+  font-weight: 600;
+  padding: 8px 10px;
+  border-bottom: 1px solid #2a2e39;
+  white-space: nowrap;
+}
+
+.st-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid #1e222d;
+  color: #d1d4dc;
+  white-space: nowrap;
+}
+
+.st-table tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.st-side-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.st-side-badge.long {
+  background: rgba(8, 153, 129, 0.18);
+  color: #089981;
+}
+
+.st-side-badge.short {
+  background: rgba(242, 54, 69, 0.18);
+  color: #f23645;
+}
+
+.st-cum-equity {
+  font-weight: 600;
+  color: #f0f3fa;
+}
+
+.st-chart-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.st-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  color: #d1d4dc;
+}
+
+.st-equity-svg {
+  width: 100%;
+  height: 200px;
+  background: #171b26;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+}
+
+/* ==========================================================================
+   Chart Bottom Range Bar — Tool Shortcuts & Divider
+   ========================================================================== */
+.cbr-divider {
+  width: 1px;
+  height: 16px;
+  background: #2a2e39;
+  margin: 0 4px;
+}
+
+.cbr-tool-btn {
+  font-weight: 600;
+  color: #9db2d4;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.15s ease;
+}
+
+.cbr-tool-btn:hover {
+  color: #f0f3fa;
+  background: rgba(41, 98, 255, 0.18);
+  border-color: rgba(41, 98, 255, 0.5);
+}
+
+/* ==========================================================================
+   Data Window Panel (TradingView & Vela Inspector)
+   ========================================================================== */
+.data-window-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #131722;
+  color: #d1d4dc;
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.dw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #181c27;
+  border-bottom: 1px solid #2a2e39;
+}
+
+.dw-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #f0f3fa;
+}
+
+.dw-coin-badge {
+  background: rgba(41, 98, 255, 0.15);
+  color: #2962ff;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.dw-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dw-btn-pin,
+.dw-btn-close {
+  background: transparent;
+  border: none;
+  color: #787b86;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dw-btn-pin:hover,
+.dw-btn-close:hover {
+  color: #f0f3fa;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dw-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dw-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #171b26;
+  border: 1px solid #242834;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.dw-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #787b86;
+  margin-bottom: 2px;
+}
+
+.dw-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dw-key {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #9db2d4;
+}
+
+.dw-indicator-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dw-val {
+  font-weight: 600;
+  color: #f0f3fa;
+  font-variant-numeric: tabular-nums;
+}
+
+.dw-high {
+  color: #089981;
+}
+
+.dw-low {
+  color: #f23645;
+}
+
+.dw-up {
+  color: #089981;
+}
+
+.dw-down {
+  color: #f23645;
+}
+
+.dw-empty-hint {
+  text-align: center;
+  padding: 16px;
+}
+
+.dw-hint-text {
+  color: #787b86;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* ==========================================================================
+   Object Tree Panel (Manage Drawings & Indicators)
+   ========================================================================== */
+.object-tree-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #131722;
+  color: #d1d4dc;
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.ot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #181c27;
+  border-bottom: 1px solid #2a2e39;
+}
+
+.ot-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #f0f3fa;
+}
+
+.ot-head-actions {
+  display: flex;
+  align-items: center;
+}
+
+.ot-btn-close {
+  background: transparent;
+  border: none;
+  color: #787b86;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.ot-btn-close:hover {
+  color: #f0f3fa;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ot-tabs {
+  display: flex;
+  background: #171b26;
+  border-bottom: 1px solid #2a2e39;
+  padding: 2px 8px;
+  gap: 4px;
+}
+
+.ot-tab {
+  background: transparent;
+  border: none;
+  color: #787b86;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.ot-tab:hover {
+  color: #d1d4dc;
+}
+
+.ot-tab.on {
+  color: #2962ff;
+  background: rgba(41, 98, 255, 0.12);
+  font-weight: 700;
+}
+
+.ot-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ot-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ot-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ot-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #787b86;
+}
+
+.ot-section-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.ot-bulk-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #d1d4dc;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.ot-bulk-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #f0f3fa;
+}
+
+.ot-bulk-btn.danger:hover {
+  background: rgba(242, 54, 69, 0.2);
+  border-color: #f23645;
+  color: #f23645;
+}
+
+.ot-empty {
+  color: #787b86;
+  font-style: italic;
+  font-size: 11px;
+  padding: 10px 0;
+}
+
+.ot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ot-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #171b26;
+  border: 1px solid #242834;
+  border-radius: 6px;
+  transition: background 0.12s ease;
+}
+
+.ot-item:hover {
+  background: #1c2130;
+  border-color: #2e3444;
+}
+
+.ot-item-icon {
+  font-size: 12px;
+}
+
+.ot-item-label {
+  flex: 1;
+  font-size: 12px;
+  color: #f0f3fa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ot-item-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ot-tool-btn {
+  background: transparent;
+  border: none;
+  color: #787b86;
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  transition: all 0.12s ease;
+}
+
+.ot-tool-btn:hover {
+  color: #f0f3fa;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ot-tool-btn.dimmed {
+  opacity: 0.45;
+}
+
+.ot-tool-btn.on {
+  color: #f7a600;
+}
+
+.ot-tool-btn.danger:hover {
+  color: #f23645;
+  background: rgba(242, 54, 69, 0.18);
+}
+
+/* ==========================================================================
+   Technical Reading Panel (Vela / TradingView Indicator Gauge)
+   ========================================================================== */
+.tech-reading-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #131722;
+  color: #d1d4dc;
+  padding: 14px;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.tr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tr-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f0f3fa;
+}
+
+.tr-coin {
+  background: rgba(41, 98, 255, 0.15);
+  color: #2962ff;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.tr-gauge-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #171b26;
+  border: 1px solid #2a2e39;
+  border-radius: 8px;
+  padding: 16px 12px;
+  gap: 10px;
+}
+
+.tr-verdict {
+  font-size: 16px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tr-gauge-wrap {
+  width: 160px;
+  height: 90px;
+}
+
+.tr-gauge-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.tr-summary-counts {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  width: 100%;
+  border-top: 1px solid #242834;
+  padding-top: 10px;
+}
+
+.tr-count-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.tr-count-num {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.tr-count-lbl {
+  font-size: 10px;
+  font-weight: 600;
+  color: #787b86;
+  text-transform: uppercase;
+}
+
+.tr-count-col.sell .tr-count-num {
+  color: #f23645;
+}
+
+.tr-count-col.neutral .tr-count-num {
+  color: #f7a600;
+}
+
+.tr-count-col.buy .tr-count-num {
+  color: #089981;
+}
+
+.tr-breakdown-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tr-group {
+  display: flex;
+  flex-direction: column;
+  background: #171b26;
+  border: 1px solid #242834;
+  border-radius: 6px;
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.tr-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #9db2d4;
+}
+
+.tr-group-mini-summary {
+  display: flex;
+  gap: 6px;
+}
+
+.tr-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.tr-badge.sell {
+  background: rgba(242, 54, 69, 0.15);
+  color: #f23645;
+}
+
+.tr-badge.neutral {
+  background: rgba(247, 166, 0, 0.15);
+  color: #f7a600;
+}
+
+.tr-badge.buy {
+  background: rgba(8, 153, 129, 0.15);
+  color: #089981;
+}
+

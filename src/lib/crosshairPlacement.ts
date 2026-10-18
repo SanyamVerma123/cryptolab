@@ -346,7 +346,7 @@ export function installCrosshairPlacement(ws: VelaWorkspace): () => void {
 
     // Pointer events on overlay: 1-finger crosshair move, 2-finger pinch, tap to place
     overlayEl.addEventListener("pointerdown", (e: PointerEvent) => {
-      if ((e.target as HTMLElement)?.closest(".mobile-draw-cancel-btn")) return;
+      if ((e.target as HTMLElement)?.closest(".mobile-draw-cancel-btn, .replay-toolbar, .vela-drawpill, .vela-mobilebar, .favs")) return;
       e.preventDefault();
       e.stopPropagation();
 

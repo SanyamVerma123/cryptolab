@@ -30,5 +30,6 @@ export function getReplayDockPosition(): ReplayDockPosition | null {
 }
 
 export function setReplayDockPosition(position: ReplayDockPosition | null): void {
+  if (typeof window !== "undefined" && window.innerWidth <= 768) return;
   replayDockPosition = position ? readPosition(position) : null;
 }
