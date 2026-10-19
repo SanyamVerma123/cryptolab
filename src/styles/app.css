@@ -1049,39 +1049,136 @@ html, body, #root {
 .tp-toggle.on { background: #2962ff; border-color: #2962ff; }
 .tp-toggle.on .tp-knob { transform: translateX(15px); background: #fff; }
 
-/* === Compact floating favorites toolbar === */
+/* ==========================================================================
+   TradingView Exact Floating Favorite Drawing Tools Toolbar (.favs / .tv-fav-toolbar)
+   - Height: 38px outer (horizontal) / Width: 38px outer (vertical)
+   - Border radius: 6px
+   - Background: rgba(30, 34, 45, 0.96) (#1e222d) with backdrop-filter: blur(8px)
+   - Border: 1px solid #2a2e39 (dark), 1px solid #e0e3eb (light)
+   - Box shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.25)
+   - Button size: 30px × 30px, 4px border-radius
+   - Icon size: 18px × 18px, centered
+   - Spacing: 2px gap, 3px 4px padding
+   - Grip: 8-dot matrix (2x4 or 4x2)
+   - Separators: 1px × 18px (horizontal) or 18px × 1px (vertical)
+   - Active state: #2962ff background, #ffffff icon
+   ========================================================================== */
 .favs {
+  position: absolute;
   display: inline-flex;
   align-items: center;
-  gap: 1px;
-  padding: 3px 5px;
-  background: rgba(19, 23, 34, 0.94);
+  box-sizing: border-box;
+  background: rgba(30, 34, 45, 0.96);
   border: 1px solid #2a2e39;
-  border-radius: 7px;
-  color: #d1d4dc;
+  border-radius: 6px;
+  color: #b2b5be;
   z-index: 110;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.25);
   backdrop-filter: blur(8px);
-  transition: background 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
+
 .favs.light {
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid #d9dce2;
-  color: #20242b;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid #e0e3eb;
+  color: #50535e;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
 }
-.favs.floating {
-  position: absolute;
-  z-index: 110;
-  flex-wrap: nowrap !important;
-  max-width: none;
-  max-height: 36px;
+
+/* Horizontal Layout */
+.favs.is-horizontal {
+  flex-direction: row;
+  height: 38px;
+  min-height: 38px;
+  padding: 3px 4px;
+  gap: 2px;
 }
-.favs.floating .favs-tools { flex-wrap: nowrap; }
-.favs-grip {
+
+.favs.is-horizontal .favs-tools {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: nowrap;
+}
+
+.favs.is-horizontal .favs-grip {
   width: 14px;
   min-width: 14px;
-  height: 24px;
+  height: 28px;
+  margin-right: 2px;
+}
+
+.favs.is-horizontal .favs-util-sep {
+  width: 1px;
+  height: 18px;
+  background: #2a2e39;
+  margin: 0 3px;
+  flex: none;
+}
+
+.favs.light.is-horizontal .favs-util-sep {
+  background: #e0e3eb;
+}
+
+/* Vertical Layout */
+.favs.is-vertical {
+  flex-direction: column;
+  width: 38px;
+  min-width: 38px;
+  height: auto;
+  max-height: 82vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 3px;
+  gap: 2px;
+}
+
+.favs.is-vertical::-webkit-scrollbar {
+  width: 3px;
+}
+
+.favs.is-vertical::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+}
+
+.favs.is-vertical .favs-tools {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.favs.is-vertical .favs-grip {
+  width: 28px;
+  height: 14px;
+  min-height: 14px;
+  margin-bottom: 2px;
+}
+
+.favs.is-vertical .favs-util-sep {
+  width: 18px;
+  height: 1px;
+  background: #2a2e39;
+  margin: 3px 0;
+  flex: none;
+}
+
+.favs.light.is-vertical .favs-util-sep {
+  background: #e0e3eb;
+}
+
+/* Dragging state */
+.favs.is-dragging {
+  cursor: grabbing !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
+  border-color: #363a45;
+}
+
+/* 8-Dot Drag Handle */
+.favs-grip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1089,70 +1186,204 @@ html, body, #root {
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: #60646e;
+  color: #50535e;
   cursor: grab;
   user-select: none;
   touch-action: none;
-  transition: color 0.12s ease;
+  transition: color 0.12s ease, background 0.12s ease;
+  flex: none;
 }
-.favs.light .favs-grip { color: #b8bdc6; }
-.favs-grip svg { width: 8px; height: 14px; fill: currentColor; }
-.favs-grip:hover { color: #d1d4dc; background: rgba(255, 255, 255, 0.08); }
-.favs.light .favs-grip:hover { color: #707782; background: #eef0f3; }
-.favs-grip:active { cursor: grabbing; }
-.favs-tools { display: inline-flex; gap: 1px; align-items: center; flex-wrap: wrap; }
+
+.favs-grip:hover {
+  color: #b2b5be;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.favs.light .favs-grip {
+  color: #b8bdc6;
+}
+
+.favs.light .favs-grip:hover {
+  color: #707782;
+  background: #eceff3;
+}
+
+.favs-grip:active {
+  cursor: grabbing;
+}
+
+.favs-grip-svg {
+  fill: currentColor;
+  width: 10px;
+  height: 22px;
+}
+
+.favs.is-vertical .favs-grip-svg {
+  width: 22px;
+  height: 10px;
+}
+
+/* Individual Tool Buttons */
 .fav-btn {
-  min-width: 26px;
-  height: 26px;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 4px;
-  color: #9aa0ac;
+  color: #b2b5be;
   cursor: pointer;
-  padding: 0 3px;
+  padding: 0;
   line-height: 0;
+  box-sizing: border-box;
+  flex: none;
   transition: all 0.12s ease;
 }
-.favs.light .fav-btn { color: #353a42; }
-.fav-btn svg { width: 14px; height: 14px; }
-.fav-btn:hover { background: rgba(255, 255, 255, 0.08); color: #ffffff; border-color: rgba(255, 255, 255, 0.1); }
-.favs.light .fav-btn:hover { background: #eceff3; color: #161a20; border-color: #e0e3e8; }
-.fav-btn.on { background: #2962ff; border-color: #2962ff; color: #fff; }
-.fav-btn.on svg { stroke: #fff; }
-.fav-add { font-weight: 500; font-size: 15px; line-height: 1; }
-.fav-preset-btn { font-size: 13.5px; }
 
-.favs-util-sep {
-  width: 1px;
-  height: 16px;
-  background: #2a2e39;
-  margin: 0 2px;
-  flex: none;
+.favs.light .fav-btn {
+  color: #50535e;
 }
-.favs.light .favs-util-sep {
-  background: #e0e3e8;
+
+.fav-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.8;
+  stroke: currentColor;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
+
+.fav-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.favs.light .fav-btn:hover {
+  background: #eceff3;
+  color: #131722;
+}
+
+/* Active / Armed State (TradingView Blue) */
+.fav-btn.on {
+  background: #2962ff !important;
+  border-color: #2962ff !important;
+  color: #ffffff !important;
+}
+
+.fav-btn.on svg {
+  stroke: #ffffff !important;
+}
+
+.fav-add {
+  font-weight: 500;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.fav-preset-btn {
+  font-size: 14px;
+}
+
+.fav-orientation-btn {
+  font-size: 13px;
+}
+
+.fav-close-btn {
+  font-size: 12px;
+  color: #787b86;
+}
+
+.fav-close-btn:hover {
+  color: #f23645 !important;
+  background: rgba(242, 54, 69, 0.18) !important;
+}
+
 .fav-util-btn {
   position: relative;
 }
+
 .fav-util-badge {
   position: absolute;
-  bottom: 1px;
-  right: 1px;
+  bottom: 2px;
+  right: 2px;
   font-size: 8px;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1;
   background: #2962ff;
   color: #ffffff;
   border-radius: 2px;
   padding: 1px 2px;
 }
+
 .fav-clear-btn:hover {
   color: #f23645 !important;
-  border-color: rgba(242, 54, 69, 0.3) !important;
+  background: rgba(242, 54, 69, 0.18) !important;
+}
+
+/* TradingView Right-Click Context Menu */
+.favs-context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: #1e222d;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.25);
+  padding: 4px;
+  min-width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.favs.light ~ .favs-context-menu {
+  background: #ffffff;
+  border-color: #e0e3eb;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.favs-menu-item {
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #d1d4dc;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.1s ease;
+}
+
+.favs-menu-item:hover {
+  background: #2a2e39;
+  color: #ffffff;
+}
+
+.favs.light ~ .favs-context-menu .favs-menu-item {
+  color: #131722;
+}
+
+.favs.light ~ .favs-context-menu .favs-menu-item:hover {
+  background: #eceff3;
+}
+
+.favs-menu-item.danger:hover {
+  background: rgba(242, 54, 69, 0.18);
+  color: #f23645;
+}
+
+.favs-menu-sep {
+  height: 1px;
+  background: #2a2e39;
+  margin: 3px 0;
+}
+
+.favs.light ~ .favs-context-menu .favs-menu-sep {
+  background: #e0e3eb;
 }
 
 /* Tool picker flyout — grouped exactly like Vela's toolbar */
@@ -1203,6 +1434,39 @@ html, body, #root {
 .fav-pick-icon { display: inline-flex; width: 16px; height: 16px; flex: none; }
 .fav-pick-icon svg { width: 16px; height: 16px; }
 .fav-pick span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Vertical orientation flyout positioning */
+.favs.is-vertical .fav-picker {
+  left: calc(100% + 8px);
+  bottom: auto;
+  top: 0;
+  max-height: min(420px, 80vh);
+}
+
+/* Light mode tool picker flyout */
+.favs.light .fav-picker {
+  background: #ffffff;
+  border-color: #e0e3eb;
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.15);
+}
+.favs.light .fav-group-label {
+  color: #787b86;
+}
+.favs.light .fav-pick {
+  background: #f8f9fb;
+  border-color: #e0e3eb;
+  color: #50535e;
+}
+.favs.light .fav-pick:hover {
+  background: #eceff3;
+  color: #131722;
+  border-color: #d1d4dc;
+}
+.favs.light .fav-pick.on {
+  color: #2962ff;
+  border-color: #2962ff;
+  background: rgba(41, 98, 255, 0.08);
+}
 
 /* Vela's own indicator picker: smooth scroll (it was hanging on wheel) */
 .vela-ip-list, .vela-ip-list * {
@@ -1567,6 +1831,56 @@ html, body, #root {
   background: rgba(61, 220, 151, 0.08); border-radius: 6px;
 }
 .fav-preset-btn { color: #6fd0ff; }
+
+/* Vertical orientation preset picker positioning */
+.favs.is-vertical .preset-picker {
+  left: calc(100% + 8px);
+  bottom: auto;
+  top: 0;
+  max-height: min(340px, 80vh);
+}
+
+/* Light mode preset picker */
+.favs.light .preset-picker {
+  background: #ffffff;
+  border-color: #e0e3eb;
+  color: #131722;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15);
+}
+.favs.light .preset-head {
+  color: #787b86;
+}
+.favs.light .preset-custom-btn {
+  background: rgba(41, 98, 255, 0.08);
+  border-color: #2962ff;
+  color: #2962ff;
+}
+.favs.light .preset-name-input {
+  background: #ffffff;
+  border-color: #d1d4dc;
+  color: #131722;
+}
+.favs.light .preset-name-input:focus {
+  border-color: #2962ff;
+}
+.favs.light .preset-save-btn {
+  background: #2962ff;
+  border-color: #2962ff;
+}
+.favs.light .preset-item {
+  color: #131722;
+  background: rgba(0, 0, 0, 0.02);
+}
+.favs.light .preset-item:hover {
+  background: #eceff3;
+}
+.favs.light .preset-empty {
+  border-color: #e0e3eb;
+  color: #787b86;
+}
+.favs.light .preset-empty b {
+  color: #131722;
+}
 
 /* ─────────────────────────────────────────────────────────────
    LuxAlgo indicator library panel (LuxAlgoPanel.tsx)
@@ -6687,6 +7001,10 @@ body.resizing-col .market-panel {
 }
 .vela-widget-topbar::-webkit-scrollbar {
   display: none;
+}
+.vela-widget-topbar button.is-active,
+.vela-widget-topbar button.active {
+  color: #2962ff !important;
 }
 .vela-topbar-right {
   margin-left: auto;

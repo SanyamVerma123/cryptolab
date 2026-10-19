@@ -116,7 +116,7 @@ try {
   registerIcon("tradepro-script", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5.5 3.5-4 4.5 4 4.5M10.5 3.5l4 4.5-4 4.5"/></svg>`);
   registerIcon("tradepro-market", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 13.5h12M3 11V7m3 4V3m3 8V5m3 6V2"/></svg>`);
   registerIcon("tradepro-settings", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="m8 1.5.8 1.3 1.5.3 1.1-.7 1.2 1.2-.7 1.2.3 1.5 1.3.8v1.8l-1.3.8-.3 1.5.7 1.2-1.2 1.2-1.1-.7-1.5.3L8 14.5H6.2l-.8-1.3-1.5-.3-1.2.7-1.2-1.2.7-1.2-.3-1.5-1.3-.8V7.1l1.3-.8.3-1.5-.7-1.2 1.2-1.2 1.2.7 1.5-.3.8-1.3z" transform="translate(1 0) scale(.875)"/></svg>`);
-  registerIcon("tradepro-tools", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="m2 13 3-3m-1-6 6 6m-2-7 2-2 4 4-2 2M2 4l2-2 3 3-2 2z"/></svg>`);
+  registerIcon("tradepro-tools", `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="m8 1.5 2 4.1 4.5.65-3.25 3.17.77 4.48L8 11.78l-4.02 2.12.77-4.48-3.25-3.17 4.5-.65L8 1.5z"/></svg>`);
   registerIcon("tradepro-account", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="5" r="2.5"/><path d="M2.5 14c.5-3 2.3-4.5 5.5-4.5s5 1.5 5.5 4.5"/></svg>`);
   registerIcon("tradepro-install", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 1.5v9m-3-3 3 3 3-3M2 11.5v3h12v-3"/></svg>`);
 } catch {
@@ -154,7 +154,7 @@ try {
     iconOnly: true,
     run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-pine")),
   });
-  registerWidgetAction({ id: "tradepro-tools", target: "topbar", align: "left", order: 11, icon: "tradepro-tools", iconOnly: true, label: "Favorite tools", run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-favorites")) });
+  registerWidgetAction({ id: "tradepro-tools", target: "topbar", align: "left", order: 11, icon: "tradepro-tools", iconOnly: true, label: "Favorite drawing tools", run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-favorites")) });
   registerWidgetAction({ id: "tradepro-market", target: "topbar", align: "right", order: 1, icon: "tradepro-market", iconOnly: true, label: "Market panel", run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-market")) });
   registerWidgetAction({ id: "tradepro-settings", target: "topbar", align: "right", order: 2, icon: "tradepro-settings", iconOnly: true, label: "Trading settings", run: () => window.dispatchEvent(new CustomEvent("tradepro:open-settings")) });
   registerWidgetAction({ id: "tradepro-account", target: "topbar", align: "right", order: 3, icon: "tradepro-account", iconOnly: true, label: "Account and cloud sync", run: () => window.dispatchEvent(new CustomEvent("tradepro:open-account")) });

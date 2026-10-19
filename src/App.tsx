@@ -51,8 +51,35 @@ export default function App() {
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
-  const [favoritesOpen, setFavoritesOpen] = useState(false);
+  const [favoritesOpen, setFavoritesOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem("trade-pro:favs-open");
+      return saved !== null ? saved === "1" : true;
+    } catch {
+      return true;
+    }
+  });
   const [accountOpen, setAccountOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("trade-pro:favs-open", favoritesOpen ? "1" : "0");
+    } catch {}
+
+    const updateTopbarActiveState = () => {
+      const btn = document.querySelector<HTMLElement>('.vela-widget-topbar [aria-label*="Favorite"]');
+      if (btn) {
+        if (favoritesOpen) {
+          btn.classList.add("is-active", "active");
+        } else {
+          btn.classList.remove("is-active", "active");
+        }
+      }
+    };
+    updateTopbarActiveState();
+    const t = setTimeout(updateTopbarActiveState, 200);
+    return () => clearTimeout(t);
+  }, [favoritesOpen]);
 
   useEffect(() => {
     const cleanup = initCloudSync();
