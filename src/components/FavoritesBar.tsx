@@ -179,10 +179,12 @@ export function FavoritesBar({ ws }: Props) {
         moved.current = true;
       }
       if (!moved.current) return;
-      const host = el.closest(".chart-host") as HTMLElement | null;
-      const hr = host?.getBoundingClientRect() ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
-      const x = Math.max(8, Math.min(hr.width - el.offsetWidth - 8, e.clientX - hr.left - d.dx));
-      const y = Math.max(8, Math.min(hr.height - el.offsetHeight - 8, e.clientY - hr.top - d.dy));
+      const container = (el.closest(".vela-chart-container") || el.closest(".chart-host") || el.parentElement) as HTMLElement | null;
+      const cr = container?.getBoundingClientRect() ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+      const maxX = Math.max(8, cr.width - el.offsetWidth - 8);
+      const maxY = Math.max(8, cr.height - el.offsetHeight - 32);
+      const x = Math.max(8, Math.min(maxX, e.clientX - cr.left - d.dx));
+      const y = Math.max(8, Math.min(maxY, e.clientY - cr.top - d.dy));
       el.style.position = "absolute";
       el.style.left = `${x}px`;
       el.style.top = `${y}px`;
@@ -196,11 +198,11 @@ export function FavoritesBar({ ws }: Props) {
       setIsDragging(false);
       const el = barRef.current;
       if (el && moved.current) {
-        const host = el.closest(".chart-host") as HTMLElement | null;
+        const container = (el.closest(".vela-chart-container") || el.closest(".chart-host") || el.parentElement) as HTMLElement | null;
         const r = el.getBoundingClientRect();
-        const hr = host?.getBoundingClientRect() ?? { left: 0, top: 0 };
+        const cr = container?.getBoundingClientRect() ?? { left: 0, top: 0 };
         try {
-          localStorage.setItem(POS_KEY, JSON.stringify({ x: r.left - hr.left, y: r.top - hr.top }));
+          localStorage.setItem(POS_KEY, JSON.stringify({ x: r.left - cr.left, y: r.top - cr.top }));
         } catch {}
       }
     };
@@ -215,27 +217,91 @@ export function FavoritesBar({ ws }: Props) {
     };
   }, []);
 
-  // Restore saved floating position
+  // Restore saved floating position or default inside chart
   useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
     try {
       const p = JSON.parse(localStorage.getItem(POS_KEY) ?? "null");
-      if (p && barRef.current) {
-        barRef.current.style.position = "absolute";
-        barRef.current.style.left = `${Math.max(8, p.x)}px`;
-        barRef.current.style.top = `${Math.max(8, p.y)}px`;
-        barRef.current.style.right = "auto";
-        barRef.current.style.bottom = "auto";
+      const container = (el.closest(".vela-chart-container") || el.closest(".chart-host") || el.parentElement) as HTMLElement | null;
+      const cr = container?.getBoundingClientRect();
+      const maxX = cr ? Math.max(8, cr.width - 120) : window.innerWidth;
+      const maxY = cr ? Math.max(8, cr.height - 50) : window.innerHeight;
+
+      el.style.position = "absolute";
+      if (p && typeof p.x === "number" && typeof p.y === "number") {
+        el.style.left = `${Math.max(8, Math.min(maxX, p.x))}px`;
+        el.style.top = `${Math.max(8, Math.min(maxY, p.y))}px`;
+        el.style.right = "auto";
+        el.style.bottom = "auto";
+      } else {
+        if (orientation === "horizontal") {
+          el.style.left = "56px";
+          el.style.top = "auto";
+          el.style.bottom = "36px";
+          el.style.right = "auto";
+        } else {
+          el.style.left = "56px";
+          el.style.top = "54px";
+          el.style.bottom = "auto";
+          el.style.right = "auto";
+        }
       }
     } catch {}
+  }, [orientation]);
+
+  // Keep toolbar flexibly clamped inside chart container when resized
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+    const container = (el.closest(".vela-chart-container") || el.closest(".chart-host") || el.parentElement) as HTMLElement | null;
+    if (!container) return;
+
+    const clamp = () => {
+      const curEl = barRef.current;
+      if (!curEl) return;
+      const cr = container.getBoundingClientRect();
+      if (!cr.width || !cr.height) return;
+      const r = curEl.getBoundingClientRect();
+      const curLeft = r.left - cr.left;
+      const curTop = r.top - cr.top;
+      const maxX = Math.max(8, cr.width - curEl.offsetWidth - 8);
+      const maxY = Math.max(8, cr.height - curEl.offsetHeight - 32);
+
+      if (curLeft > maxX || curTop > maxY) {
+        const nextX = Math.max(8, Math.min(maxX, curLeft));
+        const nextY = Math.max(8, Math.min(maxY, curTop));
+        curEl.style.position = "absolute";
+        curEl.style.left = `${nextX}px`;
+        curEl.style.top = `${nextY}px`;
+        curEl.style.right = "auto";
+        curEl.style.bottom = "auto";
+      }
+    };
+
+    const ro = new ResizeObserver(() => clamp());
+    ro.observe(container);
+    window.addEventListener("resize", clamp);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", clamp);
+    };
   }, []);
 
   const resetPosition = () => {
     if (barRef.current) {
       barRef.current.style.position = "absolute";
-      barRef.current.style.left = "24px";
-      barRef.current.style.top = "auto";
-      barRef.current.style.bottom = "76px";
-      barRef.current.style.right = "auto";
+      if (orientation === "horizontal") {
+        barRef.current.style.left = "56px";
+        barRef.current.style.top = "auto";
+        barRef.current.style.bottom = "36px";
+        barRef.current.style.right = "auto";
+      } else {
+        barRef.current.style.left = "56px";
+        barRef.current.style.top = "54px";
+        barRef.current.style.bottom = "auto";
+        barRef.current.style.right = "auto";
+      }
       try {
         localStorage.removeItem(POS_KEY);
       } catch {}

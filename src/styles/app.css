@@ -1076,6 +1076,7 @@ html, body, #root {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.25);
   backdrop-filter: blur(8px);
   user-select: none;
+  max-width: calc(100% - 16px);
   transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -1091,6 +1092,7 @@ html, body, #root {
   flex-direction: row;
   height: 38px;
   min-height: 38px;
+  max-width: calc(100% - 16px);
   padding: 3px 4px;
   gap: 2px;
 }
@@ -1101,6 +1103,15 @@ html, body, #root {
   align-items: center;
   gap: 2px;
   flex-wrap: nowrap;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.favs.is-horizontal .favs-tools::-webkit-scrollbar {
+  display: none;
 }
 
 .favs.is-horizontal .favs-grip {
@@ -2139,9 +2150,45 @@ html, body, #root {
    the buttons keep working and screen readers still read them.
    ───────────────────────────────────────────────────────────── */
 @media (max-width: 720px) {
-  /* (1) Remove the floating favorites bar on mobile only. */
-  .favs.floating { display: none !important; }
-  .favs { display: none !important; }
+  /* (1) Flexible and responsive favorites toolbar on mobile */
+
+  /* Make floating favorites bar flexible and responsive on mobile */
+  .favs {
+    max-width: calc(100% - 12px);
+  }
+  .favs.is-horizontal {
+    height: 34px;
+    min-height: 34px;
+    padding: 2px 3px;
+  }
+  .favs.is-horizontal .fav-btn {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+  }
+  .favs.is-horizontal .fav-btn svg {
+    width: 16px;
+    height: 16px;
+  }
+  .favs.is-horizontal .favs-grip {
+    width: 12px;
+    min-width: 12px;
+    height: 24px;
+  }
+  .favs.is-vertical {
+    width: 34px;
+    min-width: 34px;
+    padding: 3px 2px;
+  }
+  .favs.is-vertical .fav-btn {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+  }
+  .favs.is-vertical .fav-btn svg {
+    width: 16px;
+    height: 16px;
+  }
 
   /* (2) Icon-only topbar buttons. */
   .topbar {
@@ -2383,11 +2430,9 @@ html, body, #root {
 
 /* Vela is the sole app header. Optional Trade Pro chart tools live in its
    workspace canvas and can be opened from the workspace topbar. */
+.vela-chart-container > .favs,
 .chart-host > .favs {
   position: absolute;
-  top: auto;
-  bottom: 76px;
-  left: 24px;
   margin: 0;
   z-index: 110;
 }

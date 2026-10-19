@@ -42,6 +42,7 @@ import { ChartBarReplay } from "./ChartBarReplay";
 import { ChartRadialMenu } from "./ChartRadialMenu";
 import { ChangeIntervalModal } from "./ChangeIntervalModal";
 import { ChartBottomRangeBar } from "./ChartBottomRangeBar";
+import { FavoritesBar } from "./FavoritesBar";
 import { ErrorBoundary } from "./ErrorBoundary";
 
 // Register Vela's built-in presets ('1', '2h', '2v', '4', '8')
@@ -762,6 +763,48 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     } catch { /* Vela may be remounting its topbar */ }
   }, [replayActive]);
 
+  // Synchronize Favorite Drawing Tools toolbar state with topbar button and storage
+  const [favoritesOpen, setFavoritesOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem("trade-pro:favs-open");
+      return saved !== null ? saved === "1" : true;
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    const handleToggle = () => setFavoritesOpen((v) => !v);
+    window.addEventListener("tradepro:toggle-favorites", handleToggle);
+    return () => window.removeEventListener("tradepro:toggle-favorites", handleToggle);
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("trade-pro:favs-open", favoritesOpen ? "1" : "0");
+    } catch {}
+
+    const updateTopbarActiveState = () => {
+      const btns = document.querySelectorAll<HTMLElement>(
+        "[data-action-id='tradepro-tools'], button[aria-label*='Favorite']"
+      );
+      btns.forEach((btn) => {
+        btn.classList.toggle("active", favoritesOpen);
+        btn.classList.toggle("is-active", favoritesOpen);
+        if (favoritesOpen) {
+          btn.setAttribute("data-active", "true");
+          btn.style.color = "#2962ff";
+        } else {
+          btn.removeAttribute("data-active");
+          btn.style.color = "";
+        }
+      });
+    };
+    updateTopbarActiveState();
+    const t = setTimeout(updateTopbarActiveState, 200);
+    return () => clearTimeout(t);
+  }, [favoritesOpen]);
+
   // TradingView-Style Chart Hotkeys:
   // - Shift+R: Toggle Bar Replay
   // - Alt+T: Trend Line, Alt+H: Horizontal Line, Alt+V: Vertical Line, Alt+F: Fib Retracement, Alt+J: Channel, Alt+B: Box
@@ -959,6 +1002,12 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}
     >
       <div ref={ref} className="vela-host" />
+      {/** Favorites toolbar mounted directly inside chart canvas for full flexibility and responsiveness */}
+      {favoritesOpen && (
+        <ErrorBoundary>
+          <FavoritesBar ws={wsInstance} />
+        </ErrorBoundary>
+      )}
       {/** Workspace-native bar actions toggle custom tool palettes and app dialogs. */}
       <ErrorBoundary>
         <ChartBarReplay

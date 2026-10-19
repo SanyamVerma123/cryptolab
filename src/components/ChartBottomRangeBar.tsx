@@ -155,42 +155,6 @@ export function ChartBottomRangeBar({ ws }: Props) {
         <span className="cbr-tz" title="Current time zone">
           {tz}
         </span>
-
-        <span className="cbr-divider" />
-
-        {/* TradingView & Vela Quick Tool Buttons */}
-        <button
-          type="button"
-          className="cbr-chip cbr-tool-btn"
-          onClick={() => window.dispatchEvent(new CustomEvent("tradepro:open-strategy-tester"))}
-          title="Open Strategy Tester & Indicator Performance Report"
-        >
-          📊 Strategy Tester
-        </button>
-        <button
-          type="button"
-          className="cbr-chip cbr-tool-btn"
-          onClick={() => window.dispatchEvent(new CustomEvent("tradepro:open-pine-editor"))}
-          title="Open Pine Script Editor"
-        >
-          {"{ }"} Pine Editor
-        </button>
-        <button
-          type="button"
-          className="cbr-chip cbr-tool-btn"
-          onClick={() => window.dispatchEvent(new CustomEvent("tradepro:open-data-window"))}
-          title="Toggle Data Window Inspector"
-        >
-          ⊞ Data Window
-        </button>
-        <button
-          type="button"
-          className="cbr-chip cbr-tool-btn"
-          onClick={() => window.dispatchEvent(new CustomEvent("tradepro:snapshot"))}
-          title="Take Chart Snapshot (Save Image / Copy to Clipboard)"
-        >
-          📸 Snapshot
-        </button>
       </div>
     </div>
   );
