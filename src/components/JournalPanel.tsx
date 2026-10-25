@@ -197,6 +197,13 @@ export function JournalPanel({ onClose }: Props) {
         </div>
         <div className="jp-header-actions">
           <button
+            className="jp-btn jp-btn-secondary"
+            onClick={() => window.dispatchEvent(new CustomEvent("tradepro:open-journal-full"))}
+            title="Expand to Full Page Dashboard"
+          >
+            ⛶ Full Page
+          </button>
+          <button
             className="jp-btn jp-btn-primary"
             onClick={() => setAddModalOpen(true)}
             title="Log a new trade manually"

@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { useOrders } from "../lib/orderState";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
 import { StrategyTesterReport } from "./StrategyTesterReport";
+import { JournalDashboard } from "./JournalDashboard";
 
 interface Props {
   ws?: VelaWorkspace | null;
@@ -23,7 +24,7 @@ interface Props {
   isOpen: boolean;
   onToggle: () => void;
   onResize?: () => void;
-  focusTab?: "positions" | "orders" | "strategy_tester";
+  focusTab?: "positions" | "orders" | "strategy_tester" | "journal";
   focusRequest?: number;
 }
 
@@ -35,7 +36,8 @@ type BottomTab =
   | "activity_log"
   | "trade_history"
   | "funds"
-  | "strategy_tester";
+  | "strategy_tester"
+  | "journal";
 
 export function BottomOrdersDrawer({
   ws,
@@ -426,12 +428,12 @@ export function BottomOrdersDrawer({
             </button>
             <button
               type="button"
-              className="tv-tab-item"
-              onClick={() => window.dispatchEvent(new CustomEvent("tradepro:open-journal"))}
-              style={{ color: "#d1d4dc", display: "inline-flex", alignItems: "center", gap: "4px" }}
-              title="Open Trading Journal & Analytics"
+              className={"tv-tab-item" + (tab === "journal" ? " active" : "")}
+              onClick={() => setTab("journal")}
+              style={tab === "journal" ? { color: "#2962ff", fontWeight: 700 } : {}}
+              title="Trade Journal & Performance Analytics"
             >
-              📓 Journal
+              📊 Journal
             </button>
           </div>
 
@@ -821,6 +823,16 @@ export function BottomOrdersDrawer({
           {tab === "strategy_tester" && (
             <div className="bod-table-wrap" style={{ height: "100%", padding: 0 }}>
               <StrategyTesterReport ws={ws} currentCoin={currentCoin} currentPrice={currentPrice} />
+            </div>
+          )}
+
+          {/* TAB 9: TRADE JOURNAL DASHBOARD */}
+          {tab === "journal" && (
+            <div className="bod-table-wrap" style={{ height: "100%", padding: 0 }}>
+              <JournalDashboard
+                mode="docked"
+                onExpandFull={() => window.dispatchEvent(new CustomEvent("tradepro:open-journal-full"))}
+              />
             </div>
           )}
         </div>

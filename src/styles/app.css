@@ -1068,13 +1068,13 @@ html, body, #root {
   display: inline-flex;
   align-items: center;
   box-sizing: border-box;
-  background: rgba(30, 34, 45, 0.96);
-  border: 1px solid #2a2e39;
+  background: #000000;
+  border: 1px solid #1e222d;
   border-radius: 6px;
   color: #b2b5be;
   z-index: 110;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.25);
-  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7), 0 1px 4px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(12px);
   user-select: none;
   max-width: calc(100% - 16px);
   transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
@@ -6850,97 +6850,34 @@ body.resizing-col .market-panel {
 .tv-paper-drawer .bod-table tr:hover td { background-color: #1b2028; }
 .vela-chart-container { background: #0d1015; }
 
-/* Mobile Replay Dock */
-.replay-toolbar.is-mobile-dock {
-  position: absolute !important;
-  left: 8px !important;
-  right: 8px !important;
-  top: auto !important;
-  bottom: calc(48px + env(safe-area-inset-bottom, 0px)) !important;
-  width: auto !important;
-  max-width: 440px !important;
-  height: 48px !important;
-  margin: 0 auto !important;
-  padding: 0 4px !important;
-  border-radius: 24px !important;
-  background: rgba(19, 23, 34, 0.96) !important;
-  border: 1px solid #363c4e !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 1px rgba(255, 255, 255, 0.15) !important;
-  backdrop-filter: blur(16px);
-  display: flex !important;
-  align-items: center !important;
-  justify-content: space-around !important;
-  z-index: 50 !important;
-  touch-action: pan-x;
-}
-
-.replay-toolbar.is-mobile-dock .replay-icon {
-  position: static !important;
-  width: 44px !important;
-  height: 44px !important;
-  min-width: 44px !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  border-radius: 50%;
-  color: #d1d4dc;
-  transition: all 0.12s ease;
-}
-
-.replay-toolbar.is-mobile-dock .replay-icon:active {
-  background: rgba(255, 255, 255, 0.12);
-  transform: scale(0.92);
-}
-
-.replay-toolbar.is-mobile-dock .replay-icon.play {
-  background: #2962ff !important;
-  color: #ffffff !important;
-  box-shadow: 0 2px 8px rgba(41, 98, 255, 0.4);
-}
-
-.replay-toolbar.is-mobile-dock .replay-icon.play:active {
-  background: #1e4bd8 !important;
-}
-
-.replay-toolbar.is-mobile-dock .replay-icon.exit-btn {
-  color: #9aa0a6;
-}
-
-.replay-toolbar.is-mobile-dock .replay-icon.exit-btn:hover,
-.replay-toolbar.is-mobile-dock .replay-icon.exit-btn:active {
-  color: #f23645;
-}
-
-.replay-toolbar.is-mobile-dock .replay-interval-wrap {
-  position: relative !important;
-  width: auto !important;
-  height: auto !important;
-  left: auto !important;
-  top: auto !important;
-}
-
-.replay-toolbar.is-mobile-dock .replay-interval-menu {
-  top: auto !important;
-  bottom: calc(100% + 10px) !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  width: 140px !important;
-  padding: 6px !important;
-  border-radius: 12px !important;
-  background: rgba(19, 23, 34, 0.98) !important;
-  border: 1px solid #363c4e !important;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7) !important;
-  z-index: 100 !important;
-}
-
-.replay-toolbar.is-mobile-dock .replay-interval-menu button {
-  min-height: 38px;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-  border-radius: 6px;
+/* Responsive Replay Toolbar (Mobile + Desktop Parity) */
+@media (max-width: 768px) {
+  .replay-toolbar {
+    max-width: calc(100vw - 16px);
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7), 0 0 1px rgba(255, 255, 255, 0.2);
+  }
+  .replay-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .replay-practice-bar {
+    max-width: calc(100vw - 16px);
+    overflow-x: auto;
+    font-size: 10px;
+    padding: 3px 6px;
+    gap: 4px;
+    scrollbar-width: none;
+  }
+  .replay-practice-bar::-webkit-scrollbar {
+    display: none;
+  }
+  .replay-hud-badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    bottom: calc(100% + 46px);
+  }
 }
 
 .replay-menu-backdrop {

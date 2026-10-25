@@ -33,6 +33,7 @@ import { getSafeActiveChart, getSafeActiveCell } from "./lib/workspaceSafe";
 import "./styles/app.css";
 import "./styles/journal.css";
 import { JournalPanel } from "./components/JournalPanel";
+import { JournalDashboard } from "./components/JournalDashboard";
 import { ChartTabsBar, formatTf } from "./components/ChartTabsBar";
 
 const VelaChart = lazy(() => import("./components/VelaChart").then((module) => ({ default: module.VelaChart })));
@@ -55,6 +56,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [journalFullOpen, setJournalFullOpen] = useState(false);
 
   useEffect(() => {
     const cleanup = initCloudSync();
@@ -137,6 +139,9 @@ export default function App() {
         setPanelMode("journal");
         setPanelOpen(true);
         setTimeout(() => { try { ws?.resize?.(); } catch {} }, 120);
+      }],
+      ["tradepro:open-journal-full", () => {
+        setJournalFullOpen(true);
       }],
       ["tradepro:toggle-market", () => setPanelOpen((v) => !v)],
       ["tradepro:open-settings", () => setSettingsOpen(true)],
@@ -384,6 +389,14 @@ export default function App() {
                 <AuthModal open onClose={() => setAuthOpen(false)} />
               </Suspense>
             </ErrorBoundary>}
+            {journalFullOpen && (
+              <ErrorBoundary>
+                <JournalDashboard
+                  mode="full"
+                  onClose={() => setJournalFullOpen(false)}
+                />
+              </ErrorBoundary>
+            )}
           </div>
 
           {/* Bottom Orders Drawer with '^' toggle icon at bottom-right corner */}

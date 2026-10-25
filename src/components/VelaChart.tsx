@@ -44,6 +44,7 @@ import { ChangeIntervalModal } from "./ChangeIntervalModal";
 import { FavoritesBar } from "./FavoritesBar";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { getSafeActiveChart, getSafeActiveCell, getSafeAllCharts } from "../lib/workspaceSafe";
+import { seedTimelineMarks } from "../lib/timelineMarks";
 
 // Register Vela's built-in presets ('1', '2h', '2v', '4', '8')
 try {
@@ -424,6 +425,8 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
   const wsRef = useRef<VelaWorkspace | null>(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
+  const coinRef = useRef(coin);
+  coinRef.current = coin;
 
   const [wsInstance, setWsInstance] = useState<VelaWorkspace | null>(null);
   const [replayActive, setReplayActive] = useState<boolean>(false);
@@ -585,6 +588,14 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
                   window.dispatchEvent(new CustomEvent("tradepro:change-timeframe", { detail: { timeframe: tf } }));
                 }
               });
+
+              // Seed native Vela timeline marks (News, Macro, Protocol releases & Journal trades)
+              const sym = chart.market?.symbol || activeCell?.state?.symbol || coinRef.current || "BTCUSDT";
+              seedTimelineMarks(chart, sym);
+              chart.on?.("market:changed", (ev?: any) => {
+                const nextSym = ev?.symbol || chart.market?.symbol || sym;
+                seedTimelineMarks(chart, nextSym);
+              });
             } catch {}
 
             if (!readyReported) {
@@ -619,10 +630,22 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     };
     window.addEventListener("tradepro:open-chart-settings", handleOpenChartSettings);
 
+    const handleJournalUpdated = () => {
+      try {
+        const ws = wsRef.current;
+        if (!ws) return;
+        const chart = getSafeActiveChart(ws);
+        const sym = chart?.market?.symbol || coinRef.current || "BTCUSDT";
+        if (chart) seedTimelineMarks(chart, sym);
+      } catch {}
+    };
+    window.addEventListener("tradepro:journal-updated", handleJournalUpdated);
+
     const stopTf = installTimeframeInteractionFix(ws, el);
 
     return () => {
       window.removeEventListener("tradepro:open-chart-settings", handleOpenChartSettings);
+      window.removeEventListener("tradepro:journal-updated", handleJournalUpdated);
       try {
         stopTf();
       } catch {}
