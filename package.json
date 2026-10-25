@@ -19,7 +19,7 @@
     "@luxalgo/vela": "^0.9.0",
     "@luxalgo/vela-pinets": "^0.2.13",
     "@radix-ui/react-collapsible": "^1.1.21",
-    "@radix-ui/react-slot": "^1.4.0",
+    "@radix-ui/react-slot": "^1.5.0",
     "@supabase/supabase-js": "^2.117.2",
     "@types/pg": "^8.23.1",
     "@vercel/analytics": "^2.0.1",
