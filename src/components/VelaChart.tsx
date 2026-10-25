@@ -297,6 +297,11 @@ function wireAutoBackfill(chart: any, cell?: any): () => void {
   const onViewport = (vp: { from: number; to: number }) => {
     if (loading || reachedGenesis || !vp || typeof vp.from !== "number" || typeof vp.to !== "number") return;
 
+    // CRITICAL: Never trigger market backfill while Replay is active!
+    // Calling chart.setMarket({ bars }) during replay reloads live server data up to today,
+    // destroying the user's replay cut point and resetting playback to live current time.
+    if (chart.replay?.state?.active || (chart as any).workspace?.replay?.state?.active || cell?.workspace?.replay?.state?.active) return;
+
     try {
       // Replay bounds describe the complete in-memory history, including bars
       // hidden by replay. Use them as the history edge, not the separate AI
@@ -369,35 +374,41 @@ const VALID_TIMEFRAMES = new Set([
   "1", "3", "5", "15", "30", "45", "60", "120", "180", "240", "360", "480", "720", "D", "W", "M"
 ]);
 
-function installTimeframeInteractionFix(ws: VelaWorkspace, _container: HTMLElement): () => void {
+function installTimeframeInteractionFix(ws: VelaWorkspace, container: HTMLElement): () => void {
   const onClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement | null;
     if (!target) return;
 
     // Check if clicked item is inside a menu item
     const menuItem = target.closest(".vela-menu-item") as HTMLElement | null;
-    if (!menuItem || target.closest(".vela-menu-star") || target.closest(".vela-fav")) return;
-
-    // Only proceed if this menu item explicitly holds a recognized timeframe value
-    const rawVal = menuItem.dataset.value || menuItem.dataset.veiId || menuItem.id?.split("/")?.pop();
-    if (!rawVal || !VALID_TIMEFRAMES.has(rawVal)) {
-      // Not a timeframe (e.g. chart style 'candles'/'line', settings tab 'symbol'/'scales', etc.)
-      // DO NOT touch it! Allow native Zag/Vela handlers to execute uninterrupted.
-      return;
+    if (menuItem && !target.closest(".vela-menu-star") && !target.closest(".vela-fav")) {
+      const rawVal = menuItem.dataset.value || menuItem.dataset.veiId || menuItem.id?.split("/")?.pop();
+      if (rawVal && VALID_TIMEFRAMES.has(rawVal)) {
+        try {
+          const activeCell = getSafeActiveCell(ws);
+          if (activeCell) {
+            activeCell.setTimeframe?.(rawVal);
+          } else {
+            getSafeActiveChart(ws)?.setMarket?.({ timeframe: rawVal, bars: barsForTf(rawVal) });
+          }
+          window.dispatchEvent(new CustomEvent("tradepro:change-timeframe", { detail: { timeframe: rawVal } }));
+        } catch {
+          try {
+            getSafeActiveChart(ws)?.setMarket?.({ timeframe: rawVal, bars: barsForTf(rawVal) });
+          } catch {}
+        }
+        return;
+      }
     }
 
-    try {
-      const activeCell = getSafeActiveCell(ws);
-      if (activeCell) {
-        activeCell.setTimeframe?.(rawVal);
-      } else {
-        getSafeActiveChart(ws)?.setMarket?.({ timeframe: rawVal, bars: barsForTf(rawVal) });
+    // Check topbar timeframe buttons / chips
+    const btn = target.closest("button") as HTMLElement | null;
+    if (btn && container.contains(btn)) {
+      const txt = btn.textContent?.trim() || "";
+      const val = btn.dataset.value || btn.dataset.tf || txt;
+      if (val && VALID_TIMEFRAMES.has(val)) {
+        window.dispatchEvent(new CustomEvent("tradepro:change-timeframe", { detail: { timeframe: val } }));
       }
-      window.dispatchEvent(new CustomEvent("tradepro:change-timeframe", { detail: { timeframe: rawVal } }));
-    } catch {
-      try {
-        getSafeActiveChart(ws)?.setMarket?.({ timeframe: rawVal, bars: barsForTf(rawVal) });
-      } catch {}
     }
   };
 
@@ -493,6 +504,17 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       return origSetLayout(layout as any);
     };
 
+    // Hook ws.setActiveTimeframe so any topbar timeframe click notifies the app & tabs bar
+    const origSetActiveTimeframe = (ws as any).setActiveTimeframe?.bind(ws);
+    if (origSetActiveTimeframe) {
+      (ws as any).setActiveTimeframe = (tf: string) => {
+        try {
+          origSetActiveTimeframe(tf);
+        } catch {}
+        window.dispatchEvent(new CustomEvent("tradepro:change-timeframe", { detail: { timeframe: tf } }));
+      };
+    }
+
     ws.on("cell:created", () => {
       try {
         installDrawingIsolation(ws);
@@ -557,6 +579,12 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
             try {
               const activeCell = getSafeActiveCell(ws);
               wireAutoBackfill(chart, activeCell);
+              chart.on?.("market:changed", () => {
+                const tf = chart.market?.timeframe || activeCell?.state?.timeframe;
+                if (tf) {
+                  window.dispatchEvent(new CustomEvent("tradepro:change-timeframe", { detail: { timeframe: tf } }));
+                }
+              });
             } catch {}
 
             if (!readyReported) {

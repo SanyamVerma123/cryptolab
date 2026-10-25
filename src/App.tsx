@@ -33,8 +33,7 @@ import { getSafeActiveChart, getSafeActiveCell } from "./lib/workspaceSafe";
 import "./styles/app.css";
 import "./styles/journal.css";
 import { JournalPanel } from "./components/JournalPanel";
-import { ChartTabsBar } from "./components/ChartTabsBar";
-import { PaperAccountWidget } from "./components/PaperAccountWidget";
+import { ChartTabsBar, formatTf } from "./components/ChartTabsBar";
 
 const VelaChart = lazy(() => import("./components/VelaChart").then((module) => ({ default: module.VelaChart })));
 const PineEditor = lazy(() => import("./components/PineEditor").then((module) => ({ default: module.PineEditor })));
@@ -121,7 +120,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    const toggles: [string, () => void][] = [
+    const toggles: [string, (e?: any) => void][] = [
       ["tradepro:toggle-trading", () => {
         setBottomOrdersOpen((v) => !v);
         setTimeout(() => { try { ws?.resize?.(); } catch {} }, 120);
@@ -259,18 +258,16 @@ export default function App() {
     return i === -1 ? sym : sym.slice(i + 1);
   }
 
-  const VALID_APP_TF = useMemo(() => new Set(["1", "3", "5", "15", "30", "45", "60", "120", "180", "240", "360", "480", "720", "D", "W", "M"]), []);
-
   useEffect(() => {
     const onTfChange = (e: any) => {
       const nextTf = e?.detail?.timeframe;
-      if (nextTf && VALID_APP_TF.has(nextTf)) {
-        setTf(nextTf);
+      if (nextTf) {
+        setTf(formatTf(nextTf));
       }
     };
     window.addEventListener("tradepro:change-timeframe", onTfChange);
     return () => window.removeEventListener("tradepro:change-timeframe", onTfChange);
-  }, [VALID_APP_TF]);
+  }, []);
 
   // emits `market:changed` on the CHART (not the workspace), so without that
   // listener the right-hand data panel would stay stuck on the old coin.
@@ -287,7 +284,7 @@ export default function App() {
         const sym = bareSymbol(fullSym);
         if (sym) setCoin(sym);
         const tfVal = activeChart.market?.timeframe;
-        if (tfVal && VALID_APP_TF.has(tfVal)) setTf(tfVal);
+        if (tfVal) setTf(formatTf(tfVal));
       } catch {
         /* workspace torn down — ignore */
       }
@@ -349,9 +346,6 @@ export default function App() {
           />
 
           <div className="chart-host">
-            {/* In-Chart Floating Paper Account Execution Widget matching Image 1 */}
-            <PaperAccountWidget ws={ws} coin={coin} />
-
             {accountOpen && <div className="workspace-account-overlay">
               <UserMenu externalOpen onOpenAuth={() => { setAuthOpen(true); setAccountOpen(false); }} />
             </div>}

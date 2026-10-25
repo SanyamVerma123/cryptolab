@@ -1188,6 +1188,17 @@ html, body, #root {
   border-color: #363a45;
 }
 
+/* Concise Mode (collapsed to 3 favorite drawing tools) */
+.favs.is-concise {
+  transition: width 0.18s cubic-bezier(0.2, 0, 0, 1), height 0.18s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.15s ease;
+}
+.favs.is-concise.is-horizontal {
+  max-width: 160px;
+}
+.favs.is-concise.is-vertical {
+  max-height: 160px;
+}
+
 /* 8-Dot Drag Handle */
 .favs-grip {
   display: inline-flex;
@@ -8192,19 +8203,24 @@ body.resizing-col .market-panel {
   border-bottom: 1px solid #2a2e39;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 0 8px;
   z-index: 40;
   user-select: none;
-  overflow-x: auto;
-  scrollbar-width: none;
+  position: relative;
+  overflow: visible;
 }
-.chart-tabs-bar::-webkit-scrollbar { display: none; }
 
 .chart-tabs-list {
   display: flex;
   align-items: center;
   gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+  min-width: 0;
 }
+.chart-tabs-list::-webkit-scrollbar { display: none; }
 
 .chart-tab-item {
   height: 25px;
@@ -8220,6 +8236,7 @@ body.resizing-col .market-panel {
   gap: 5px;
   cursor: pointer;
   white-space: nowrap;
+  flex: none;
   transition: all 0.15s ease;
 }
 
@@ -8276,6 +8293,7 @@ body.resizing-col .market-panel {
 
 .chart-tab-add-wrap {
   position: relative;
+  flex: none;
 }
 
 .chart-tab-add-btn {
@@ -8304,12 +8322,12 @@ body.resizing-col .market-panel {
   position: absolute;
   top: 30px;
   left: 0;
-  width: 200px;
+  width: 240px;
   background: #181c27;
   border: 1px solid #2a2e39;
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-  z-index: 200;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+  z-index: 250;
   overflow: hidden;
 }
 
@@ -8332,13 +8350,38 @@ body.resizing-col .market-panel {
   font-size: 11px;
 }
 
+.ctp-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #141722;
+  border-bottom: 1px solid #262a36;
+}
+
+.ctp-search-icon {
+  color: #787b86;
+  flex: none;
+}
+
+.ctp-search-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #f0f3fa;
+  font-size: 11.5px;
+  outline: none;
+}
+
 .ctp-list {
+  max-height: 240px;
+  overflow-y: auto;
   padding: 4px 0;
 }
 
 .ctp-item {
   width: 100%;
-  padding: 6px 12px;
+  padding: 6px 10px;
   background: transparent;
   border: none;
   color: #d1d4dc;
@@ -8355,54 +8398,92 @@ body.resizing-col .market-panel {
   background: #242938;
 }
 
+.ctp-custom-add {
+  background: rgba(41, 98, 255, 0.08);
+  border-bottom: 1px solid rgba(41, 98, 255, 0.2);
+}
+.ctp-custom-add:hover {
+  background: rgba(41, 98, 255, 0.16);
+}
+
 .ctp-glyph {
   font-size: 13px;
   color: #f7a600;
+  width: 18px;
+  text-align: center;
+  flex: none;
+}
+
+.ctp-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .ctp-title {
-  flex: 1;
   font-weight: 500;
+  font-size: 11.5px;
+  color: #f0f3fa;
+}
+
+.ctp-subtitle {
+  font-size: 10px;
+  color: #787b86;
 }
 
 .ctp-tf {
   color: #787b86;
-  font-size: 11px;
+  font-size: 10.5px;
+  flex: none;
+}
+
+/* Right side of tabs bar docking the Paper Account Widget */
+.chart-tabs-right {
+  display: flex;
+  align-items: center;
+  margin-left: 12px;
+  flex: none;
+  position: relative;
 }
 
 /* ======================================================================
-   Paper Account In-Chart Execution Widget Matching Image 1
+   Paper Account In-Bar Docked Execution Widget
    ====================================================================== */
 .paper-account-widget {
-  position: absolute;
-  top: 40px;
-  left: 12px;
-  z-index: 90;
-  background: rgba(19, 23, 34, 0.94);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(42, 46, 57, 0.85);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  position: relative;
+  top: auto;
+  left: auto;
+  z-index: 80;
+  background: #181c27;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
+  box-shadow: none;
   user-select: none;
   display: flex;
-  flex-direction: column;
-  transition: box-shadow 0.15s ease;
+  flex-direction: row;
+  align-items: center;
+  height: 25px;
+  transition: border-color 0.15s ease;
 }
 
 .paper-account-widget:hover {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
-  border-color: rgba(42, 46, 57, 1);
+  border-color: #3e4453;
+  box-shadow: none;
 }
 
 .paw-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: 5px;
+  padding: 0 7px;
+  height: 100%;
   font-size: 10.5px;
   color: #9aa0aa;
   cursor: pointer;
-  border-bottom: 1px solid rgba(42, 46, 57, 0.6);
+  border-bottom: none;
+  border-right: 1px solid rgba(42, 46, 57, 0.7);
+  white-space: nowrap;
   transition: background 0.12s ease;
 }
 
@@ -8417,6 +8498,7 @@ body.resizing-col .market-panel {
   border-radius: 50%;
   background: #089981;
   box-shadow: 0 0 6px rgba(8, 153, 129, 0.6);
+  flex: none;
 }
 
 .paw-label {
@@ -8426,6 +8508,7 @@ body.resizing-col .market-panel {
 
 .paw-chevron {
   transition: transform 0.15s ease;
+  flex: none;
 }
 
 .paw-chevron.open {
@@ -8435,19 +8518,25 @@ body.resizing-col .market-panel {
 .paw-buttons {
   display: flex;
   align-items: center;
-  padding: 4px 5px;
-  gap: 4px;
+  padding: 0 3px;
+  gap: 3px;
+  height: 100%;
 }
 
 .paw-btn {
-  padding: 4px 9px;
-  border-radius: 4px;
-  font-size: 11px;
+  height: 19px;
+  padding: 0 7px;
+  border-radius: 3px;
+  font-size: 10.5px;
   font-weight: 700;
   border: none;
   cursor: pointer;
   white-space: nowrap;
   letter-spacing: 0.2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
   transition: transform 0.1s ease, filter 0.15s ease;
 }
 
@@ -8478,17 +8567,17 @@ body.resizing-col .market-panel {
 }
 
 .paw-amount-trigger {
-  height: 24px;
-  padding: 0 7px;
+  height: 19px;
+  padding: 0 6px;
   background: #1e222d;
   border: 1px solid #2a2e39;
-  border-radius: 4px;
+  border-radius: 3px;
   color: #f0f3fa;
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -8500,15 +8589,16 @@ body.resizing-col .market-panel {
 
 .paw-amount-dropdown {
   position: absolute;
-  top: 28px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 26px;
+  right: 0;
+  left: auto;
+  transform: none;
   width: 140px;
   background: #181c27;
   border: 1px solid #2a2e39;
   border-radius: 6px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
-  z-index: 210;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65);
+  z-index: 250;
   padding: 4px 0;
 }
 
@@ -8558,14 +8648,15 @@ body.resizing-col .market-panel {
 
 .paw-account-dropdown {
   position: absolute;
-  top: 56px;
-  left: 0;
+  top: 28px;
+  right: 0;
+  left: auto;
   width: 240px;
   background: #181c27;
   border: 1px solid #2a2e39;
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
-  z-index: 210;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+  z-index: 250;
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -8637,8 +8728,7 @@ body.resizing-col .market-panel {
 
 .paw-toast {
   position: absolute;
-  top: 105%;
-  left: 0;
+  top: 30px;
   right: 0;
   background: #1e2433;
   border: 1px solid #2962ff;
@@ -8648,7 +8738,9 @@ body.resizing-col .market-panel {
   font-weight: 600;
   color: #f0f3fa;
   text-align: center;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+  z-index: 300;
+  white-space: nowrap;
   animation: paw-toast-in 0.15s ease-out;
 }
 
@@ -8657,8 +8749,17 @@ body.resizing-col .market-panel {
   to { opacity: 1; transform: translateY(0); }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
+  .paw-header {
+    padding: 0 5px;
+  }
+  .paw-label {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
   .paper-account-widget {
-    display: none; /* Hide on small mobile to avoid chart clutter */
+    display: none; /* Hide on small mobile to avoid chart tabs overflow */
   }
 }

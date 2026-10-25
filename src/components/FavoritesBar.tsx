@@ -22,13 +22,6 @@ import {
   VELA_TOOL_NORMALIZED_MAP,
   type VelaTool,
 } from "../lib/velaToolIcons";
-import {
-  listPresets,
-  savePreset,
-  deletePreset,
-  applyPreset,
-  type DrawingPreset,
-} from "../lib/drawingPresets";
 import { getSafeActiveChart } from "../lib/workspaceSafe";
 
 interface Props {
@@ -150,12 +143,22 @@ export function FavoritesBar({ ws }: Props) {
   const [favs, setFavs] = useState<string[]>([]);
   const [armed, setArmed] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
-  const [presets, setPresets] = useState<DrawingPreset[]>([]);
-  const [presetOpen, setPresetOpen] = useState(false);
-  const [naming, setNaming] = useState(false);
-  const [presetName, setPresetName] = useState("");
-  const [presetMsg, setPresetMsg] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+
+  // Concise mode: collapses toolbar to only the 3 favorite drawing tools
+  const [isConcise, setIsConcise] = useState(() => {
+    try {
+      return localStorage.getItem("trade-pro:favs-concise") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("trade-pro:favs-concise", isConcise ? "1" : "0");
+    } catch {}
+  }, [isConcise]);
 
   // Orientation: Horizontal (default) vs Vertical
   const [orientation, setOrientation] = useState<"horizontal" | "vertical">(() => {
@@ -186,44 +189,9 @@ export function FavoritesBar({ ws }: Props) {
     setContextMenu(null);
   }, []);
 
-  // Presets management
-  const refreshPresets = () => setPresets(listPresets());
-  useEffect(() => {
-    refreshPresets();
-  }, []);
-
-  useEffect(() => {
-    if (presetOpen) refreshPresets();
-  }, [presetOpen]);
-
-  const doSavePreset = () => {
-    if (!ws) return;
-    const p = savePreset(ws, presetName);
-    if (p) {
-      setPresetMsg(`Saved "${p.name}"`);
-      setPresetName("");
-      setNaming(false);
-    } else {
-      setPresetMsg("Nothing on chart to save — draw and configure first.");
-    }
-    refreshPresets();
-    window.setTimeout(() => setPresetMsg(""), 2600);
-  };
-
-  const doApplyPreset = (p: DrawingPreset) => {
-    if (!ws) return;
-    const name = applyPreset(ws, p.id);
-    if (name) setPresetMsg(`Applied "${name}"`);
-    else setPresetMsg("Draw a matching shape first, then pick preset.");
-    window.setTimeout(() => setPresetMsg(""), 2600);
-  };
-
-  const doDeletePreset = (id: string) => {
-    deletePreset(id);
-    refreshPresets();
-  };
-
-  // Dragging by the dotted grip handle
+  // Dragging or clicking the 6-dot grip handle:
+  // If dragged (> 3px movement): move toolbar across canvas.
+  // If clicked (<= 3px movement): toggle concise mode (collapse to 3 tools vs expand).
   const onGripDown = (e: React.PointerEvent) => {
     e.preventDefault();
     const el = barRef.current;
@@ -261,17 +229,23 @@ export function FavoritesBar({ ws }: Props) {
 
     const up = () => {
       if (!drag.current) return;
+      if (!moved.current) {
+        // Pure click on grip handle without dragging: toggle concise mode!
+        setIsConcise((prev) => !prev);
+      } else {
+        // Moved: persist user-adjusted toolbar position
+        const el = barRef.current;
+        if (el) {
+          const container = (el.closest(".vela-chart-container") || el.closest(".chart-host") || el.parentElement) as HTMLElement | null;
+          const r = el.getBoundingClientRect();
+          const cr = container?.getBoundingClientRect() ?? { left: 0, top: 0 };
+          try {
+            localStorage.setItem(POS_KEY, JSON.stringify({ x: r.left - cr.left, y: r.top - cr.top }));
+          } catch {}
+        }
+      }
       drag.current = null;
       setIsDragging(false);
-      const el = barRef.current;
-      if (el && moved.current) {
-        const container = (el.closest(".vela-chart-container") || el.closest(".chart-host") || el.parentElement) as HTMLElement | null;
-        const r = el.getBoundingClientRect();
-        const cr = container?.getBoundingClientRect() ?? { left: 0, top: 0 };
-        try {
-          localStorage.setItem(POS_KEY, JSON.stringify({ x: r.left - cr.left, y: r.top - cr.top }));
-        } catch {}
-      }
     };
 
     window.addEventListener("pointermove", move);
@@ -390,6 +364,26 @@ export function FavoritesBar({ ws }: Props) {
       window.removeEventListener("keydown", onKey);
     };
   }, [contextMenu]);
+
+  // Close tool picker on outside click or escape
+  useEffect(() => {
+    if (!picking) return;
+    const onPointer = (e: PointerEvent) => {
+      const el = barRef.current;
+      if (el && !el.contains(e.target as Node)) {
+        setPicking(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPicking(false);
+    };
+    window.addEventListener("pointerdown", onPointer);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onPointer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [picking]);
 
   // Starred tools + armed tool sync from Vela
   useEffect(() => {
@@ -578,7 +572,7 @@ export function FavoritesBar({ ws }: Props) {
   return (
     <>
       <div
-        className={`favs tv-fav-toolbar is-${orientation}${isDragging ? " is-dragging" : ""}${isLight ? " light" : " dark"}`}
+        className={`favs tv-fav-toolbar is-${orientation}${isDragging ? " is-dragging" : ""}${isConcise ? " is-concise" : ""}${isLight ? " light" : " dark"}`}
         ref={barRef}
         role="toolbar"
         aria-label="Favorite drawing tools"
@@ -589,43 +583,38 @@ export function FavoritesBar({ ws }: Props) {
           setContextMenu({ x, y });
         }}
       >
-        {/* TradingView 8-dot Grip Handle */}
+        {/* TradingView 6-dot Grip Handle (Click to concise/expand, Drag to move) */}
         <button
           type="button"
           className="favs-grip"
-          title="Drag to move · Double-click to switch orientation"
-          aria-label="Drag favorite tools toolbar"
+          title={isConcise ? "Click to expand all favorite tools · Drag to move" : "Click to collapse to 3 tools · Drag to move"}
+          aria-label="Drag or toggle favorite tools toolbar"
           onPointerDown={onGripDown}
-          onDoubleClick={toggleOrientation}
         >
           {orientation === "horizontal" ? (
             <svg viewBox="0 0 10 22" aria-hidden="true" className="favs-grip-svg">
-              <circle cx="3" cy="3" r="1.25" />
-              <circle cx="7" cy="3" r="1.25" />
-              <circle cx="3" cy="8.5" r="1.25" />
-              <circle cx="7" cy="8.5" r="1.25" />
-              <circle cx="3" cy="14" r="1.25" />
-              <circle cx="7" cy="14" r="1.25" />
-              <circle cx="3" cy="19.5" r="1.25" />
-              <circle cx="7" cy="19.5" r="1.25" />
+              <circle cx="3" cy="4" r="1.3" />
+              <circle cx="7" cy="4" r="1.3" />
+              <circle cx="3" cy="11" r="1.3" />
+              <circle cx="7" cy="11" r="1.3" />
+              <circle cx="3" cy="18" r="1.3" />
+              <circle cx="7" cy="18" r="1.3" />
             </svg>
           ) : (
             <svg viewBox="0 0 22 10" aria-hidden="true" className="favs-grip-svg">
-              <circle cx="3" cy="3" r="1.25" />
-              <circle cx="3" cy="7" r="1.25" />
-              <circle cx="8.5" cy="3" r="1.25" />
-              <circle cx="8.5" cy="7" r="1.25" />
-              <circle cx="14" cy="3" r="1.25" />
-              <circle cx="14" cy="7" r="1.25" />
-              <circle cx="19.5" cy="3" r="1.25" />
-              <circle cx="19.5" cy="7" r="1.25" />
+              <circle cx="4" cy="3" r="1.3" />
+              <circle cx="4" cy="7" r="1.3" />
+              <circle cx="11" cy="3" r="1.3" />
+              <circle cx="11" cy="7" r="1.3" />
+              <circle cx="18" cy="3" r="1.3" />
+              <circle cx="18" cy="7" r="1.3" />
             </svg>
           )}
         </button>
 
-        {/* Favorite Tool Buttons */}
+        {/* Favorite Tool Buttons (Top 3 tools when concise, full list when expanded) */}
         <div className="favs-tools">
-          {favs.map((t) => {
+          {(isConcise ? favs.slice(0, 3) : favs).map((t) => {
             const meta = tool(t);
             const label = meta?.label || t.charAt(0).toUpperCase() + t.slice(1);
             const title = getToolTitle(t, label);
@@ -644,150 +633,140 @@ export function FavoritesBar({ ws }: Props) {
             );
           })}
 
-          {/* Add / Remove Tools Flyout Trigger */}
-          <button
-            className={"fav-btn fav-add" + (picking ? " on" : "")}
-            title="Add or remove tools from favorites"
-            aria-label="Add or remove tools from favorites"
-            aria-expanded={picking}
-            onClick={() => setPicking((v) => !v)}
-          >
-            +
-          </button>
+          {!isConcise && (
+            <>
+              {/* Add / Remove Tools Flyout Trigger */}
+              <button
+                className={"fav-btn fav-add" + (picking ? " on" : "")}
+                title="Add or remove tools from favorites"
+                aria-label="Add or remove tools from favorites"
+                aria-expanded={picking}
+                onClick={() => setPicking((v) => !v)}
+              >
+                +
+              </button>
 
-          {/* Custom Drawing Format Presets */}
-          <button
-            className={"fav-btn fav-preset-btn" + (presetOpen ? " on" : "")}
-            title="Saved drawing styles & formats"
-            aria-label="Drawing format presets"
-            aria-expanded={presetOpen}
-            onClick={() => {
-              setPresetOpen((v) => !v);
-              setNaming(false);
-            }}
-          >
-            ✥
-          </button>
+              <span className="favs-util-sep" />
 
-          <span className="favs-util-sep" />
+              {/* Magnet Snap Mode */}
+              <button
+                className={"fav-btn fav-util-btn" + (snapMode !== "off" ? " on" : "")}
+                title={`Magnet snap: ${snapMode.toUpperCase()} (snaps drawings to OHLC bars)`}
+                aria-label={`Magnet mode ${snapMode}`}
+                onClick={toggleSnap}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 3v7a6 6 0 0 0 12 0V3M6 7h4M14 7h4M6 3h4M14 3h4" />
+                </svg>
+                {snapMode !== "off" && <span className="fav-util-badge">{snapMode === "strong" ? "S" : "W"}</span>}
+              </button>
 
-          {/* Magnet Snap Mode */}
-          <button
-            className={"fav-btn fav-util-btn" + (snapMode !== "off" ? " on" : "")}
-            title={`Magnet snap: ${snapMode.toUpperCase()} (snaps drawings to OHLC bars)`}
-            aria-label={`Magnet mode ${snapMode}`}
-            onClick={toggleSnap}
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6 3v7a6 6 0 0 0 12 0V3M6 7h4M14 7h4M6 3h4M14 3h4" />
-            </svg>
-            {snapMode !== "off" && <span className="fav-util-badge">{snapMode === "strong" ? "S" : "W"}</span>}
-          </button>
+              {/* Stay in Drawing Mode */}
+              <button
+                className={"fav-btn fav-util-btn" + (stayMode ? " on" : "")}
+                title={stayMode ? "Stay in drawing mode: ON" : "Stay in drawing mode: OFF"}
+                aria-label="Stay in drawing mode"
+                aria-pressed={stayMode}
+                onClick={toggleStay}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                </svg>
+              </button>
 
-          {/* Stay in Drawing Mode */}
-          <button
-            className={"fav-btn fav-util-btn" + (stayMode ? " on" : "")}
-            title={stayMode ? "Stay in drawing mode: ON" : "Stay in drawing mode: OFF"}
-            aria-label="Stay in drawing mode"
-            aria-pressed={stayMode}
-            onClick={toggleStay}
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 20h9" />
-              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-            </svg>
-          </button>
+              {/* Measure Tool (Ruler) */}
+              <button
+                className={"fav-btn fav-util-btn" + (drawingMode === "measure" ? " on" : "")}
+                title="Measure Ruler (Shift+Click or Alt+M)"
+                aria-label="Measure tool"
+                aria-pressed={drawingMode === "measure"}
+                onClick={toggleMeasure}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21.3 8.7 8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4z" />
+                  <path d="m14.5 5.5-2.5 2.5m-1-1-2 2m5 1-2.5 2.5m-1-1-2 2" />
+                </svg>
+              </button>
 
-          {/* Measure Tool (Ruler) */}
-          <button
-            className={"fav-btn fav-util-btn" + (drawingMode === "measure" ? " on" : "")}
-            title="Measure Ruler (Shift+Click or Alt+M)"
-            aria-label="Measure tool"
-            aria-pressed={drawingMode === "measure"}
-            onClick={toggleMeasure}
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21.3 8.7 8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4z" />
-              <path d="m14.5 5.5-2.5 2.5m-1-1-2 2m5 1-2.5 2.5m-1-1-2 2" />
-            </svg>
-          </button>
+              {/* Hide / Show All Drawings */}
+              <button
+                className={"fav-btn fav-util-btn" + (allHidden ? " on" : "")}
+                title={allHidden ? "Show all drawings (Alt+C)" : "Hide all drawings (Alt+C)"}
+                aria-label="Hide or show all drawings"
+                onClick={toggleHideAll}
+              >
+                {allHidden ? (
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </button>
 
-          {/* Hide / Show All Drawings */}
-          <button
-            className={"fav-btn fav-util-btn" + (allHidden ? " on" : "")}
-            title={allHidden ? "Show all drawings (Alt+C)" : "Hide all drawings (Alt+C)"}
-            aria-label="Hide or show all drawings"
-            onClick={toggleHideAll}
-          >
-            {allHidden ? (
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                <line x1="1" y1="1" x2="23" y2="23" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-            )}
-          </button>
+              {/* Lock All Drawings */}
+              <button
+                className={"fav-btn fav-util-btn" + (allLocked ? " on" : "")}
+                title={allLocked ? "Unlock all drawings (Alt+L)" : "Lock all drawings (Alt+L)"}
+                aria-label="Lock or unlock all drawings"
+                onClick={toggleLockAll}
+              >
+                {allLocked ? (
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                  </svg>
+                )}
+              </button>
 
-          {/* Lock All Drawings */}
-          <button
-            className={"fav-btn fav-util-btn" + (allLocked ? " on" : "")}
-            title={allLocked ? "Unlock all drawings (Alt+L)" : "Lock all drawings (Alt+L)"}
-            aria-label="Lock or unlock all drawings"
-            onClick={toggleLockAll}
-          >
-            {allLocked ? (
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-              </svg>
-            )}
-          </button>
+              {/* Remove All Drawings */}
+              <button
+                className="fav-btn fav-util-btn fav-clear-btn"
+                title="Remove all drawings on chart"
+                aria-label="Remove all drawings on chart"
+                onClick={removeAll}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+              </button>
 
-          {/* Remove All Drawings */}
-          <button
-            className="fav-btn fav-util-btn fav-clear-btn"
-            title="Remove all drawings on chart"
-            aria-label="Remove all drawings on chart"
-            onClick={removeAll}
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-          </button>
+              <span className="favs-util-sep" />
 
-          <span className="favs-util-sep" />
-
-          {/* Orientation Toggle Button */}
-          <button
-            className="fav-btn fav-orientation-btn"
-            title={orientation === "horizontal" ? "Switch to Vertical layout" : "Switch to Horizontal layout"}
-            aria-label="Switch layout orientation"
-            onClick={toggleOrientation}
-          >
-            {orientation === "horizontal" ? (
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="3" x2="12" y2="21" />
-                <polyline points="8 7 12 3 16 7" />
-                <polyline points="8 17 12 21 16 17" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <polyline points="7 8 3 12 7 16" />
-                <polyline points="17 8 21 12 17 16" />
-              </svg>
-            )}
-          </button>
+              {/* Orientation Toggle Button */}
+              <button
+                className="fav-btn fav-orientation-btn"
+                title={orientation === "horizontal" ? "Switch to Vertical layout" : "Switch to Horizontal layout"}
+                aria-label="Switch layout orientation"
+                onClick={toggleOrientation}
+              >
+                {orientation === "horizontal" ? (
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="3" x2="12" y2="21" />
+                    <polyline points="8 7 12 3 16 7" />
+                    <polyline points="8 17 12 21 16 17" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <polyline points="7 8 3 12 7 16" />
+                    <polyline points="17 8 21 12 17 16" />
+                  </svg>
+                )}
+              </button>
+            </>
+          )}
 
           {/* TradingView Close Toolbar Button */}
           <button
@@ -799,77 +778,6 @@ export function FavoritesBar({ ws }: Props) {
             ✕
           </button>
         </div>
-
-        {/* Saved Format Presets Dropdown */}
-        {presetOpen && (
-          <div className="preset-picker" role="dialog" aria-label="Drawing format presets">
-            <div className="preset-head">
-              <span>Saved formats</span>
-              <button
-                className="preset-custom-btn"
-                onClick={() => setNaming((v) => !v)}
-                title="Save selected drawing format under a name"
-              >
-                {naming ? "Cancel" : "Custom"}
-              </button>
-            </div>
-
-            {naming && (
-              <div className="preset-name-row">
-                <input
-                  className="preset-name-input"
-                  placeholder="Name it, e.g. FVG"
-                  value={presetName}
-                  autoFocus
-                  onChange={(e) => setPresetName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") doSavePreset();
-                    if (e.key === "Escape") setNaming(false);
-                  }}
-                />
-                <button className="preset-save-btn" onClick={doSavePreset}>
-                  Save
-                </button>
-              </div>
-            )}
-
-            {presets.length ? (
-              <div className="preset-list">
-                {presets.map((p) => (
-                  <div className="preset-row" key={p.id}>
-                    <button
-                      className="preset-item"
-                      title={`Apply format to selected ${p.tool} drawing`}
-                      onClick={() => doApplyPreset(p)}
-                    >
-                      <span className="preset-swatch" aria-hidden="true">
-                        {String(p.style.fillColor || p.style.lineColor || "#4cc2ff")
-                          .replace("#", "")
-                          .slice(0, 6)
-                          .padEnd(6, "0")}
-                      </span>
-                      <span className="preset-item-name">{p.name}</span>
-                      <span className="preset-item-tool">{p.tool}</span>
-                    </button>
-                    <button
-                      className="preset-del"
-                      title={`Delete "${p.name}"`}
-                      onClick={() => doDeletePreset(p.id)}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="preset-empty">
-                No saved formats yet. Configure a drawing on chart, then press <b>Custom</b> to save its format.
-              </div>
-            )}
-
-            {presetMsg && <div className="preset-msg">{presetMsg}</div>}
-          </div>
-        )}
 
         {/* Tool Picker Flyout */}
         {picking && (
