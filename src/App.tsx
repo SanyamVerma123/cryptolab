@@ -281,7 +281,7 @@ export default function App() {
         const activeChart = getSafeActiveChart(ws);
         if (!activeChart) return;
         const fullSym = activeChart.market?.symbol;
-        const sym = bareSymbol(fullSym);
+        const sym = bareSymbol(fullSym)?.replace(/USDT$/i, "");
         if (sym) setCoin(sym);
         const tfVal = activeChart.market?.timeframe;
         if (tfVal) setTf(formatTf(tfVal));

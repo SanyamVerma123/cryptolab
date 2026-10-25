@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
 import { getSafeActiveChart, getSafeActiveCell } from "../lib/workspaceSafe";
 import { PaperAccountWidget } from "./PaperAccountWidget";
@@ -17,7 +17,8 @@ interface Props {
   onSelect: (coin: string, timeframe: string) => void;
 }
 
-const TABS_STORAGE_KEY = "tradepro_chart_tabs_v1";
+const TABS_STORAGE_KEY = "tradepro_chart_tabs_v2";
+const ACTIVE_TAB_KEY = "tradepro_active_tab_id_v2";
 
 /**
  * Format any raw timeframe interval string into standard TradingView label.
@@ -59,7 +60,7 @@ const DEFAULT_TABS: ChartTabItem[] = [
 ];
 
 function getCoinGlyph(coin: string): string {
-  const c = coin.toUpperCase();
+  const c = coin.toUpperCase().replace(/USDT$/i, "");
   if (c === "BTC") return "₿";
   if (c === "ETH") return "⟠";
   if (c === "SOL") return "◎";
@@ -79,25 +80,6 @@ function getCoinGlyph(coin: string): string {
   return "●";
 }
 
-const POPULAR_COINS = [
-  { coin: "BTC", name: "Bitcoin", glyph: "₿", tf: "1m" },
-  { coin: "ETH", name: "Ethereum", glyph: "⟠", tf: "15m" },
-  { coin: "SOL", name: "Solana", glyph: "◎", tf: "1h" },
-  { coin: "DOGE", name: "Dogecoin", glyph: "Ð", tf: "4h" },
-  { coin: "XRP", name: "Ripple", glyph: "✕", tf: "1D" },
-  { coin: "BNB", name: "BNB", glyph: "⬡", tf: "1h" },
-  { coin: "AVAX", name: "Avalanche", glyph: "▲", tf: "15m" },
-  { coin: "SUI", name: "Sui", glyph: "💧", tf: "1h" },
-  { coin: "NEAR", name: "Near Protocol", glyph: "Ⓝ", tf: "4h" },
-  { coin: "LINK", name: "Chainlink", glyph: "⬡", tf: "1h" },
-  { coin: "PEPE", name: "Pepe", glyph: "🐸", tf: "15m" },
-  { coin: "ARB", name: "Arbitrum", glyph: "🔵", tf: "1h" },
-  { coin: "APT", name: "Aptos", glyph: "▲", tf: "15m" },
-  { coin: "OP", name: "Optimism", glyph: "🔴", tf: "1h" },
-  { coin: "INJ", name: "Injective", glyph: "⚡", tf: "4h" },
-  { coin: "TIA", name: "Celestia", glyph: "✨", tf: "1h" },
-];
-
 export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Props) {
   const [tabs, setTabs] = useState<ChartTabItem[]>(() => {
     try {
@@ -110,8 +92,13 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
     return DEFAULT_TABS;
   });
 
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    try {
+      const savedId = localStorage.getItem(ACTIVE_TAB_KEY);
+      if (savedId && tabs.some((t) => t.id === savedId)) return savedId;
+    } catch {}
+    return tabs[0]?.id || "tab_btc";
+  });
 
   // Save tabs on change
   useEffect(() => {
@@ -120,73 +107,93 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
     } catch {}
   }, [tabs]);
 
-  const pickerRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
-  // Close tab picker on outside click
+  // Save activeTabId on change
   useEffect(() => {
-    if (!pickerOpen) return;
-    const outside = (e: PointerEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPickerOpen(false);
-        setSearchQuery("");
-      }
-    };
-    document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
-  }, [pickerOpen]);
+    try {
+      localStorage.setItem(ACTIVE_TAB_KEY, activeTabId);
+    } catch {}
+  }, [activeTabId]);
 
-  // Focus search input when picker opens
-  useEffect(() => {
-    if (pickerOpen) {
-      setTimeout(() => searchInputRef.current?.focus(), 60);
-    }
-  }, [pickerOpen]);
-
-  // Sync activeCoin & activeTimeframe with current tabs
+  const cleanCoin = (activeCoin || "BTC").toUpperCase().replace(/USDT$/i, "");
   const cleanActiveTf = formatTf(activeTimeframe);
+
+  // When user changes the coin or timeframe on the chart, update the CURRENT active tab!
   useEffect(() => {
+    if (!cleanCoin) return;
     setTabs((prev) => {
-      const idx = prev.findIndex((t) => t.coin.toUpperCase() === activeCoin.toUpperCase());
-      if (idx === -1) {
-        return [
-          ...prev,
-          {
-            id: `tab_${Date.now()}`,
-            coin: activeCoin.toUpperCase(),
-            symbol: `${activeCoin.toUpperCase()}USDT`,
-            timeframe: cleanActiveTf,
-          },
-        ];
-      }
-      if (prev[idx].timeframe !== cleanActiveTf) {
-        const updated = [...prev];
-        updated[idx] = { ...updated[idx], timeframe: cleanActiveTf };
-        return updated;
-      }
-      return prev;
+      const idx = prev.findIndex((t) => t.id === activeTabId);
+      if (idx === -1) return prev;
+      const cur = prev[idx];
+      if (cur.coin === cleanCoin && cur.timeframe === cleanActiveTf) return prev;
+      const updated = [...prev];
+      updated[idx] = {
+        ...cur,
+        coin: cleanCoin,
+        symbol: `${cleanCoin}USDT`,
+        timeframe: cleanActiveTf,
+      };
+      return updated;
     });
-  }, [activeCoin, cleanActiveTf]);
+  }, [cleanCoin, cleanActiveTf, activeTabId]);
 
   const handleSelectTab = (tab: ChartTabItem) => {
+    setActiveTabId(tab.id);
     const targetTf = formatTf(tab.timeframe);
     onSelect(tab.coin, targetTf);
     try {
       const cell = getSafeActiveCell(ws) as any;
       if (cell) {
         cell.setSymbol?.(tab.symbol || `${tab.coin.toUpperCase()}USDT`);
-        cell.setTimeframe?.(tab.timeframe);
+        cell.setTimeframe?.(targetTf);
       }
       const chart = getSafeActiveChart(ws) as any;
       if (chart?.setMarket) {
         chart.setMarket({
           symbol: tab.symbol || `${tab.coin.toUpperCase()}USDT`,
-          timeframe: tab.timeframe,
-          bars: barsForTf(tab.timeframe),
+          timeframe: targetTf,
+          bars: barsForTf(targetTf),
         });
       }
     } catch (e) {
       console.warn("[ChartTabsBar] handleSelectTab failed:", e);
+    }
+  };
+
+  /**
+   * "When i click the new tab it will open the btc then i can change the coin by myself"
+   * Immediately opens a new tab with BTC and switches chart to BTC.
+   */
+  const handleAddNewTab = () => {
+    const newId = `tab_${Date.now()}`;
+    const targetTf = cleanActiveTf || "1m";
+    const newTab: ChartTabItem = {
+      id: newId,
+      coin: "BTC",
+      symbol: "BTCUSDT",
+      timeframe: targetTf,
+    };
+
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newId);
+
+    // Switch chart to BTC
+    onSelect("BTC", targetTf);
+    try {
+      const cell = getSafeActiveCell(ws) as any;
+      if (cell) {
+        cell.setSymbol?.("BTCUSDT");
+        cell.setTimeframe?.(targetTf);
+      }
+      const chart = getSafeActiveChart(ws) as any;
+      if (chart?.setMarket) {
+        chart.setMarket({
+          symbol: "BTCUSDT",
+          timeframe: targetTf,
+          bars: barsForTf(targetTf),
+        });
+      }
+    } catch (e) {
+      console.warn("[ChartTabsBar] failed to set BTC on new tab:", e);
     }
   };
 
@@ -196,49 +203,17 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
     const closedIdx = tabs.findIndex((t) => t.id === id);
     const nextTabs = tabs.filter((t) => t.id !== id);
     setTabs(nextTabs);
-    const closedTab = tabs[closedIdx];
-    if (closedTab && closedTab.coin.toUpperCase() === activeCoin.toUpperCase() && nextTabs.length > 0) {
+    if (id === activeTabId && nextTabs.length > 0) {
       const targetIdx = Math.min(closedIdx, nextTabs.length - 1);
       handleSelectTab(nextTabs[targetIdx]);
     }
   };
 
-  const handleAddTab = (coinName: string, tf: string = cleanActiveTf) => {
-    const cleanCoin = coinName.toUpperCase().replace(/USDT$/i, "").trim();
-    if (!cleanCoin) return;
-    const existing = tabs.find((t) => t.coin.toUpperCase() === cleanCoin);
-    if (existing) {
-      handleSelectTab(existing);
-      setPickerOpen(false);
-      setSearchQuery("");
-      return;
-    }
-    const newTab: ChartTabItem = {
-      id: `tab_${Date.now()}`,
-      coin: cleanCoin,
-      symbol: `${cleanCoin}USDT`,
-      timeframe: formatTf(tf),
-    };
-    setTabs((prev) => [...prev, newTab]);
-    handleSelectTab(newTab);
-    setPickerOpen(false);
-    setSearchQuery("");
-  };
-
-  const filteredCoins = POPULAR_COINS.filter((c) => {
-    const q = searchQuery.trim().toUpperCase();
-    if (!q) return true;
-    return c.coin.includes(q) || c.name.toUpperCase().includes(q);
-  });
-
-  const queryCoin = searchQuery.trim().toUpperCase().replace(/USDT$/i, "");
-  const hasExactMatch = POPULAR_COINS.some((c) => c.coin === queryCoin);
-
   return (
     <div className="chart-tabs-bar" role="tablist" aria-label="Open Chart Tabs">
       <div className="chart-tabs-list">
         {tabs.map((tab) => {
-          const isActive = tab.coin.toUpperCase() === activeCoin.toUpperCase();
+          const isActive = tab.id === activeTabId;
           const displayTf = formatTf(tab.timeframe);
           return (
             <div
@@ -247,7 +222,7 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
               aria-selected={isActive}
               className={`chart-tab-item${isActive ? " is-active" : ""}`}
               onClick={() => handleSelectTab(tab)}
-              title={`${tab.symbol} · ${displayTf}`}
+              title={`${tab.symbol} · ${displayTf} (Click to switch chart)`}
             >
               <span className="chart-tab-glyph">{getCoinGlyph(tab.coin)}</span>
               <span className="chart-tab-name">
@@ -268,89 +243,17 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
           );
         })}
 
-        {/* Plus / Add Tab Button & Searchable Picker */}
-        <div className="chart-tab-add-wrap" ref={pickerRef}>
+        {/* Plus / Add New Tab Button (Opens BTC immediately) */}
+        <div className="chart-tab-add-wrap">
           <button
             type="button"
             className="chart-tab-add-btn"
-            onClick={() => setPickerOpen((v) => !v)}
-            title="Open new chart tab"
-            aria-label="Add new chart tab"
+            onClick={handleAddNewTab}
+            title="Open new tab (BTC)"
+            aria-label="Open new tab"
           >
             +
           </button>
-
-          {pickerOpen && (
-            <div className="chart-tab-picker">
-              <div className="ctp-head">
-                <span>Add Chart Tab</span>
-                <button
-                  type="button"
-                  className="ctp-close"
-                  onClick={() => {
-                    setPickerOpen(false);
-                    setSearchQuery("");
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Instant Search Bar */}
-              <div className="ctp-search-wrap">
-                <svg className="ctp-search-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  className="ctp-search-input"
-                  placeholder="Search coin (e.g. PEPE, SUI)..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && queryCoin) {
-                      handleAddTab(queryCoin);
-                    } else if (e.key === "Escape") {
-                      setPickerOpen(false);
-                      setSearchQuery("");
-                    }
-                  }}
-                />
-              </div>
-
-              <div className="ctp-list">
-                {queryCoin && !hasExactMatch && (
-                  <button
-                    type="button"
-                    className="ctp-item ctp-custom-add"
-                    onClick={() => handleAddTab(queryCoin)}
-                  >
-                    <span className="ctp-glyph">+</span>
-                    <span className="ctp-title">Open <b>{queryCoin}USDT</b></span>
-                    <span className="ctp-tf">{cleanActiveTf}</span>
-                  </button>
-                )}
-
-                {filteredCoins.map((p) => (
-                  <button
-                    key={p.coin}
-                    type="button"
-                    className="ctp-item"
-                    onClick={() => handleAddTab(p.coin, p.tf)}
-                  >
-                    <span className="ctp-glyph">{p.glyph}</span>
-                    <div className="ctp-info">
-                      <span className="ctp-title">{p.coin}USDT</span>
-                      <span className="ctp-subtitle">{p.name}</span>
-                    </div>
-                    <span className="ctp-tf">{formatTf(p.tf)}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
