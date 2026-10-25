@@ -18,6 +18,13 @@ export function PaperAccountWidget({ ws, coin }: Props) {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [customAmount, setCustomAmount] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = (msg: string) => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    setToastMsg(msg);
+    toastTimerRef.current = window.setTimeout(() => setToastMsg(null), 2500);
+  };
 
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -46,8 +53,7 @@ export function PaperAccountWidget({ ws, coin }: Props) {
   const handleExecute = (side: "BUY" | "SELL") => {
     const p = getPrice();
     if (p <= 0) {
-      setToastMsg("Price not available");
-      setTimeout(() => setToastMsg(null), 2000);
+      showToast("Price not available");
       return;
     }
 
@@ -63,13 +69,12 @@ export function PaperAccountWidget({ ws, coin }: Props) {
     });
 
     if (res.ok) {
-      setToastMsg(
+      showToast(
         `${side === "BUY" ? "▲ Bought" : "▼ Sold"} ${baseAmount.toFixed(4)} ${coin} @ $${p.toLocaleString()}`
       );
     } else {
-      setToastMsg(res.error || "Order failed");
+      showToast(res.error || "Order failed");
     }
-    setTimeout(() => setToastMsg(null), 2500);
   };
 
   const usdBalance = balances.USD ?? 50000;
@@ -140,10 +145,21 @@ export function PaperAccountWidget({ ws, coin }: Props) {
                   placeholder="Custom USD"
                   min="10"
                   step="50"
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (val >= 10) setUsdAmount(val);
+                  }}
+                  onBlur={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (val >= 10) {
+                      setUsdAmount(val);
+                      setAmountMenuOpen(false);
+                    }
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       const val = parseFloat((e.target as HTMLInputElement).value);
-                      if (val > 0) {
+                      if (val >= 10) {
                         setUsdAmount(val);
                         setAmountMenuOpen(false);
                       }

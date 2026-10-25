@@ -584,7 +584,9 @@ export function FavoritesBar({ ws }: Props) {
         aria-label="Favorite drawing tools"
         onContextMenu={(e) => {
           e.preventDefault();
-          setContextMenu({ x: e.clientX, y: e.clientY });
+          const x = Math.min(e.clientX, (window.innerWidth || 1000) - 200);
+          const y = Math.min(e.clientY, (window.innerHeight || 800) - 160);
+          setContextMenu({ x, y });
         }}
       >
         {/* TradingView 8-dot Grip Handle */}

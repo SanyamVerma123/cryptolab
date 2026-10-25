@@ -189,8 +189,9 @@ export function DataWindow({ ws, coin = "BTC", currentPrice = 0, isFloating = fa
 
   const formatPrice = (val: number | null | undefined) => {
     if (val == null || isNaN(val)) return "—";
-    if (val >= 1000) return val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    if (val >= 1) return val.toFixed(4);
+    const abs = Math.abs(val);
+    if (abs >= 1000) return val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (abs >= 1) return val.toFixed(4);
     return val.toFixed(6);
   };
 

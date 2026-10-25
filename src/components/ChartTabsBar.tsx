@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
 import { getSafeActiveChart } from "../lib/workspaceSafe";
 
@@ -62,19 +62,43 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
     } catch {}
   }, [tabs]);
 
-  // Sync activeCoin with current tabs
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  // Close tab picker on outside click
   useEffect(() => {
-    const exists = tabs.some((t) => t.coin.toUpperCase() === activeCoin.toUpperCase());
-    if (!exists) {
-      const newTab: ChartTabItem = {
-        id: `tab_${Date.now()}`,
-        coin: activeCoin,
-        symbol: `${activeCoin.toUpperCase()}USDT`,
-        timeframe: activeTimeframe,
-      };
-      setTabs((prev) => [...prev, newTab]);
-    }
-  }, [activeCoin, activeTimeframe, tabs]);
+    if (!pickerOpen) return;
+    const outside = (e: PointerEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPickerOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [pickerOpen]);
+
+  // Sync activeCoin & activeTimeframe with current tabs
+  useEffect(() => {
+    setTabs((prev) => {
+      const idx = prev.findIndex((t) => t.coin.toUpperCase() === activeCoin.toUpperCase());
+      if (idx === -1) {
+        return [
+          ...prev,
+          {
+            id: `tab_${Date.now()}`,
+            coin: activeCoin,
+            symbol: `${activeCoin.toUpperCase()}USDT`,
+            timeframe: activeTimeframe,
+          },
+        ];
+      }
+      if (prev[idx].timeframe !== activeTimeframe) {
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], timeframe: activeTimeframe };
+        return updated;
+      }
+      return prev;
+    });
+  }, [activeCoin, activeTimeframe]);
 
   const handleSelectTab = (tab: ChartTabItem) => {
     onSelect(tab.coin, tab.timeframe);
@@ -89,11 +113,13 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
   const handleCloseTab = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (tabs.length <= 1) return; // Keep at least one tab
+    const closedIdx = tabs.findIndex((t) => t.id === id);
     const nextTabs = tabs.filter((t) => t.id !== id);
     setTabs(nextTabs);
-    const closedTab = tabs.find((t) => t.id === id);
+    const closedTab = tabs[closedIdx];
     if (closedTab && closedTab.coin.toUpperCase() === activeCoin.toUpperCase() && nextTabs.length > 0) {
-      handleSelectTab(nextTabs[0]);
+      const targetIdx = Math.min(closedIdx, nextTabs.length - 1);
+      handleSelectTab(nextTabs[targetIdx]);
     }
   };
 
@@ -149,7 +175,7 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
         })}
 
         {/* Plus / Add Tab Button */}
-        <div className="chart-tab-add-wrap">
+        <div className="chart-tab-add-wrap" ref={pickerRef}>
           <button
             type="button"
             className="chart-tab-add-btn"

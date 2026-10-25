@@ -224,9 +224,10 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
     }
   }, [open]);
 
-  // Reset pagination limit and scroll to top whenever category or search query changes
+  // Reset pagination limit, highlight index, and scroll to top whenever category or search query changes
   useEffect(() => {
     setLimit(PAGE_SIZE);
+    setHighlightIndex(0);
     if (listRef.current) {
       listRef.current.scrollTop = 0;
     }
@@ -574,12 +575,26 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
       }
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setHighlightIndex((prev) => Math.min(prev + 1, visibleIndicators.length - 1));
+        setHighlightIndex((prev) => {
+          const next = Math.min(prev + 1, visibleIndicators.length - 1);
+          setTimeout(() => {
+            const el = listRef.current?.querySelector(".ind-row.is-highlighted");
+            el?.scrollIntoView({ block: "nearest" });
+          }, 10);
+          return next;
+        });
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setHighlightIndex((prev) => Math.max(prev - 1, 0));
+        setHighlightIndex((prev) => {
+          const next = Math.max(prev - 1, 0);
+          setTimeout(() => {
+            const el = listRef.current?.querySelector(".ind-row.is-highlighted");
+            el?.scrollIntoView({ block: "nearest" });
+          }, 10);
+          return next;
+        });
         return;
       }
       if (e.key === "Enter") {
