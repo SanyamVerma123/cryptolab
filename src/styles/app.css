@@ -6639,6 +6639,8 @@ body.resizing-col .market-panel {
 .replay-cut-hint {
   position: absolute;
   top: 16px;
+  bottom: auto !important;
+  height: auto !important;
   left: 50%;
   transform: translateX(-50%);
   display: flex;

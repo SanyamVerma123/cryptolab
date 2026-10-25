@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "../lib/workspaceSafe";
 
 interface Props {
   ws?: VelaWorkspace | null;
@@ -28,7 +29,7 @@ export function ObjectTree({ ws, onClose }: Props) {
 
   const syncObjects = () => {
     if (!ws) return;
-    const chart = (ws as any).active?.chart || ws.chart;
+    const chart = getSafeActiveChart(ws);
     if (!chart) return;
 
     // Read drawings
@@ -71,7 +72,8 @@ export function ObjectTree({ ws, onClose }: Props) {
 
   const toggleDrawingVisibility = (id: string, current: boolean) => {
     if (!ws) return;
-    const chart = (ws as any).active?.chart || ws.chart;
+    const chart = getSafeActiveChart(ws);
+    if (!chart) return;
     try {
       if (typeof chart.drawings.setVisible === "function") {
         chart.drawings.setVisible(id, !current);
@@ -86,7 +88,8 @@ export function ObjectTree({ ws, onClose }: Props) {
 
   const toggleDrawingLock = (id: string, current: boolean) => {
     if (!ws) return;
-    const chart = (ws as any).active?.chart || ws.chart;
+    const chart = getSafeActiveChart(ws);
+    if (!chart) return;
     try {
       if (typeof chart.drawings.setLocked === "function") {
         chart.drawings.setLocked(id, !current);
@@ -101,7 +104,8 @@ export function ObjectTree({ ws, onClose }: Props) {
 
   const removeDrawing = (id: string) => {
     if (!ws) return;
-    const chart = (ws as any).active?.chart || ws.chart;
+    const chart = getSafeActiveChart(ws);
+    if (!chart) return;
     try {
       chart.drawings?.remove?.(id);
       chart.drawings?.removeMany?.([id]);
@@ -113,7 +117,8 @@ export function ObjectTree({ ws, onClose }: Props) {
 
   const removeAllDrawings = () => {
     if (!ws || !drawings.length) return;
-    const chart = (ws as any).active?.chart || ws.chart;
+    const chart = getSafeActiveChart(ws);
+    if (!chart) return;
     try {
       chart.drawings?.removeMany?.(drawings.map((d) => d.id));
       syncObjects();
@@ -124,7 +129,8 @@ export function ObjectTree({ ws, onClose }: Props) {
 
   const toggleAllDrawingsVisibility = () => {
     if (!ws || !drawings.length) return;
-    const chart = (ws as any).active?.chart || ws.chart;
+    const chart = getSafeActiveChart(ws);
+    if (!chart) return;
     const anyVisible = drawings.some((d) => d.visible);
     try {
       for (const d of drawings) {
@@ -154,7 +160,7 @@ export function ObjectTree({ ws, onClose }: Props) {
       if (typeof item.handle.openSettings === "function") {
         item.handle.openSettings();
       } else {
-        const chart = (ws as any).active?.chart || ws?.chart;
+        const chart = getSafeActiveChart(ws);
         chart?.openIndicatorSettings?.(item.id);
       }
     } catch (e) {

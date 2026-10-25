@@ -20,6 +20,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "../lib/workspaceSafe";
 import {
   useOrders,
   checkPriceTriggers,
@@ -43,7 +44,7 @@ interface Props {
 function getActiveChart(ws: VelaWorkspace | null | undefined) {
   if (!ws) return null;
   try {
-    return (ws as any).active ? ws.chart : null;
+    return getSafeActiveChart(ws);
   } catch {
     return null;
   }

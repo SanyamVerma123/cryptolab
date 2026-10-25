@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState } from "react";
 import { BarChart3, LoaderCircle, Send, Settings2, Sparkles, Trash2, X } from "lucide-react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "../lib/workspaceSafe";
 import { AiSettings } from "./AiSettings";
 import {
   sendToAI,
@@ -145,9 +146,10 @@ export function AiPanel({ ws, open = true, onOpenChange, onPineOpen, inline = fa
       // the current workspace instead of guessing.
       const chartState = readChartState(ws, bars);
 
+      const activeChart = getSafeActiveChart(ws);
       const ctx = {
-        symbol: (ws.chart.market?.symbol as string) ?? "?",
-        timeframe: (ws.chart.market?.timeframe as string) ?? "?",
+        symbol: (activeChart?.market?.symbol as string) ?? "?",
+        timeframe: (activeChart?.market?.timeframe as string) ?? "?",
         bars,
         chart: chartState,
       };

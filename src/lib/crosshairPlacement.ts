@@ -23,6 +23,7 @@
  *   6. Desktop mouse: untouched, completely native Vela behavior.
  */
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "./workspaceSafe";
 
 export function isTouchDevice(): boolean {
   if (typeof window === "undefined") return false;
@@ -121,7 +122,7 @@ export function installCrosshairPlacement(ws: VelaWorkspace): () => void {
   let pinchStartDist = 0;
   let pinchStartSpacing = 0;
 
-  const getRenderer = () => (ws.chart?.renderer as any)?.renderer;
+  const getRenderer = () => (getSafeActiveChart(ws)?.renderer as any)?.renderer;
 
   const teardown = () => {
     if (overlayEl) {
@@ -217,7 +218,7 @@ export function installCrosshairPlacement(ws: VelaWorkspace): () => void {
     try {
       const r = getRenderer();
       r?.userDrawings?.cancelPlacement?.();
-      ws.chart.drawings.setTool(null);
+      getSafeActiveChart(ws)?.drawings?.setTool?.(null);
     } catch (e) {
       console.warn("[trade-pro] cancel tool failed:", e);
     }
@@ -228,7 +229,7 @@ export function installCrosshairPlacement(ws: VelaWorkspace): () => void {
     const r = getRenderer();
     if (!r?.coords || !r?.userDrawings) return;
 
-    const snap = ws.chart.drawings.getSnapMode?.() ?? "off";
+    const snap = getSafeActiveChart(ws)?.drawings?.getSnapMode?.() ?? "off";
 
     // Commit anchor point in Vela at current crosshair position
     try {
@@ -412,7 +413,7 @@ export function installCrosshairPlacement(ws: VelaWorkspace): () => void {
 
         // Update ghost line preview to current crosshair if placing multi-point tool
         if (r.userDrawings?.interaction?.state?.kind === "placing") {
-          const snap = ws.chart.drawings.getSnapMode?.() ?? "off";
+          const snap = getSafeActiveChart(ws)?.drawings?.getSnapMode?.() ?? "off";
           r.userDrawings.pointerMove(currentCrosshairX, currentCrosshairY, snap, false, false);
         }
       }
@@ -451,9 +452,13 @@ export function installCrosshairPlacement(ws: VelaWorkspace): () => void {
     }
   };
 
+  if (!ws || (ws as any).destroyed) return () => {};
+  const chart = getSafeActiveChart(ws);
+  if (!chart) return () => {};
+
   // Check initial tool state on mount
   try {
-    const initialTool = ws.chart.drawings.getTool();
+    const initialTool = chart.drawings?.getTool?.();
     if (initialTool && isTouchDevice()) {
       setupOverlay(initialTool);
     }
@@ -462,7 +467,7 @@ export function installCrosshairPlacement(ws: VelaWorkspace): () => void {
   }
 
   // Listen to tool arming / disarming
-  const offTool = ws.chart.on("drawing:tool", (p: { type: string | null }) => {
+  const offTool = chart.on?.("drawing:tool", (p: { type: string | null }) => {
     if (p?.type) {
       if (isTouchDevice()) {
         setupOverlay(p.type);
@@ -473,9 +478,9 @@ export function installCrosshairPlacement(ws: VelaWorkspace): () => void {
   });
 
   // Listen to drawing creation (finalized) -> disarm & teardown immediately
-  const offCreated = ws.chart.on("drawing:created", () => {
+  const offCreated = chart.on?.("drawing:created", () => {
     try {
-      ws.chart.drawings.setTool(null);
+      chart.drawings?.setTool?.(null);
     } catch {}
     teardown();
   });

@@ -39,6 +39,7 @@
  * `drawing:created|edited|removed` + `market:changed` events.
  */
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "./workspaceSafe";
 
 const KEY = "trade-pro:drawings";
 
@@ -77,10 +78,12 @@ function bareSymbol(sym: string | undefined): string | undefined {
 export function saveDrawings(
   ws: VelaWorkspace,
   sym: string | undefined,
-  chart: VelaWorkspace["chart"] = ws.chart,
+  chart?: any,
 ): void {
   const coin = bareSymbol(sym);
   if (!coin) return;
+  const c = chart || getSafeActiveChart(ws);
+  if (!c) return;
   // Skip while a load/clear is in flight — the chart is transiently empty and
   // snapshotting it here would overwrite this coin's saved set with `[]`.
   // (See loadDrawings for the feedback loop this guards against.)
@@ -88,7 +91,7 @@ export function saveDrawings(
   try {
     // `toJSON()` is the whole drawing document ({ version, drawings[] }) —
     // untrusted-safe and version-stamped, so `fromJSON` can restore it later.
-    const doc = chart.drawings.toJSON();
+    const doc = c.drawings.toJSON();
     const store = load();
     if (doc && doc.drawings?.length) {
       store[coin] = doc.drawings;
@@ -115,10 +118,12 @@ export function saveDrawings(
 export function loadDrawings(
   ws: VelaWorkspace,
   sym: string | undefined,
-  chart: VelaWorkspace["chart"] = ws.chart,
+  chart?: any,
 ): void {
   const coin = bareSymbol(sym);
   if (!coin) return;
+  const c = chart || getSafeActiveChart(ws);
+  if (!c) return;
   try {
     const store = load();
     const saved = store[coin];
@@ -145,7 +150,7 @@ export function loadDrawings(
     suppressSave = true;
     try {
       const cur = chart.drawings.all();
-      if (cur.length) chart.drawings.removeMany(cur.map((d) => d.id));
+      if (cur.length) chart.drawings.removeMany(cur.map((d: any) => d.id));
       if (saved.length) {
         // fromJSON is untrusted-safe (it validates + sanitises each entry).
         chart.drawings.fromJSON({ version: 1, drawings: saved } as never);
@@ -177,8 +182,10 @@ let suppressSave = false;
  * never seed (see the module note about the seed race that lost drawings).
  */
 export function installPerSymbolDrawings(ws: VelaWorkspace): () => void {
+  if (!ws || (ws as any).destroyed) return () => {};
   const offs: (() => void)[] = [];
-  const chart = ws.chart;
+  const chart = getSafeActiveChart(ws);
+  if (!chart) return () => {};
 
   // The coin we're currently showing. Tracked here because `market:changed`
   // arrives AFTER the switch, so the chart already reports the NEW symbol.

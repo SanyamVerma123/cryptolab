@@ -23,6 +23,7 @@
  */
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart, getSafeActiveCell } from "../lib/workspaceSafe";
 import {
   CATALOG_INDICATORS,
   INDICATOR_CATEGORIES,
@@ -115,7 +116,8 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
     const list: AppliedIndicator[] = [];
 
     try {
-      const handles = ws.chart?.indicators?.() || [];
+      const chart = getSafeActiveChart(ws);
+      const handles = chart?.indicators?.() || [];
       if (handles.length > 0) {
         handles.forEach((h: any, idx: number) => {
           let badge = "Indicator";
@@ -138,7 +140,8 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
       }
 
       // Fallback: read from cell onChartRows
-      const rows = (ws.active as any)?.onChartRows?.() || [];
+      const cell = getSafeActiveCell(ws);
+      const rows = (cell as any)?.onChartRows?.() || [];
       rows.forEach((r: any, idx: number) => {
         list.push({
           id: `row_${idx}`,
@@ -193,12 +196,14 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
   const handleRemoveFromChart = (item: AppliedIndicator, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
+      const cell = getSafeActiveCell(ws);
+      const chart = getSafeActiveChart(ws);
       if (item.handle && typeof item.handle.remove === "function") {
         item.handle.remove();
-      } else if (ws?.active && typeof (ws.active as any).removeFromChart === "function") {
-        (ws.active as any).removeFromChart(item.index);
-      } else if (ws?.chart && typeof (ws.chart as any).removeIndicator === "function") {
-        (ws.chart as any).removeIndicator(item.handle || item.id);
+      } else if (cell && typeof (cell as any).removeFromChart === "function") {
+        (cell as any).removeFromChart(item.index);
+      } else if (chart && typeof (chart as any).removeIndicator === "function") {
+        (chart as any).removeIndicator(item.handle || item.id);
       }
 
       setFeedback(`Removed "${item.name}" from chart`);
@@ -262,14 +267,20 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
   const handleAdd = useCallback(
     async (item: CatalogIndicator) => {
       if (!ws) return;
-      const sym = (ws as any)?.active ? ws?.chart?.market?.symbol : undefined;
+      const chart = getSafeActiveChart(ws);
+      if (!chart) {
+        setFeedback("No active chart ready.");
+        setTimeout(() => setFeedback(null), 2500);
+        return;
+      }
+      const sym = chart.market?.symbol;
 
       try {
         setFeedback(`Adding "${item.name}"…`);
 
         if (item.isCustom && item.pineScript) {
           // Custom Pine Script
-          const handle = await runPineIndicator(ws.chart, item.pineScript, item.name);
+          const handle = await runPineIndicator(chart, item.pineScript, item.name);
           if (handle?.id) {
             rememberPineIndicator(sym, item.pineScript, item.name, handle.id);
           }
@@ -279,7 +290,7 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
           // LuxAlgo Library Indicator
           const res = await getIndicatorSource(item.luxSlug);
           if (res?.source) {
-            const handle = await runPineIndicator(ws.chart, res.source, item.name);
+            const handle = await runPineIndicator(chart, res.source, item.name);
             if (handle?.id) {
               rememberLuxIndicator(sym, item.luxSlug, handle.id);
             }
@@ -290,15 +301,15 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
           // Native studies use Vela's native API. Passing a type such as "rsi"
           // to addIndicator() treats it as Pine source and causes missing-name
           // errors in the Pine runtime.
-          const available = await ws.chart.availableNativeIndicators();
-          const native = available.find((entry) => entry.type === item.nativeType);
+          const available = await chart.availableNativeIndicators();
+          const native = available.find((entry: any) => entry.type === item.nativeType);
           if (!native) {
             throw new Error(`“${item.name}” is not registered as a native chart indicator.`);
           }
           if (!native.supported) {
             throw new Error(`“${item.name}” is not available for this symbol or data provider.`);
           }
-          ws.chart.addNativeIndicator(item.nativeType, item.nativeInputs ? { inputs: item.nativeInputs } : undefined);
+          chart.addNativeIndicator(item.nativeType, item.nativeInputs ? { inputs: item.nativeInputs } : undefined);
           setFeedback(`Added "${item.name}"`);
           setRefreshKey((k) => k + 1);
         }

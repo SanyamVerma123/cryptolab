@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "../lib/workspaceSafe";
 
 interface Props {
   ws?: VelaWorkspace | null;
@@ -32,7 +33,7 @@ export function DataWindow({ ws, coin = "BTC", currentPrice = 0, isFloating = fa
 
   useEffect(() => {
     if (!ws) return;
-    const chart = (ws as any).active?.chart || ws.chart;
+    const chart = getSafeActiveChart(ws);
     if (!chart?.renderer) return;
 
     const updateFromRenderer = () => {

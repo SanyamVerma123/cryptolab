@@ -23,6 +23,7 @@
  */
 import { applyIndicatorState, beginRestore, endRestore } from "./indicatorState";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "./workspaceSafe";
 import { runPineIndicator } from "./luxAlgoClient";
 
 const KEY = "trade-pro:pine-applied";
@@ -209,6 +210,9 @@ export async function restorePineIndicators(
   const scripts = load()[coin] || [];
   if (!scripts.length) return { restored: [], failed: [] };
 
+  const chart = getSafeActiveChart(ws);
+  if (!chart) return { restored: [], failed: [] };
+
   const restored: string[] = [];
   const failed: { name: string; reason: string }[] = [];
 
@@ -225,13 +229,13 @@ export async function restorePineIndicators(
         // unregistered (breaking the eye-toggle replay). Matching on the chart
         // itself re-mounts exactly once per real chart. Vela exposes the source
         // on the handle, so an identical script can never be added twice.
-        const existing = (ws.chart.indicators() || []).find((h) => h.source === script);
+        const existing = (chart.indicators?.() || []).find((h: any) => h.source === script);
         if (existing) {
           if (existing.id) rememberPineIndicator(symbol, script, existing.title, existing.id);
           continue;
         }
 
-        const handle = await runPineIndicator(ws.chart, script, name);
+        const handle = await runPineIndicator(chart, script, name);
         // IndicatorHandle is synchronous; id/title exist immediately. Register the
         // per-session id -> name so a delete in THIS session can be traced back to
         // the script, and `keyOf` gives this indicator its own record (a Pine script

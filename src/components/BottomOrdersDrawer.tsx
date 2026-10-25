@@ -424,6 +424,15 @@ export function BottomOrdersDrawer({
             >
               Strategy Tester
             </button>
+            <button
+              type="button"
+              className="tv-tab-item"
+              onClick={() => window.dispatchEvent(new CustomEvent("tradepro:open-journal"))}
+              style={{ color: "#d1d4dc", display: "inline-flex", alignItems: "center", gap: "4px" }}
+              title="Open Trading Journal & Analytics"
+            >
+              📓 Journal
+            </button>
           </div>
 
           {/* ====================================================================

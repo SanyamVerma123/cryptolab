@@ -41,9 +41,9 @@ import { AlphaVantageProvider } from "../lib/alphaVantageProvider";
 import { ChartBarReplay } from "./ChartBarReplay";
 import { ChartRadialMenu } from "./ChartRadialMenu";
 import { ChangeIntervalModal } from "./ChangeIntervalModal";
-import { ChartBottomRangeBar } from "./ChartBottomRangeBar";
 import { FavoritesBar } from "./FavoritesBar";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { getSafeActiveChart, getSafeActiveCell, getSafeAllCharts } from "../lib/workspaceSafe";
 
 // Register Vela's built-in presets ('1', '2h', '2v', '4', '8')
 try {
@@ -119,6 +119,8 @@ try {
   registerIcon("tradepro-settings", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="m8 1.5.8 1.3 1.5.3 1.1-.7 1.2 1.2-.7 1.2.3 1.5 1.3.8v1.8l-1.3.8-.3 1.5.7 1.2-1.2 1.2-1.1-.7-1.5.3L8 14.5H6.2l-.8-1.3-1.5-.3-1.2.7-1.2-1.2.7-1.2-.3-1.5-1.3-.8V7.1l1.3-.8.3-1.5-.7-1.2 1.2-1.2 1.2.7 1.5-.3.8-1.3z" transform="translate(1 0) scale(.875)"/></svg>`);
   registerIcon("tradepro-tools", `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="m8 1.5 2 4.1 4.5.65-3.25 3.17.77 4.48L8 11.78l-4.02 2.12.77-4.48-3.25-3.17 4.5-.65L8 1.5z"/></svg>`);
   registerIcon("tradepro-account", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="5" r="2.5"/><path d="M2.5 14c.5-3 2.3-4.5 5.5-4.5s5 1.5 5.5 4.5"/></svg>`);
+  registerIcon("tradepro-trading", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 5h9l-2-2"></path><path d="M11.5 11h-9l2 2"></path></svg>`);
+  registerIcon("tradepro-journal", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2.5h8.5a2 2 0 0 1 2 2v9a.5.5 0 0 1-.5.5H4a2 2 0 0 1-2-2V4a1.5 1.5 0 0 1 1-1.5z"></path><path d="M2 12a2 2 0 0 1 2-2h9.5"></path></svg>`);
   registerIcon("tradepro-install", `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 1.5v9m-3-3 3 3 3-3M2 11.5v3h12v-3"/></svg>`);
 } catch {
   // icons already registered
@@ -166,10 +168,27 @@ try {
 // Register native Replay topbar action into Vela's left cluster
 try {
   registerWidgetAction({
-    id: "replay",
+    id: "tradepro-trading",
+    target: "topbar",
+    align: "left",
+    order: 9,
+    icon: "tradepro-trading",
+    label: "Trading",
+    iconOnly: false,
+    run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-trading")),
+  });
+  registerWidgetAction({
+    id: "tradepro-journal",
     target: "topbar",
     align: "left",
     order: 10,
+    icon: "tradepro-journal",
+    label: "Journal",
+    iconOnly: false,
+    run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-journal")),
+  });
+  registerWidgetAction({
+    id: "replay", target: "topbar", align: "left", order: 11,
     icon: "replay",
     label: "Replay",
     iconOnly: true,
@@ -380,15 +399,16 @@ function installTimeframeInteractionFix(ws: VelaWorkspace, _container: HTMLEleme
     }
 
     try {
-      if (ws.active) {
-        ws.active.setTimeframe(rawVal);
+      const activeCell = getSafeActiveCell(ws);
+      if (activeCell) {
+        activeCell.setTimeframe?.(rawVal);
       } else {
-        ws.chart?.setMarket({ timeframe: rawVal, bars: barsForTf(rawVal) });
+        getSafeActiveChart(ws)?.setMarket?.({ timeframe: rawVal, bars: barsForTf(rawVal) });
       }
       window.dispatchEvent(new CustomEvent("tradepro:change-timeframe", { detail: { timeframe: rawVal } }));
     } catch {
       try {
-        ws.chart?.setMarket({ timeframe: rawVal, bars: barsForTf(rawVal) });
+        getSafeActiveChart(ws)?.setMarket?.({ timeframe: rawVal, bars: barsForTf(rawVal) });
       } catch {}
     }
   };
@@ -470,6 +490,9 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       .forEach((button) => button.remove());
     wsRef.current = ws;
     setWsInstance(ws);
+    if (typeof window !== "undefined") {
+      (window as any).__ws = ws;
+    }
 
     // Enforce strict cap: max 8 charts in setLayout
     const origSetLayout = ws.setLayout.bind(ws);
@@ -491,6 +514,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       } catch (e) {
         console.warn("[trade-pro] cell isolation install failed:", e);
       }
+      initCell();
     });
 
     ws.on("layout:changed", () => {
@@ -499,17 +523,19 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
           wireAutoBackfill(c.chart, c);
         }
       } catch {}
+      initCell();
     });
 
+    let readyReported = false;
     const initCell = () => {
-      if (!wsRef.current) return;
+      if (!wsRef.current || (ws as any).destroyed || wsRef.current !== ws) return;
       try {
-        const chart = (ws as any).active ? ws.chart : null;
+        const chart = getSafeActiveChart(ws);
         if (!chart) return;
         chart
           .ready()
           .then(() => {
-            if (!wsRef.current) return;
+            if (!wsRef.current || (ws as any).destroyed || wsRef.current !== ws) return;
             try {
               syncCustomLibrary(ws);
               void preloadLuxLibrary(ws);
@@ -541,13 +567,16 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
               console.warn("[trade-pro] drawing shortcuts setup failed:", e);
             }
             try {
-              const activeCell = (ws as any).active;
+              const activeCell = getSafeActiveCell(ws);
               wireAutoBackfill(chart, activeCell);
             } catch {}
 
-            onReadyRef.current?.(ws);
+            if (!readyReported) {
+              readyReported = true;
+              onReadyRef.current?.(ws);
+            }
           })
-          .catch((e) => console.error("[trade-pro] vela ready failed", e));
+          .catch((e: any) => console.error("[trade-pro] vela ready failed", e));
       } catch (e) {
         console.warn("[trade-pro] initCell error:", e);
       }
@@ -560,7 +589,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       try {
         const ws = wsRef.current;
         if (!ws) return;
-        const chart = (ws as any).active?.chart || ws.chart;
+        const chart = getSafeActiveChart(ws);
         if (chart) {
           if (typeof chart.openSettings === "function") {
             chart.openSettings();
@@ -586,8 +615,10 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       } catch {
         /* already gone */
       }
-      wsRef.current = null;
-      setWsInstance(null);
+      if (wsRef.current === ws) {
+        wsRef.current = null;
+        setWsInstance(null);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -606,7 +637,8 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
 
     const restoreLux = async () => {
       try {
-        const sym = (ws as any).active ? ws.chart?.market?.symbol : undefined;
+        const chart = getSafeActiveChart(ws);
+        const sym = chart?.market?.symbol;
         if (!sym) return;
         const r = await restoreLuxIndicators(ws, sym);
         if (r.failed.length) {
@@ -619,7 +651,8 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
 
     const restorePine = async () => {
       try {
-        const sym = (ws as any).active ? ws.chart?.market?.symbol : undefined;
+        const chart = getSafeActiveChart(ws);
+        const sym = chart?.market?.symbol;
         if (!sym) return;
         const r = await restorePineIndicators(ws, sym);
         if (r.failed.length) {
@@ -634,7 +667,8 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     // scripts both prepare workers and render state; starting both restore
     // loops together can starve the main thread on busy markets like ETH.
     const restoreIndicators = async () => {
-      const sym = (ws as any).active ? ws.chart?.market?.symbol : undefined;
+      const chart = getSafeActiveChart(ws);
+      const sym = chart?.market?.symbol;
       suppressEthForecasterAutoRestore(sym ?? coin);
       await restoreLux();
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -644,7 +678,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     const setupMarket = () => {
       let switchPromise: Promise<void> | null = null;
       try {
-        const chart = (ws as any).active ? ws.chart : null;
+        const chart = getSafeActiveChart(ws);
         if (chart) {
           const market = chart.market;
           const sameIdentity = canonicalSymbol(market?.symbol) === canonicalSymbol(coin)
@@ -701,7 +735,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       }
 
       try {
-        const chart = (ws as any).active ? ws.chart : null;
+        const chart = getSafeActiveChart(ws);
         chart?.renderer?.set?.({ currentPriceLine: true });
       } catch (e) {
         console.warn("[trade-pro] could not enable price line on panes:", e);
@@ -830,7 +864,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       if (hasOpenModal) return;
 
       const ws = wsRef.current;
-      const chart = (ws as any)?.active?.chart || ws?.chart;
+      const chart = getSafeActiveChart(ws);
 
       // Shift+R: Toggle Bar Replay
       if (e.shiftKey && (e.code === "KeyR" || e.key === "R") && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -1024,9 +1058,6 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       <ErrorBoundary>
         <ChangeIntervalModal ws={wsInstance} currentTf={timeframe} />
       </ErrorBoundary>
-      <ErrorBoundary>
-        <ChartBottomRangeBar ws={wsInstance} />
-      </ErrorBoundary>
-    </div>
+          </div>
   );
 }

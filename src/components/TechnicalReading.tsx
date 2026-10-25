@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "../lib/workspaceSafe";
 
 interface Props {
   ws?: VelaWorkspace | null;
@@ -26,7 +27,7 @@ export function TechnicalReading({ ws, coin = "BTC", currentPrice = 0 }: Props) 
   useEffect(() => {
     if (!ws) return;
     try {
-      const chart = (ws as any).active?.chart || ws.chart;
+      const chart = getSafeActiveChart(ws);
       if (!chart) return;
       const bars = chart.renderer?.visibleBars?.() || chart.bars?.() || [];
       if (bars.length < 30) return;

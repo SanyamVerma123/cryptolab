@@ -1,4 +1,5 @@
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "./workspaceSafe";
 
 export async function captureChartImage(
   ws: VelaWorkspace | null | undefined,
@@ -8,7 +9,7 @@ export async function captureChartImage(
   if (!ws) return null;
 
   try {
-    const chart = (ws as any).active?.chart || ws.chart;
+    const chart = getSafeActiveChart(ws);
     let canvas: HTMLCanvasElement | null = null;
 
     if (typeof chart?.renderer?.screenshotCanvas === "function") {

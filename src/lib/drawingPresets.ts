@@ -29,6 +29,7 @@
  * case — the style object holds them and this snapshots the whole object.
  */
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "./workspaceSafe";
 
 const KEY = "trade-pro:presets";
 
@@ -44,9 +45,11 @@ let selectedId: string | null = null;
 let installedTracker = false;
 export function trackSelection(ws: VelaWorkspace): void {
   if (installedTracker) return;
-  installedTracker = true;
   try {
-    ws.chart.on("drawing:selected", (e: { id?: string | null }) => {
+    const chart = getSafeActiveChart(ws);
+    if (!chart?.on) return;
+    installedTracker = true;
+    chart.on("drawing:selected", (e: { id?: string | null }) => {
       selectedId = e?.id ?? null;
     });
   } catch {
@@ -108,15 +111,16 @@ export function savePreset(
   const clean = name.trim();
   if (!clean) return null;
   try {
-    const c = ws.chart;
+    const c = getSafeActiveChart(ws);
+    if (!c?.drawings?.all) return null;
     const all = c.drawings.all();
     if (!all.length) return null;
 
     // Selection first — that is the drawing the user just finished configuring.
-    let doc = all.find((d) => d.id === selectedId);
+    let doc = all.find((d: any) => d.id === selectedId);
     if (!doc || (tool && doc.type !== tool)) {
       // Fall back to the newest drawing of the requested (or any) tool.
-      const same = tool ? all.filter((d) => d.type === tool) : all;
+      const same = tool ? all.filter((d: any) => d.type === tool) : all;
       doc = same[same.length - 1];
     }
     if (!doc) return null;
@@ -156,7 +160,7 @@ export function applyPresetTo(ws: VelaWorkspace, presetId: string, drawingId: st
   try {
     const p = load().find((x) => x.id === presetId);
     if (!p) return false;
-    ws.chart.drawings.update(drawingId, { style: p.style as never });
+    getSafeActiveChart(ws)?.drawings?.update?.(drawingId, { style: p.style as never });
     return true;
   } catch {
     return false;
@@ -172,18 +176,19 @@ export function applyPresetTo(ws: VelaWorkspace, presetId: string, drawingId: st
  */
 export function applyPreset(ws: VelaWorkspace, presetId: string): string | null {
   try {
-    const c = ws.chart;
+    const c = getSafeActiveChart(ws);
+    if (!c?.drawings?.all) return null;
     const p = load().find((x) => x.id === presetId);
     if (!p) return null;
     const all = c.drawings.all();
     if (!all.length) return null;
 
     // Selected drawing wins if it matches the preset's tool.
-    const sel = all.find((d) => d.id === selectedId);
+    const sel = all.find((d: any) => d.id === selectedId);
     let doc = sel && sel.type === p.tool ? sel : null;
     if (!doc) {
       // Otherwise the newest drawing of the right tool.
-      const same = all.filter((d) => d.type === p.tool);
+      const same = all.filter((d: any) => d.type === p.tool);
       doc = same[same.length - 1] ?? null;
     }
     if (!doc) return null;

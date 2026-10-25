@@ -13,6 +13,7 @@
  * Storage: localStorage, one style record per tool type.
  */
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "./workspaceSafe";
 
 const KEY = "trade-pro:tool-defaults";
 
@@ -58,7 +59,8 @@ function captureDrawingStyle(chart: VelaWorkspace["chart"], id: string): void {
 }
 
 /** Seed defaults from saved drawings only when no explicit tool preference exists. */
-function seedStyles(chart: VelaWorkspace["chart"]): void {
+function seedStyles(chart?: any): void {
+  if (!chart?.drawings?.all) return;
   try {
     const map = load();
     let changed = false;
@@ -111,12 +113,14 @@ function refreshPending(ws: VelaWorkspace, type: string): void {
 }
 
 /** Apply a stashed default to a freshly-created drawing of the right type. */
-function applyToCreated(ws: VelaWorkspace, id: string, chart: VelaWorkspace["chart"] = ws.chart): void {
+function applyToCreated(ws: VelaWorkspace, id: string, chart?: any): void {
   if (!pendingDefault) return;
+  const c = chart || getSafeActiveChart(ws);
+  if (!c?.drawings?.all) return;
   try {
-    const doc = chart.drawings.all().find((d) => d.id === id);
+    const doc = c.drawings.all().find((d: any) => d.id === id);
     if (!doc || doc.type !== pendingDefault.type) return;
-    chart.drawings.update(id, { style: pendingDefault.style as never });
+    c.drawings.update(id, { style: pendingDefault.style as never });
   } catch {
     /* ignore */
   }
@@ -131,7 +135,9 @@ function applyToCreated(ws: VelaWorkspace, id: string, chart: VelaWorkspace["cha
  *   - drawing:tool    → arm-time: load the default for that tool
  */
 export function installToolDefaults(ws: VelaWorkspace): () => void {
-  const c = ws.chart;
+  if (!ws || (ws as any).destroyed) return () => {};
+  const c = getSafeActiveChart(ws);
+  if (!c) return () => {};
   const offs: (() => void)[] = [];
 
   const onEdited = (e: { id?: string }) => {

@@ -29,7 +29,10 @@ import { DataWindow } from "./components/DataWindow";
 import { ObjectTree } from "./components/ObjectTree";
 import { TechnicalReading } from "./components/TechnicalReading";
 import { downloadChartSnapshot } from "./lib/chartSnapshot";
+import { getSafeActiveChart, getSafeActiveCell } from "./lib/workspaceSafe";
 import "./styles/app.css";
+import "./styles/journal.css";
+import { JournalPanel } from "./components/JournalPanel";
 
 const VelaChart = lazy(() => import("./components/VelaChart").then((module) => ({ default: module.VelaChart })));
 const PineEditor = lazy(() => import("./components/PineEditor").then((module) => ({ default: module.PineEditor })));
@@ -42,7 +45,7 @@ export default function App() {
   const [tf, setTf] = useState("60");
   const [ws, setWs] = useState<VelaWorkspace | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [panelMode, setPanelMode] = useState<"data" | "order" | "ai" | "data_window" | "object_tree" | "technical">("order");
+  const [panelMode, setPanelMode] = useState<"data" | "order" | "ai" | "data_window" | "object_tree" | "technical" | "journal">("order");
   const [bottomOrdersOpen, setBottomOrdersOpen] = useState(false);
   const [ordersFocusTab, setOrdersFocusTab] = useState<"positions" | "orders" | "strategy_tester">("positions");
   const [ordersFocusRequest, setOrdersFocusRequest] = useState(0);
@@ -117,6 +120,23 @@ export default function App() {
 
   useEffect(() => {
     const toggles: [string, () => void][] = [
+      ["tradepro:toggle-trading", () => {
+        setBottomOrdersOpen((v) => !v);
+        setTimeout(() => { try { ws?.resize?.(); } catch {} }, 120);
+      }],
+      ["tradepro:toggle-journal", () => {
+        setPanelOpen((open) => {
+          if (open && panelMode === "journal") return false;
+          setPanelMode("journal");
+          return true;
+        });
+        setTimeout(() => { try { ws?.resize?.(); } catch {} }, 120);
+      }],
+      ["tradepro:open-journal", () => {
+        setPanelMode("journal");
+        setPanelOpen(true);
+        setTimeout(() => { try { ws?.resize?.(); } catch {} }, 120);
+      }],
       ["tradepro:toggle-market", () => setPanelOpen((v) => !v)],
       ["tradepro:open-settings", () => setSettingsOpen(true)],
       ["tradepro:open-account", () => setAccountOpen((v) => !v)],
@@ -253,13 +273,13 @@ export default function App() {
   // emits `market:changed` on the CHART (not the workspace), so without that
   // listener the right-hand data panel would stay stuck on the old coin.
   useEffect(() => {
-    if (!ws) return;
+    if (!ws || (ws as any).destroyed) return;
     let dead = false;
 
     const readSym = () => {
       if (dead) return;
       try {
-        const activeChart = (ws as any).active ? ws.chart : null;
+        const activeChart = getSafeActiveChart(ws);
         if (!activeChart) return;
         const fullSym = activeChart.market?.symbol;
         const sym = bareSymbol(fullSym);
@@ -282,17 +302,17 @@ export default function App() {
       if (!cell || wiredCells.has(cell.id)) return;
       wiredCells.add(cell.id);
       try {
-        const off = cell.chart.on("market:changed", () => {
-          if (ws.active?.id === cell.id) {
+        const off = cell.chart?.on("market:changed", () => {
+          if (getSafeActiveCell(ws)?.id === cell.id) {
             readSym();
           }
         });
-        offsMarket.push(off);
+        if (off) offsMarket.push(off);
       } catch {}
     };
 
     try {
-      ws.cells().forEach(wireCell);
+      (ws.cells?.() ?? []).forEach(wireCell);
     } catch {}
 
     const offCreated = ws.on("cell:created", ({ id }: any) => {
@@ -394,10 +414,10 @@ export default function App() {
           <aside
             className="market-panel"
             style={{
-              width: `${panelWidth}px`,
-              flex: `0 0 ${panelWidth}px`,
-              minWidth: 240,
-              maxWidth: `${Math.round(window.innerWidth * 0.4)}px`,
+              width: `${panelMode === "journal" ? Math.max(panelWidth, 540) : panelWidth}px`,
+              flex: `0 0 ${panelMode === "journal" ? Math.max(panelWidth, 540) : panelWidth}px`,
+              minWidth: panelMode === "journal" ? 380 : 240,
+              maxWidth: `${panelMode === "journal" ? Math.max(640, Math.round(window.innerWidth * 0.6)) : Math.round(window.innerWidth * 0.4)}px`,
             }}
           >
             <div className="mp-head">
@@ -444,6 +464,13 @@ export default function App() {
                 >
                   ✦ AI
                 </button>
+                <button
+                  className={"mp-tab" + (panelMode === "journal" ? " on" : "")}
+                  title="Trading Journal & Analytics"
+                  onClick={() => setPanelMode("journal")}
+                >
+                  📓 Journal
+                </button>
               </div>
               <button
                 className="mp-close"
@@ -453,7 +480,11 @@ export default function App() {
                 ✕
               </button>
             </div>
-            {panelMode === "data" ? (
+            {panelMode === "journal" ? (
+              <div className="mp-body" style={{ height: "100%", overflow: "hidden" }}>
+                <JournalPanel onClose={() => setPanelOpen(false)} />
+              </div>
+            ) : panelMode === "data" ? (
               <MarketPanel coin={coin} data={live} />
             ) : panelMode === "data_window" ? (
               <div className="mp-body">

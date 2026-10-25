@@ -15,6 +15,7 @@
  * configured, "mark fvg" / "add macd" still land on the chart.
  */
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "./workspaceSafe";
 import { getChartBars, liveBars } from "./marketData";
 import { runPineIndicator } from "./luxAlgoClient";
 
@@ -292,7 +293,9 @@ export interface ChartState {
 export function readChartState(ws: VelaWorkspace, activeBars?: readonly Bar[]): ChartState {
   const out: ChartState = { drawings: [], indicators: [] };
   try {
-    const docs = ws.chart.drawings.all();
+    const chart = getSafeActiveChart(ws);
+    if (!chart) return out;
+    const docs = chart.drawings.all();
     const byType = new Map<string, string[]>();
     for (const d of docs) {
       const t = String(d.type ?? "drawing");
@@ -325,25 +328,29 @@ export function readChartState(ws: VelaWorkspace, activeBars?: readonly Bar[]): 
   }
 
   try {
-    // `chart.indicators()` returns live handles. A NATIVE indicator carries
-    // `nativeType` ("macd", "rsi"…); a Pine script carries `title` instead.
-    const handles = ws.chart.indicators();
-    if (Array.isArray(handles)) {
-      out.indicators = handles
-        .map((h) => {
-          const t = (h as { nativeType?: string }).nativeType;
-          const title = (h as { title?: string }).title;
-          return String(t || title || "");
-        })
-        .filter(Boolean);
+    const chart = getSafeActiveChart(ws);
+    if (chart) {
+      // `chart.indicators()` returns live handles. A NATIVE indicator carries
+      // `nativeType` ("macd", "rsi"…); a Pine script carries `title` instead.
+      const handles = chart.indicators();
+      if (Array.isArray(handles)) {
+        out.indicators = handles
+          .map((h) => {
+            const t = (h as { nativeType?: string }).nativeType;
+            const title = (h as { title?: string }).title;
+            return String(t || title || "");
+          })
+          .filter(Boolean);
+      }
     }
   } catch {
     /* indicators API unavailable */
   }
 
   try {
+    const chart = getSafeActiveChart(ws);
     // `inspect()` summarises the whole scene if the handle route is bare.
-    const scene = ws.chart.inspect() as {
+    const scene = chart?.inspect() as {
       indicators?: { nativeType?: string; title?: string }[];
     } | null;
     if (scene?.indicators?.length && !out.indicators.length) {
@@ -365,7 +372,8 @@ export function readChartState(ws: VelaWorkspace, activeBars?: readonly Bar[]): 
   }
 
   try {
-    const vr = ws.chart.getVisibleRange();
+    const chart = getSafeActiveChart(ws);
+    const vr = chart?.getVisibleRange();
     if (vr) out.visibleRange = vr;
   } catch {
     /* viewport unreadable */
@@ -493,10 +501,12 @@ export function findFVGs(bars: Bar[], max = 12): { up: boolean; from: number; to
  */
 export async function visibleBars(ws: VelaWorkspace): Promise<Bar[]> {
   try {
-    const market = ws.chart.market;
+    const chart = getSafeActiveChart(ws);
+    if (!chart) return [];
+    const market = chart.market;
     const symbol = String(market?.symbol ?? "");
     const timeframe = String(market?.timeframe ?? "");
-    const range = ws.chart.getVisibleRange();
+    const range = chart.getVisibleRange();
     const all = (await getChartBars(
       symbol,
       timeframe,
@@ -567,7 +577,8 @@ export function supportResistanceActions(text: string, bars: Bar[]): { actions: 
  */
 export async function applyActions(ws: VelaWorkspace, actions: ChartAction[]): Promise<string[]> {
   const out: string[] = [];
-  const c = ws.chart;
+  const c = getSafeActiveChart(ws);
+  if (!c) return ["Error: chart not ready."];
   for (const a of actions) {
     try {
       if (a.type === "draw" && a.tool) {
@@ -588,7 +599,7 @@ export async function applyActions(ws: VelaWorkspace, actions: ChartAction[]): P
         if (h) out.push(`Drew ${a.tool} at ${a.anchors.length} anchor(s).`);
       } else if (a.type === "indicator" && a.indicator) {
         const available = await c.availableNativeIndicators();
-        const native = available.find((entry) => entry.type === a.indicator);
+        const native = available.find((entry: any) => entry.type === a.indicator);
         if (!native) throw new Error(`Native indicator “${a.indicator}” is not registered.`);
         if (!native.supported) throw new Error(`Native indicator “${a.indicator}” is unavailable for this symbol or provider.`);
         c.addNativeIndicator(a.indicator, a.inputs ? { inputs: a.inputs } : undefined);
@@ -597,7 +608,7 @@ export async function applyActions(ws: VelaWorkspace, actions: ChartAction[]): P
         const handle = await runPineIndicator(c, a.source, "AI indicator");
         out.push(`Added ${handle.title}.`);
       } else if (a.type === "clearDrawings") {
-        const ids = c.drawings.all().map((d) => d.id);
+        const ids = c.drawings.all().map((d: any) => d.id);
         if (ids.length) c.drawings.removeMany(ids);
         out.push("Cleared all drawings.");
       } else if (a.type === "goto" && a.time) {

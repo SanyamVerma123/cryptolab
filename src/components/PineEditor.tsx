@@ -21,6 +21,7 @@ import {
   savePineLibrary,
 } from "../lib/pinePersist";
 import { getIndicatorSource, listIndicators, runPineIndicator } from "../lib/luxAlgoClient";
+import { getSafeActiveChart } from "../lib/workspaceSafe";
 
 interface Props {
   ws: VelaWorkspace | null;
@@ -123,7 +124,8 @@ export function PineEditor({ ws, open, onOpenChange }: Props) {
   if (!open) return null;
 
   const run = async () => {
-    if (!ws) {
+    const chart = getSafeActiveChart(ws);
+    if (!chart) {
       setStatus("Chart not ready yet.");
       setOk(false);
       return;
@@ -131,8 +133,8 @@ export function PineEditor({ ws, open, onOpenChange }: Props) {
     setStatus("Compiling…");
     setOk(null);
     try {
-      const handle = await runPineIndicator(ws.chart, src, scriptName(src) ?? "My script");
-      rememberPineIndicator(ws.chart.market?.symbol, src, handle.title, handle.id);
+      const handle = await runPineIndicator(chart, src, scriptName(src) ?? "My script");
+      rememberPineIndicator(chart.market?.symbol, src, handle.title, handle.id);
       setStatus(`Running on the chart — ${handle.title}.`);
       setOk(true);
 
@@ -141,7 +143,7 @@ export function PineEditor({ ws, open, onOpenChange }: Props) {
       const lib = loadPineLibrary().filter((s) => s.name !== name);
       lib.push({ name, script: src });
       savePineLibrary(lib);
-      syncCustomLibrary(ws);
+      if (ws) syncCustomLibrary(ws);
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "Failed to run.");
       setOk(false);

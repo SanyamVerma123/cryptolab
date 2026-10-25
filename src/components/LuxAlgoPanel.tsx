@@ -16,6 +16,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "../lib/workspaceSafe";
 import {
   LUX_FAMILIES,
   listIndicators,
@@ -126,12 +127,13 @@ export function LuxAlgoPanel({ ws, open, onOpenChange }: Props) {
         // Compile + mount on the live chart. This is the only mutation this
         // component performs; existing indicators/params are untouched.
         setAdd({ kind: "compiling", slug: item.slug, name: item.name });
-        const chart = ws.chart;
+        const chart = getSafeActiveChart(ws);
+        if (!chart) throw new Error("Chart not ready yet");
         const handle = await runPineIndicator(chart, source, item.name);
         // Remember the slug so a reload/symbol switch re-mounts it
         // (luxPersist). Vela's own persistence does not keep host-added
         // indicators, so without this the script is gone on refresh.
-        rememberLuxIndicator(ws.chart.market?.symbol, item.slug, handle?.id);
+        rememberLuxIndicator(chart.market?.symbol, item.slug, handle?.id);
         setAdd({ kind: "done", name: item.name });
       } catch (e) {
         setAdd({ kind: "error", message: (e as Error).message });

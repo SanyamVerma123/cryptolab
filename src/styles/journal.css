@@ -1,0 +1,707 @@
+/* journal.css — Professional Trading Journal & Analytics Styling */
+
+.tradepro-journal-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--bg-2, #131722);
+  color: var(--text, #d1d4dc);
+  font-family: inherit;
+  overflow: hidden;
+}
+
+/* Header */
+.jp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  background: var(--bg-3, #1e222d);
+  border-bottom: 1px solid var(--line, #2a2e39);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.jp-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.jp-title-icon {
+  font-size: 18px;
+}
+
+.jp-title-text {
+  font-weight: 700;
+  font-size: 16px;
+  color: #fff;
+  letter-spacing: 0.3px;
+}
+
+.jp-trade-badge {
+  background: rgba(41, 98, 255, 0.15);
+  color: #2962ff;
+  border: 1px solid rgba(41, 98, 255, 0.3);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.jp-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+}
+
+.jp-btn-primary {
+  background: #2962ff;
+  color: #fff;
+}
+.jp-btn-primary:hover {
+  background: #1e4fc4;
+}
+
+.jp-btn-secondary {
+  background: var(--bg-4, #2a2e39);
+  color: var(--text, #d1d4dc);
+  border: 1px solid var(--line, #363c4e);
+}
+.jp-btn-secondary:hover {
+  background: #363c4e;
+  color: #fff;
+}
+
+.jp-btn-icon {
+  background: transparent;
+  border: none;
+  color: var(--text-dim, #787b86);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+}
+.jp-btn-icon:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+/* Metrics bar */
+.jp-metrics-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 12px 18px;
+  background: var(--bg-2, #131722);
+  border-bottom: 1px solid var(--line, #2a2e39);
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .jp-metrics-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.jp-metric-card {
+  background: var(--bg-3, #1e222d);
+  border: 1px solid var(--line, #2a2e39);
+  border-radius: 6px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.jp-metric-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim, #787b86);
+  font-weight: 600;
+}
+
+.jp-metric-val {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.jp-metric-sub {
+  font-size: 11px;
+  color: var(--text-dim, #787b86);
+}
+
+.jp-val-up {
+  color: #089981 !important;
+}
+
+.jp-val-down {
+  color: #f23645 !important;
+}
+
+.jp-val-sep {
+  color: var(--text-dim, #787b86);
+  font-weight: normal;
+  margin: 0 2px;
+}
+
+/* Subtabs row */
+.jp-subtabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 18px;
+  background: var(--bg-3, #1e222d);
+  border-bottom: 1px solid var(--line, #2a2e39);
+  flex-shrink: 0;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.jp-subtabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.jp-subtab {
+  background: transparent;
+  border: none;
+  color: var(--text-dim, #787b86);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.jp-subtab:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.jp-subtab.active {
+  background: #2962ff;
+  color: #fff;
+}
+
+.jp-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.jp-search-input {
+  background: var(--bg-2, #131722);
+  border: 1px solid var(--line, #2a2e39);
+  color: #fff;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  outline: none;
+  min-width: 180px;
+}
+.jp-search-input:focus {
+  border-color: #2962ff;
+}
+
+.jp-select {
+  background: var(--bg-2, #131722);
+  border: 1px solid var(--line, #2a2e39);
+  color: #fff;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+}
+
+.jp-btn-clear-date {
+  background: rgba(242, 54, 69, 0.15);
+  border: 1px solid rgba(242, 54, 69, 0.3);
+  color: #f23645;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Body / Table */
+.jp-body {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.jp-table-wrapper {
+  overflow: auto;
+  height: 100%;
+}
+
+.jp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+
+.jp-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-3, #1e222d);
+  color: var(--text-dim, #787b86);
+  font-weight: 600;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line, #2a2e39);
+  white-space: nowrap;
+  z-index: 10;
+}
+
+.jp-table th.num,
+.jp-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.jp-table th.act,
+.jp-table td.act {
+  text-align: center;
+  width: 44px;
+}
+
+.jp-tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.jp-tr:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.jp-table td {
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.jp-td-symbol {
+  font-weight: 600;
+}
+
+.jp-symbol-badge {
+  background: var(--bg-4, #2a2e39);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.jp-side-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.jp-side-long {
+  background: rgba(8, 153, 129, 0.15);
+  color: #089981;
+}
+
+.jp-side-short {
+  background: rgba(242, 54, 69, 0.15);
+  color: #f23645;
+}
+
+.jp-bold {
+  font-weight: 700;
+}
+
+.jp-strat-tag {
+  background: rgba(41, 98, 255, 0.12);
+  color: #2962ff;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  margin-right: 6px;
+}
+
+.jp-notes-preview {
+  color: var(--text-dim, #787b86);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.jp-source-chip {
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.jp-src-paper {
+  background: rgba(255, 152, 0, 0.15);
+  color: #ff9800;
+}
+
+.jp-src-replay {
+  background: rgba(156, 39, 176, 0.15);
+  color: #ce93d8;
+}
+
+.jp-src-manual {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-dim, #787b86);
+}
+
+.jp-btn-del {
+  background: transparent;
+  border: none;
+  color: var(--text-dim, #787b86);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.jp-btn-del:hover {
+  background: rgba(242, 54, 69, 0.2);
+  color: #f23645;
+}
+
+.jp-empty-cell {
+  text-align: center;
+  padding: 40px !important;
+  color: var(--text-dim, #787b86);
+  font-style: italic;
+}
+
+/* Calendar View */
+.jp-calendar-container {
+  padding: 18px;
+}
+
+.jp-calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.jp-calendar-head h4 {
+  margin: 0;
+  font-size: 15px;
+  color: #fff;
+}
+
+.jp-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+}
+
+@media (max-width: 800px) {
+  .jp-calendar-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.jp-cal-cell {
+  background: var(--bg-3, #1e222d);
+  border: 1px solid var(--line, #2a2e39);
+  border-radius: 6px;
+  padding: 10px;
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.jp-cal-cell:hover {
+  border-color: #2962ff;
+  transform: translateY(-1px);
+}
+
+.jp-cal-cell-date {
+  font-size: 11px;
+  color: var(--text-dim, #787b86);
+  font-weight: 600;
+}
+
+.jp-cal-win {
+  border-left: 3px solid #089981;
+}
+
+.jp-cal-loss {
+  border-left: 3px solid #f23645;
+}
+
+.jp-cal-selected {
+  outline: 2px solid #2962ff;
+}
+
+.jp-cal-pnl {
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.jp-cal-count {
+  font-size: 11px;
+  color: var(--text-dim, #787b86);
+}
+
+.jp-cal-none {
+  color: rgba(255, 255, 255, 0.1);
+  font-size: 16px;
+}
+
+/* Analytics View */
+.jp-analytics-view {
+  padding: 18px;
+}
+
+.jp-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 800px) {
+  .jp-analytics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.jp-card {
+  background: var(--bg-3, #1e222d);
+  border: 1px solid var(--line, #2a2e39);
+  border-radius: 6px;
+  padding: 16px;
+}
+.jp-card h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #fff;
+  border-bottom: 1px solid var(--line, #2a2e39);
+  padding-bottom: 8px;
+}
+
+.jp-mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.jp-mini-table th {
+  color: var(--text-dim, #787b86);
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line, #2a2e39);
+}
+.jp-mini-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.jp-mini-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.jp-stat-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.jp-stat-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* Modal Overlay */
+.jp-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.jp-modal-card {
+  background: var(--bg-3, #1e222d);
+  border: 1px solid var(--line, #2a2e39);
+  border-radius: 8px;
+  width: 520px;
+  max-width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.6);
+}
+
+.jp-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line, #2a2e39);
+}
+.jp-modal-head h3 {
+  margin: 0;
+  font-size: 15px;
+  color: #fff;
+}
+
+.jp-form {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.jp-form-row {
+  display: flex;
+  gap: 10px;
+}
+
+.jp-form-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.jp-form-group label {
+  font-size: 11px;
+  color: var(--text-dim, #787b86);
+  font-weight: 600;
+}
+
+.jp-form-group input,
+.jp-form-group select,
+.jp-form-group textarea {
+  background: var(--bg-2, #131722);
+  border: 1px solid var(--line, #2a2e39);
+  color: #fff;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  outline: none;
+  font-family: inherit;
+}
+.jp-form-group input:focus,
+.jp-form-group select:focus,
+.jp-form-group textarea:focus {
+  border-color: #2962ff;
+}
+
+.jp-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* Detail modal */
+.jp-detail-card {
+  width: 580px;
+}
+
+.jp-detail-content {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.jp-detail-pnl-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-2, #131722);
+  padding: 12px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--line, #2a2e39);
+}
+
+.jp-detail-pnl-val {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.jp-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  font-size: 13px;
+}
+
+.jp-dim {
+  color: var(--text-dim, #787b86);
+}
+
+.jp-detail-notes h4 {
+  margin: 0 0 6px 0;
+  font-size: 12px;
+  color: var(--text-dim, #787b86);
+  text-transform: uppercase;
+}
+
+.jp-detail-notes p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #fff;
+  background: var(--bg-2, #131722);
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid var(--line, #2a2e39);
+}
+
+.jp-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.jp-tag-pill {
+  background: rgba(41, 98, 255, 0.15);
+  color: #2962ff;
+  border: 1px solid rgba(41, 98, 255, 0.3);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+}

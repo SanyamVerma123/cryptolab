@@ -28,6 +28,7 @@
  * `indicator:visibility` / `indicator:inputs` change events.
  */
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "./workspaceSafe";
 import { forgetLuxIndicator, slugForIndicatorId } from "./luxPersist";
 import {
   forgetPineIndicator,
@@ -140,11 +141,13 @@ export function endRestore(ws: VelaWorkspace, sym: string | undefined): void {
   applyIndicatorState(ws, sym);
 }
 
-function snapshot(ws: VelaWorkspace, sym: string | undefined, chart: VelaWorkspace["chart"] = ws.chart): void {
+function snapshot(ws: VelaWorkspace, sym: string | undefined, chart?: any): void {
+  const c = chart || getSafeActiveChart(ws);
+  if (!c) return;
   const coin = bareSymbol(sym);
   if (!coin) return;
   try {
-    const handles = chart.indicators();
+    const handles = c.indicators();
     if (!handles) return;
     const store = load();
     const prev = new Map((store[coin] || []).map((s) => [s.key, s]));
@@ -225,17 +228,19 @@ function rememberInputsNow(chart: VelaWorkspace["chart"], sym: string | undefine
 export function applyIndicatorState(
   ws: VelaWorkspace,
   sym: string | undefined,
-  chart: VelaWorkspace["chart"] = ws.chart,
+  chart?: any,
 ): void {
   const coin = bareSymbol(sym);
   if (!coin) return;
+  const c = chart || getSafeActiveChart(ws);
+  if (!c) return;
 
   const run = () => {
     try {
       const store = load();
       const saved = store[coin];
       if (!saved || !saved.length) return;
-      const handles = chart.indicators();
+      const handles = c.indicators();
       if (!handles) return;
 
       // Ids change per session; match on the stable key.
@@ -294,15 +299,17 @@ function carryInputsTo(
   ws: VelaWorkspace,
   coin: string | undefined,
   key: string,
-  chart: VelaWorkspace["chart"] = ws.chart,
+  chart?: any,
 ): void {
   if (!coin) return;
+  const c = chart || getSafeActiveChart(ws);
+  if (!c) return;
   const apply = () => {
     try {
       const store = load();
       const inputs = lastKnownInputs.get(`${coin}:${key}`) ?? (store[coin] || []).find((s) => s.key === key)?.inputs;
       if (!inputs) return;
-      const me = (chart.indicators() || []).find((h) => keyOf(h) === key);
+      const me = (c.indicators() || []).find((h: any) => keyOf(h) === key);
       if (!me) return;
       me.setInputs(inputs as never);
     } catch {
@@ -310,7 +317,7 @@ function carryInputsTo(
     }
   };
   try {
-    Promise.resolve(chart.ready()).then(apply, apply);
+    Promise.resolve(c.ready()).then(apply, apply);
   } catch {
     apply();
   }
@@ -321,8 +328,10 @@ function carryInputsTo(
  * Returns a disposer.
  */
 export function installIndicatorState(ws: VelaWorkspace): () => void {
+  if (!ws || (ws as any).destroyed) return () => {};
   const offs: (() => void)[] = [];
-  const chart = ws.chart;
+  const chart = getSafeActiveChart(ws);
+  if (!chart) return () => {};
   let coin = bareSymbol(chart.market?.symbol);
 
   // Debounce: a single "hide" or input drag fires many change events, and a
@@ -417,7 +426,7 @@ export function installIndicatorState(ws: VelaWorkspace): () => void {
     // ids change every session and every add.
     try {
       const all = chart.indicators() || [];
-      const me = e.id ? all.find((h) => h.id === e.id) : undefined;
+      const me = e.id ? all.find((h: any) => h.id === e.id) : undefined;
       const key = me ? keyOf(me) : undefined;
       if (me && key) carryInputsTo(ws, coin, key, chart);
       // Map any newly added Pine indicator's id to its name

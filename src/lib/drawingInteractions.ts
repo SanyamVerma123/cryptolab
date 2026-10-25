@@ -23,6 +23,7 @@
 
 import { getDrawingType } from "@luxalgo/vela/plugin";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart, getSafeAllCharts } from "./workspaceSafe";
 
 /** Euclidean distance from point (px, py) to segment (ax, ay)-(bx, by) */
 function distToSegment(
@@ -183,12 +184,8 @@ function safeTopDrawingAt(
  * 3. Oscillator indicator panes (RSI, MACD, etc.) never trigger drawings behind them.
  * 4. Box drawings are only functional on their borders.
  */
-export function installDrawingIsolation(ws: VelaWorkspace): () => void {
-  // Ensure Box hit-testing is patched
-  patchBoxHitTest();
-
+function patchSingleRenderer(renderer: any): () => void {
   try {
-    const renderer = (ws.chart as any)?.renderer;
     if (!renderer) return () => {};
 
     const userDrawings = renderer.userDrawings;
@@ -467,6 +464,36 @@ export function installDrawingIsolation(ws: VelaWorkspace): () => void {
         if (origPainterPaintHighlights && userDrawings.painter) userDrawings.painter.paintHighlights = origPainterPaintHighlights;
       } catch {
         /* already destroyed */
+      }
+    };
+  } catch (e) {
+    console.warn("[trade-pro] patchSingleRenderer failed:", e);
+    return () => {};
+  }
+}
+
+export function installDrawingIsolation(ws: VelaWorkspace): () => void {
+  patchBoxHitTest();
+  if (!ws || (ws as any).destroyed) return () => {};
+
+  try {
+    const charts = getSafeAllCharts(ws);
+    if (!charts.length) {
+      const single = getSafeActiveChart(ws);
+      if (single) charts.push(single);
+    }
+    if (!charts.length) return () => {};
+
+    const cleanups: (() => void)[] = [];
+    for (const chart of charts) {
+      const renderer = (chart as any)?.renderer;
+      if (renderer) {
+        cleanups.push(patchSingleRenderer(renderer));
+      }
+    }
+    return () => {
+      for (const fn of cleanups) {
+        try { fn(); } catch {}
       }
     };
   } catch (e) {

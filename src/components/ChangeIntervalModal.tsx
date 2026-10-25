@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveCell, getSafeActiveChart } from "../lib/workspaceSafe";
 
 interface Props {
   ws: VelaWorkspace | null;
@@ -146,10 +147,12 @@ export function ChangeIntervalModal({ ws, currentTf = "60", onClose }: Props) {
 
   const applyTimeframe = (tfToApply: string) => {
     try {
-      if (ws?.active) {
-        ws.active.setTimeframe(tfToApply);
-      } else if (ws?.chart) {
-        (ws.chart as any).setMarket?.({ timeframe: tfToApply });
+      const cell = getSafeActiveCell(ws);
+      const chart = getSafeActiveChart(ws);
+      if (cell && typeof (cell as any).setTimeframe === "function") {
+        (cell as any).setTimeframe(tfToApply);
+      } else if (chart) {
+        (chart as any).setMarket?.({ timeframe: tfToApply });
       }
     } catch (e) {
       console.warn("[trade-pro] could not set timeframe:", e);

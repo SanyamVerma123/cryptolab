@@ -18,6 +18,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "../lib/workspaceSafe";
 import { runPineIndicator } from "../lib/luxAlgoClient";
 import { rememberPineIndicator } from "../lib/pinePersist";
 
@@ -106,7 +107,7 @@ export function StrategyTesterReport({ ws, currentCoin = "BTC", currentPrice = 0
   useEffect(() => {
     if (!ws) return;
     try {
-      const chart = (ws as any).active?.chart || ws.chart;
+      const chart = getSafeActiveChart(ws);
       if (!chart?.panes) return;
       const panes = chart.panes?.list?.() || [];
       for (const p of panes) {
@@ -245,7 +246,7 @@ export function StrategyTesterReport({ ws, currentCoin = "BTC", currentPrice = 0
     setRunningOnChart(true);
     setStatusMsg(`Compiling and applying "${template.name}" to chart...`);
     try {
-      const chart = (ws as any).active?.chart || ws.chart;
+      const chart = getSafeActiveChart(ws);
       if (!chart?.runIndicator) throw new Error("Chart engine not ready.");
       const res = await runPineIndicator(chart, template.source, template.name);
       rememberPineIndicator(chart.market?.symbol, template.source, res.title, res.id);

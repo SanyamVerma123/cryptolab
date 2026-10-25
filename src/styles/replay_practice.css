@@ -1,0 +1,248 @@
+/* replay_practice.css — Practice Trading HUD & Replay Performance Summary */
+
+.replay-practice-bar {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(30, 34, 45, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  padding: 4px 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+  font-size: 11px;
+  font-family: inherit;
+  z-index: 50;
+  user-select: none;
+}
+
+.replay-practice-bar.rpb-active {
+  border-color: rgba(41, 98, 255, 0.5);
+  background: rgba(26, 30, 40, 0.98);
+}
+
+.rpb-label {
+  font-weight: 700;
+  color: #787b86;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+
+.rpb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.rpb-buy {
+  background: #089981;
+  color: #fff;
+}
+.rpb-buy:hover {
+  background: #067c69;
+}
+
+.rpb-sell {
+  background: #f23645;
+  color: #fff;
+}
+.rpb-sell:hover {
+  background: #c92230;
+}
+
+.rpb-summary {
+  background: rgba(41, 98, 255, 0.15);
+  color: #2962ff;
+  border: 1px solid rgba(41, 98, 255, 0.3);
+}
+.rpb-summary:hover {
+  background: #2962ff;
+  color: #fff;
+}
+
+.rpb-close {
+  background: rgba(242, 54, 69, 0.2);
+  color: #f23645;
+  padding: 3px 6px;
+}
+.rpb-close:hover {
+  background: #f23645;
+  color: #fff;
+}
+
+.rpb-badge {
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+  font-size: 10px;
+}
+
+.rpb-long {
+  background: rgba(8, 153, 129, 0.2);
+  color: #089981;
+}
+
+.rpb-short {
+  background: rgba(242, 54, 69, 0.2);
+  color: #f23645;
+}
+
+.rpb-price {
+  color: #d1d4dc;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+
+.rpb-pnl {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
+}
+.rpb-pnl.up {
+  color: #089981;
+}
+.rpb-pnl.down {
+  color: #f23645;
+}
+
+.rpb-excursion {
+  display: flex;
+  gap: 6px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.rpb-excursion .down {
+  color: #f23645;
+}
+.rpb-excursion .up {
+  color: #089981;
+}
+
+/* Replay Summary Modal */
+.replay-summary-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 16px;
+}
+
+.replay-summary-card {
+  background: #1e222d;
+  border: 1px solid #2a2e39;
+  border-radius: 8px;
+  width: 480px;
+  max-width: 100%;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+  color: #d1d4dc;
+}
+
+.rsc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid #2a2e39;
+  background: #181b22;
+}
+
+.rsc-head h3 {
+  margin: 0;
+  font-size: 15px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rsc-body {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.rsc-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.rsc-stat-card {
+  background: #131722;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rsc-stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #787b86;
+  font-weight: 600;
+}
+
+.rsc-stat-val {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.rsc-trades-list {
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
+}
+
+.rsc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.rsc-table th {
+  position: sticky;
+  top: 0;
+  background: #181b22;
+  color: #787b86;
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid #2a2e39;
+}
+
+.rsc-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.rsc-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid #2a2e39;
+  background: #181b22;
+}

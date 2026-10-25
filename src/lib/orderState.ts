@@ -9,6 +9,7 @@
  *    cash, live open orders, live open positions, and official order submission/execution.
  */
 import { useEffect, useState, useCallback } from "react";
+import { addJournalEntry } from "./journalState";
 import {
   getAlpacaConfig,
   testAlpacaConnection,
@@ -714,6 +715,23 @@ export function closePosition(
   };
   gHistory = [closeRecord, ...gHistory];
 
+  try {
+    const pnlPercent = pos.entryPrice > 0 ? ((finalPrice - pos.entryPrice) / pos.entryPrice) * (pos.side === "BUY" ? 1 : -1) * (pos.leverage || 1) * 100 : 0;
+    addJournalEntry({
+      symbol: pos.pair || `${pos.coin}/USD`,
+      side: pos.side === "BUY" ? "LONG" : "SHORT",
+      entryPrice: pos.entryPrice,
+      exitPrice: finalPrice,
+      amount: pos.amount,
+      pnl: Math.round(pnlVal * 100) / 100,
+      pnlPercent: Math.round(pnlPercent * 100) / 100,
+      strategy: "Paper Trading",
+      tags: ["Paper", pos.coin],
+      notes: `Manual close via Paper Trading at ${finalPrice}`,
+      source: "paper",
+    });
+  } catch {}
+
   gPositions.splice(posIndex, 1);
   notify();
 
@@ -955,6 +973,23 @@ export function checkPriceTriggers(
         },
         ...gHistory,
       ];
+
+      try {
+        const pnlPercent = pos.entryPrice > 0 ? ((exitPrice - pos.entryPrice) / pos.entryPrice) * (pos.side === "BUY" ? 1 : -1) * (pos.leverage || 1) * 100 : 0;
+        addJournalEntry({
+          symbol: pos.pair || `${pos.coin}/USD`,
+          side: pos.side === "BUY" ? "LONG" : "SHORT",
+          entryPrice: pos.entryPrice,
+          exitPrice: exitPrice,
+          amount: pos.amount,
+          pnl: Math.round(pnlVal * 100) / 100,
+          pnlPercent: Math.round(pnlPercent * 100) / 100,
+          strategy: closeReason === "TP" ? "Take Profit" : closeReason === "SL" ? "Stop Loss" : "Liquidation",
+          tags: ["Paper", pos.coin, closeReason],
+          notes: `Triggered ${closeReason} at ${exitPrice}`,
+          source: "paper",
+        });
+      } catch {}
 
       closedPositions.push({ position: pos, reason: closeReason, pnl: pnlVal });
     } else {

@@ -22,6 +22,7 @@
 import { getIndicatorSource, runPineIndicator } from "./luxAlgoClient";
 import { applyIndicatorState, beginRestore, endRestore } from "./indicatorState";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "./workspaceSafe";
 
 const KEY = "trade-pro:lux-applied";
 
@@ -190,7 +191,7 @@ export async function restoreLuxIndicators(
           continue;
         }
 
-        const chart = (ws as any).active ? ws.chart : null;
+        const chart = getSafeActiveChart(ws);
         if (!chart) continue;
         const existing = (chart.indicators?.() || []).find((h: any) => h.source === source);
         if (existing) {

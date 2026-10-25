@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "../lib/workspaceSafe";
 
 export interface RadialTool {
   id: string;
@@ -129,7 +130,7 @@ export function ChartRadialMenu({ ws }: Props) {
     (tool: RadialTool) => {
       if (!ws) return;
       try {
-        const chart = (ws as any).active ? ws.chart : null;
+        const chart = getSafeActiveChart(ws);
         if (!chart) return;
         if (tool.type === "cursor") {
           chart.drawings.setTool(null);

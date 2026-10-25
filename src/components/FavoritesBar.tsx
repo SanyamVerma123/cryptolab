@@ -24,6 +24,7 @@ import {
   applyPreset,
   type DrawingPreset,
 } from "../lib/drawingPresets";
+import { getSafeActiveChart } from "../lib/workspaceSafe";
 
 interface Props {
   ws: VelaWorkspace | null;
@@ -236,13 +237,13 @@ export function FavoritesBar({ ws }: Props) {
         el.style.bottom = "auto";
       } else {
         if (orientation === "horizontal") {
-          el.style.left = "56px";
-          el.style.top = "auto";
-          el.style.bottom = "36px";
+          el.style.left = "60px";
+          el.style.top = "60px";
+          el.style.bottom = "auto";
           el.style.right = "auto";
         } else {
           el.style.left = "56px";
-          el.style.top = "54px";
+          el.style.top = "60px";
           el.style.bottom = "auto";
           el.style.right = "auto";
         }
@@ -292,13 +293,13 @@ export function FavoritesBar({ ws }: Props) {
     if (barRef.current) {
       barRef.current.style.position = "absolute";
       if (orientation === "horizontal") {
-        barRef.current.style.left = "56px";
-        barRef.current.style.top = "auto";
-        barRef.current.style.bottom = "36px";
+        barRef.current.style.left = "60px";
+        barRef.current.style.top = "60px";
+        barRef.current.style.bottom = "auto";
         barRef.current.style.right = "auto";
       } else {
         barRef.current.style.left = "56px";
-        barRef.current.style.top = "54px";
+        barRef.current.style.top = "60px";
         barRef.current.style.bottom = "auto";
         barRef.current.style.right = "auto";
       }
@@ -327,12 +328,7 @@ export function FavoritesBar({ ws }: Props) {
   // Starred tools + armed tool sync from Vela
   useEffect(() => {
     if (!ws) return;
-    let c: any = null;
-    try {
-      c = (ws as any).active ? ws.chart : null;
-    } catch {
-      return;
-    }
+    const c = getSafeActiveChart(ws);
     if (!c) return;
 
     const SEED = "trade-pro:favs-seeded";
@@ -376,12 +372,7 @@ export function FavoritesBar({ ws }: Props) {
 
   useEffect(() => {
     if (!ws) return;
-    let c: any = null;
-    try {
-      c = (ws as any).active ? ws.chart : null;
-    } catch {
-      return;
-    }
+    const c = getSafeActiveChart(ws);
     if (!c?.drawings) return;
 
     try {
@@ -411,7 +402,7 @@ export function FavoritesBar({ ws }: Props) {
     if (!ws) return;
     try {
       const next = snapMode === "off" ? "weak" : snapMode === "weak" ? "strong" : "off";
-      ws.chart.drawings.setSnapMode(next as never);
+      getSafeActiveChart(ws)?.drawings?.setSnapMode?.(next as never);
       setSnapMode(next);
     } catch {}
   };
@@ -420,7 +411,7 @@ export function FavoritesBar({ ws }: Props) {
     if (!ws) return;
     try {
       const next = !stayMode;
-      ws.chart.drawings.setStayMode(next);
+      getSafeActiveChart(ws)?.drawings?.setStayMode?.(next);
       setStayMode(next);
     } catch {}
   };
@@ -429,7 +420,7 @@ export function FavoritesBar({ ws }: Props) {
     if (!ws) return;
     try {
       const next = drawingMode === "measure" ? null : "measure";
-      ws.chart.drawings.setMode(next as never);
+      getSafeActiveChart(ws)?.drawings?.setMode?.(next as never);
       setDrawingMode(next);
     } catch {}
   };
@@ -437,7 +428,7 @@ export function FavoritesBar({ ws }: Props) {
   const toggleHideAll = () => {
     if (!ws) return;
     try {
-      const chart = (ws as any).active?.chart || ws.chart;
+      const chart = getSafeActiveChart(ws);
       if (!chart?.drawings) return;
       const next = !allHidden;
       const all = chart.drawings.all?.() || [];
@@ -455,7 +446,7 @@ export function FavoritesBar({ ws }: Props) {
   const toggleLockAll = () => {
     if (!ws) return;
     try {
-      const chart = (ws as any).active?.chart || ws.chart;
+      const chart = getSafeActiveChart(ws);
       if (!chart?.drawings) return;
       const next = !allLocked;
       const all = chart.drawings.all?.() || [];
@@ -473,10 +464,11 @@ export function FavoritesBar({ ws }: Props) {
   const removeAll = () => {
     if (!ws) return;
     try {
-      const all = ws.chart.drawings.all();
+      const chart = getSafeActiveChart(ws);
+      const all = chart?.drawings?.all?.() || [];
       if (!all.length) return;
       if (window.confirm("Remove all drawings on the chart?")) {
-        ws.chart.drawings.removeMany(all.map((d: any) => d.id));
+        chart.drawings.removeMany(all.map((d: any) => d.id));
       }
     } catch {}
   };
@@ -484,8 +476,10 @@ export function FavoritesBar({ ws }: Props) {
   const arm = (type: string) => {
     if (!ws) return;
     try {
-      const cur = ws.chart.drawings.getTool();
-      ws.chart.drawings.setTool((cur === type ? null : type) as never);
+      const chart = getSafeActiveChart(ws);
+      if (!chart?.drawings) return;
+      const cur = chart.drawings.getTool();
+      chart.drawings.setTool((cur === type ? null : type) as never);
     } catch (e) {
       console.warn("[favs] setTool failed:", e);
     }
@@ -824,7 +818,7 @@ export function FavoritesBar({ ws }: Props) {
                       title={getToolTitle(t.type, t.label)}
                       aria-pressed={favs.includes(t.type)}
                       onClick={() =>
-                        ws?.chart.drawings.setFavorite(
+                        getSafeActiveChart(ws)?.drawings?.setFavorite?.(
                           t.type as never,
                           !favs.includes(t.type)
                         )

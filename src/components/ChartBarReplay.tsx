@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { getSafeActiveChart } from "../lib/workspaceSafe";
 import { getReplayDockPosition, setReplayDockPosition } from "../lib/replayDockPersistence";
+import { addJournalEntry } from "../lib/journalState";
+import { getLiveMarketPrice } from "../lib/marketData";
+import "../styles/replay_practice.css";
 
 interface Props {
   ws: VelaWorkspace | null;
@@ -12,6 +16,28 @@ interface Props {
 
 const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 3, 5, 8];
 const formatSpeed = (n: number) => `${n}x`;
+
+interface PracticePosition {
+  side: "BUY" | "SELL";
+  entryPrice: number;
+  amount: number;
+  entryTime: number;
+  mae: number;
+  mfe: number;
+}
+
+interface PracticeTradeSummary {
+  id: string;
+  side: "BUY" | "SELL";
+  entryPrice: number;
+  exitPrice: number;
+  amount: number;
+  pnl: number;
+  pnlPercent: number;
+  mae: number;
+  mfe: number;
+  time: string;
+}
 
 interface DockPosition { left: number; top: number }
 interface SavedDockPosition { leftRatio: number; topRatio: number }
@@ -32,6 +58,27 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
   const [cutMode, setCutMode] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
+  // Practice Trading in Replay State
+  const [practicePos, setPracticePos] = useState<PracticePosition | null>(null);
+  const practicePosRef = useRef<PracticePosition | null>(null);
+  practicePosRef.current = practicePos;
+  const [sessionTrades, setSessionTrades] = useState<PracticeTradeSummary[]>([]);
+  const [showSummary, setShowSummary] = useState(false);
+  const [curBarPrice, setCurBarPrice] = useState<number>(0);
+
+  const getCurrentReplayPrice = useCallback((): number => {
+    if (curBarPrice > 0) return curBarPrice;
+    if (!ws) return getLiveMarketPrice() || (coin === "BTC" ? 80600 : coin === "ETH" ? 2600 : 180);
+    try {
+      const chart = getSafeActiveChart(ws);
+      if (!chart) return getLiveMarketPrice() || (coin === "BTC" ? 80600 : coin === "ETH" ? 2600 : 180);
+      const readout = (chart.renderer as any)?.dataWindowReadout?.();
+      if (readout?.ohlc?.close != null && readout.ohlc.close > 0) return readout.ohlc.close;
+      if (chart.market?.price != null && chart.market.price > 0) return chart.market.price;
+    } catch {}
+    return getLiveMarketPrice() || (coin === "BTC" ? 80600 : coin === "ETH" ? 2600 : 180);
+  }, [ws, curBarPrice, coin]);
+
   const [cursorTime, setCursorTime] = useState<number | null>(null);
   const [hoverBarTime, setHoverBarTime] = useState<number | null>(null);
   const [remaining, setRemaining] = useState(0);
@@ -79,6 +126,17 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
       setCursorTime(null);
     }
     setRemaining(s.remaining ?? 0);
+    const p = getCurrentReplayPrice();
+    if (p > 0) {
+      setCurBarPrice(p);
+      const curPos = practicePosRef.current;
+      if (curPos) {
+        const diff = curPos.side === "BUY" ? p - curPos.entryPrice : curPos.entryPrice - p;
+        const curPnl = diff * curPos.amount;
+        if (curPnl < curPos.mae) curPos.mae = curPnl;
+        if (curPnl > curPos.mfe) curPos.mfe = curPnl;
+      }
+    }
     if (!scrubbingRef.current && s.cursorTime != null && bounds && range) {
       setScrubValue(Math.max(0, Math.min(1000, ((s.cursorTime - bounds.first) / range) * 1000)));
     }
@@ -174,7 +232,7 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
     let offCrosshair: (() => void) | undefined;
     const bind = () => {
       try {
-        const chart = ws.active ? ws.chart : null;
+        const chart = getSafeActiveChart(ws);
         offClick?.();
         offCrosshair?.();
         offClick = chart?.renderer?.onClick?.(({ time }: { time?: number | null }) => {
@@ -204,13 +262,84 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
     return () => chart.removeEventListener("pointermove", move);
   }, [active, cutMode]);
 
+  const executePracticeTrade = (side: "BUY" | "SELL") => {
+    const p = getCurrentReplayPrice();
+    if (p <= 0) return;
+    const amount = coin === "BTC" ? 0.5 : coin === "ETH" ? 2.5 : 10;
+    const newPos: PracticePosition = {
+      side,
+      entryPrice: p,
+      amount,
+      entryTime: cursorTime || Date.now(),
+      mae: 0,
+      mfe: 0,
+    };
+    practicePosRef.current = newPos;
+    setPracticePos(newPos);
+  };
+
+  const closePracticeTrade = () => {
+    const pos = practicePosRef.current;
+    if (!pos) return;
+    const exitPrice = getCurrentReplayPrice() || pos.entryPrice;
+    const diff = pos.side === "BUY" ? exitPrice - pos.entryPrice : pos.entryPrice - exitPrice;
+    const pnl = diff * pos.amount;
+    const pnlPercent = ((exitPrice - pos.entryPrice) / pos.entryPrice) * (pos.side === "BUY" ? 1 : -1) * 100;
+
+    const summary: PracticeTradeSummary = {
+      id: `rpt_${Date.now()}`,
+      side: pos.side,
+      entryPrice: pos.entryPrice,
+      exitPrice,
+      amount: pos.amount,
+      pnl: Math.round(pnl * 100) / 100,
+      pnlPercent: Math.round(pnlPercent * 100) / 100,
+      mae: Math.round(pos.mae * 100) / 100,
+      mfe: Math.round(pos.mfe * 100) / 100,
+      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    };
+
+    setSessionTrades((prev) => [summary, ...prev]);
+
+    // Automatically record to Journal
+    try {
+      addJournalEntry({
+        symbol: `${coin}/USD`,
+        side: pos.side === "BUY" ? "LONG" : "SHORT",
+        entryPrice: pos.entryPrice,
+        exitPrice,
+        amount: pos.amount,
+        pnl: Math.round(pnl * 100) / 100,
+        pnlPercent: Math.round(pnlPercent * 100) / 100,
+        strategy: "Replay Practice Session",
+        tags: ["Replay", coin, timeframe],
+        notes: `Practice trade closed at ${exitPrice}. MAE: ${Math.round(pos.mae)}, MFE: +${Math.round(pos.mfe)}`,
+        mae: Math.round(pos.mae * 100) / 100,
+        mfe: Math.round(pos.mfe * 100) / 100,
+        source: "replay",
+      });
+    } catch (err) {
+      console.warn("[replay] could not log practice trade to journal:", err);
+    }
+
+    practicePosRef.current = null;
+    setPracticePos(null);
+  };
+
   const exitReplay = useCallback(() => {
+    if (practicePosRef.current) {
+      closePracticeTrade();
+    }
+    if (sessionTrades.length > 0 && !showSummary) {
+      setShowSummary(true);
+      return;
+    }
     try { replay?.stop(); } catch (e) { console.warn("[trade-pro replay] stop failed:", e); }
     setPlaying(false);
     setCutMode(false);
     setCursorTime(null);
     onClose();
-  }, [replay, onClose]);
+  }, [replay, onClose, sessionTrades.length, showSummary]);
 
   const enterCutMode = () => {
     if (!replay?.bounds) return;
@@ -447,6 +576,74 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
             <img src="/replay-icons/drag-handle.svg" alt="" />
           </button>
         )}
+        {/** Simulated Practice Trading HUD on Replay Bar */}
+        {state?.active && !cutMode && (
+          <div className={`replay-practice-bar ${practicePos ? "rpb-active" : ""}`}>
+            {!practicePos ? (
+              <>
+                <span className="rpb-label">PRACTICE:</span>
+                <button
+                  type="button"
+                  className="rpb-btn rpb-buy"
+                  onClick={() => executePracticeTrade("BUY")}
+                  title="Buy Market at current replay candle"
+                >
+                  ▲ Buy Mkt
+                </button>
+                <button
+                  type="button"
+                  className="rpb-btn rpb-sell"
+                  onClick={() => executePracticeTrade("SELL")}
+                  title="Sell Market at current replay candle"
+                >
+                  ▼ Sell Mkt
+                </button>
+                {sessionTrades.length > 0 && (
+                  <button
+                    type="button"
+                    className="rpb-btn rpb-summary"
+                    onClick={() => setShowSummary(true)}
+                    title="View Replay Performance Summary"
+                  >
+                    📊 {sessionTrades.length} {sessionTrades.length === 1 ? "Trade" : "Trades"}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <span className={`rpb-badge ${practicePos.side === "BUY" ? "rpb-long" : "rpb-short"}`}>
+                  {practicePos.side === "BUY" ? "LONG" : "SHORT"} {practicePos.amount} {coin}
+                </span>
+                <span className="rpb-price">@{practicePos.entryPrice.toLocaleString()}</span>
+                {(() => {
+                  const p = curBarPrice || practicePos.entryPrice;
+                  const diff = practicePos.side === "BUY" ? p - practicePos.entryPrice : practicePos.entryPrice - p;
+                  const curPnl = diff * practicePos.amount;
+                  const curPnlPct = ((p - practicePos.entryPrice) / practicePos.entryPrice) * (practicePos.side === "BUY" ? 1 : -1) * 100;
+                  return (
+                    <>
+                      <span className={`rpb-pnl ${curPnl >= 0 ? "up" : "down"}`}>
+                        {curPnl >= 0 ? "+" : ""}${Math.round(curPnl)} ({curPnlPct >= 0 ? "+" : ""}{curPnlPct.toFixed(2)}%)
+                      </span>
+                      <span className="rpb-excursion" title="Maximum Adverse / Favorable Excursion">
+                        <span className="down">MAE: ${Math.round(practicePos.mae)}</span>
+                        <span className="up">MFE: +${Math.round(practicePos.mfe)}</span>
+                      </span>
+                    </>
+                  );
+                })()}
+                <button
+                  type="button"
+                  className="rpb-btn rpb-close"
+                  onClick={closePracticeTrade}
+                  title="Close practice trade and record to journal"
+                >
+                  ✕ Close
+                </button>
+              </>
+            )}
+          </div>
+        )}
         <button className="replay-icon start-point" onClick={() => cutMode ? setCutMode(false) : enterCutMode()} title={cutMode ? "Cancel start point" : "Select replay starting point"} aria-label={cutMode ? "Cancel start point" : "Select replay starting point"}>
           <img src="/replay-icons/start-point.svg" alt="" />
         </button>
@@ -510,6 +707,125 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
           </button>
         )}
       </div>
+    {/* Replay Performance Summary Modal */}
+      {showSummary && (
+        <div className="replay-summary-modal-overlay" onClick={() => setShowSummary(false)}>
+          <div className="replay-summary-card" onClick={(e) => e.stopPropagation()}>
+            <div className="rsc-head">
+              <h3>📊 Replay Practice Performance Summary</h3>
+              <button className="jp-btn-icon" onClick={() => setShowSummary(false)}>
+                ✕
+              </button>
+            </div>
+            <div className="rsc-body">
+              <div className="rsc-stats-grid">
+                <div className="rsc-stat-card">
+                  <span className="rsc-stat-label">Total Trades</span>
+                  <span className="rsc-stat-val">{sessionTrades.length}</span>
+                </div>
+                <div className="rsc-stat-card">
+                  <span className="rsc-stat-label">Win Rate</span>
+                  <span className="rsc-stat-val">
+                    {sessionTrades.length > 0
+                      ? Math.round(
+                          (sessionTrades.filter((t) => t.pnl > 0).length /
+                            sessionTrades.length) *
+                            100
+                        )
+                      : 0}
+                    %
+                  </span>
+                </div>
+                <div className="rsc-stat-card">
+                  <span className="rsc-stat-label">Net PnL</span>
+                  {(() => {
+                    const totalPnl = sessionTrades.reduce((acc, t) => acc + t.pnl, 0);
+                    return (
+                      <span
+                        className={`rsc-stat-val ${
+                          totalPnl >= 0 ? "jp-val-up" : "jp-val-down"
+                        }`}
+                      >
+                        {totalPnl >= 0 ? "+" : ""}${Math.round(totalPnl * 100) / 100}
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <div>
+                <span className="rsc-stat-label">Session Trades Log</span>
+                <div className="rsc-trades-list">
+                  <table className="rsc-table">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Side</th>
+                        <th>Entry → Exit</th>
+                        <th style={{ textAlign: "right" }}>Net PnL</th>
+                        <th style={{ textAlign: "right" }}>MAE / MFE</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sessionTrades.map((t) => (
+                        <tr key={t.id}>
+                          <td>{t.time}</td>
+                          <td>
+                            <span
+                              className={`jp-side-badge ${
+                                t.side === "BUY" ? "jp-side-long" : "jp-side-short"
+                              }`}
+                            >
+                              {t.side === "BUY" ? "LONG" : "SHORT"}
+                            </span>
+                          </td>
+                          <td>
+                            ${t.entryPrice} → ${t.exitPrice}
+                          </td>
+                          <td
+                            style={{ textAlign: "right", fontWeight: 700 }}
+                            className={t.pnl >= 0 ? "jp-val-up" : "jp-val-down"}
+                          >
+                            {t.pnl >= 0 ? "+" : ""}${t.pnl} ({t.pnlPercent}%)
+                          </td>
+                          <td style={{ textAlign: "right", fontSize: 10 }}>
+                            ${t.mae} / +${t.mfe}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div className="rsc-actions">
+              <button
+                type="button"
+                className="jp-btn jp-btn-secondary"
+                onClick={() => {
+                  setShowSummary(false);
+                  try { replay?.stop(); } catch {}
+                  setPlaying(false);
+                  setCursorTime(null);
+                  onClose();
+                }}
+              >
+                Exit Replay
+              </button>
+              <button
+                type="button"
+                className="jp-btn jp-btn-primary"
+                onClick={() => {
+                  setShowSummary(false);
+                  window.dispatchEvent(new CustomEvent("tradepro:open-journal"));
+                }}
+              >
+                Open in Journal 📓
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
