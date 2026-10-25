@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
 import { getSafeActiveChart } from "../lib/workspaceSafe";
 
@@ -20,10 +20,33 @@ interface ReadoutState {
   volume: number | null;
   change: number | null;
   changePct: number | null;
+  up: boolean;
   groups: Array<{
     title: string;
     rows: Array<{ label: string; value: string | number; color?: string }>;
   }>;
+}
+
+const REFRESH_EVENTS = [
+  "bar",
+  "context:changed",
+  "indicator:added",
+  "indicator:removed",
+  "indicator:visibility",
+  "indicator:moved",
+  "pane:changed",
+  "market:changed",
+  "history:complete",
+] as const;
+
+function parseNumber(v: unknown): number | null {
+  if (typeof v === "number" && !isNaN(v)) return v;
+  if (typeof v === "string") {
+    const clean = v.replace(/[^0-9.-]/g, "");
+    const parsed = parseFloat(clean);
+    return isNaN(parsed) ? null : parsed;
+  }
+  return null;
 }
 
 export function DataWindow({ ws, coin = "BTC", currentPrice = 0, isFloating = false, onClose }: Props) {
@@ -31,82 +54,138 @@ export function DataWindow({ ws, coin = "BTC", currentPrice = 0, isFloating = fa
   const [pinned, setPinned] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  const updateFromRenderer = useCallback(() => {
     if (!ws) return;
-    const chart = getSafeActiveChart(ws);
-    if (!chart?.renderer) return;
-
-    const updateFromRenderer = () => {
-      try {
-        const raw = chart.renderer.dataWindowReadout?.();
-        if (raw && (raw.ohlc || raw.date)) {
-          const o = raw.ohlc;
-          let chg = o?.change ?? null;
-          let chgPct = o?.changePercent ?? null;
-          if (chg == null && o?.open != null && o?.close != null) {
-            chg = o.close - o.open;
-            chgPct = o.open !== 0 ? (chg / o.open) * 100 : 0;
-          }
-
-          setReadout({
-            date: raw.date || new Date().toISOString().split("T")[0],
-            time: raw.time || new Date().toTimeString().slice(0, 5),
-            open: o?.open ?? null,
-            high: o?.high ?? null,
-            low: o?.low ?? null,
-            close: o?.close ?? null,
-            volume: o?.volume ?? null,
-            change: chg,
-            changePct: chgPct,
-            groups: raw.groups || [],
-          });
-          return;
-        }
-
-        // Fallback: extract latest bar if cursor is not hovering
-        const market = chart.market;
-        const lastBar = chart.renderer.lastBar?.() || chart.lastBar?.();
-        if (lastBar) {
-          const chg = lastBar.close - lastBar.open;
-          const chgPct = lastBar.open !== 0 ? (chg / lastBar.open) * 100 : 0;
-          const d = new Date(lastBar.time * 1000);
-          setReadout({
-            date: d.toISOString().split("T")[0],
-            time: d.toTimeString().slice(0, 5),
-            open: lastBar.open,
-            high: lastBar.high,
-            low: lastBar.low,
-            close: lastBar.close,
-            volume: lastBar.volume ?? null,
-            change: chg,
-            changePct: chgPct,
-            groups: [],
-          });
-        }
-      } catch (err) {
-        console.warn("[trade-pro data window] readout sync error:", err);
-      }
-    };
-
-    updateFromRenderer();
-
-    // Subscribe to crosshair movement
-    let unsub: (() => void) | undefined;
     try {
-      if (typeof chart.renderer.onCrosshairMove === "function") {
-        unsub = chart.renderer.onCrosshairMove(() => {
-          updateFromRenderer();
+      const chart = getSafeActiveChart(ws);
+      if (!chart?.renderer) return;
+
+      const raw =
+        (typeof (chart.renderer as any).dataWindowReadout === "function"
+          ? (chart.renderer as any).dataWindowReadout()
+          : null) ||
+        (typeof (chart as any).dataWindowReadout === "function"
+          ? (chart as any).dataWindowReadout()
+          : null);
+
+      if (raw && (raw.ohlc || raw.date || raw.time || raw.groups?.length)) {
+        const ohlc = raw.ohlc;
+        const open = parseNumber(ohlc?.o ?? ohlc?.open);
+        const high = parseNumber(ohlc?.h ?? ohlc?.high);
+        const low = parseNumber(ohlc?.l ?? ohlc?.low);
+        const close = parseNumber(ohlc?.c ?? ohlc?.close);
+        const volume = parseNumber(ohlc?.vol ?? ohlc?.volume);
+
+        let chg: number | null = null;
+        let chgPct: number | null = null;
+        if (close != null && open != null) {
+          chg = close - open;
+          chgPct = open !== 0 ? (chg / open) * 100 : 0;
+        }
+
+        const isUp = ohlc?.up !== undefined ? Boolean(ohlc.up) : (chg != null ? chg >= 0 : true);
+
+        const groups = (raw.groups || []).map((grp: any) => ({
+          title: grp.name || grp.title || "Indicator",
+          rows: (grp.rows || []).map((r: any) => ({
+            label: r.label,
+            value: r.value,
+            color: r.color,
+          })),
+        }));
+
+        setReadout({
+          date: raw.date || new Date().toISOString().split("T")[0],
+          time: raw.time || new Date().toTimeString().slice(0, 5),
+          open,
+          high,
+          low,
+          close,
+          volume,
+          change: chg,
+          changePct: chgPct,
+          up: isUp,
+          groups,
+        });
+        return;
+      }
+
+      // Fallback: extract latest bar if cursor is not hovering
+      const lastBar = (chart.renderer as any)?.lastBar?.() || (chart as any)?.lastBar?.();
+      if (lastBar) {
+        const open = parseNumber(lastBar.open);
+        const high = parseNumber(lastBar.high);
+        const low = parseNumber(lastBar.low);
+        const close = parseNumber(lastBar.close);
+        const volume = parseNumber(lastBar.volume);
+        const chg = close != null && open != null ? close - open : 0;
+        const chgPct = open != null && open !== 0 ? (chg / open) * 100 : 0;
+        const d = lastBar.time ? new Date(lastBar.time * 1000) : new Date();
+
+        setReadout({
+          date: d.toISOString().split("T")[0],
+          time: d.toTimeString().slice(0, 5),
+          open,
+          high,
+          low,
+          close,
+          volume,
+          change: chg,
+          changePct: chgPct,
+          up: chg >= 0,
+          groups: [],
         });
       }
+    } catch (err) {
+      console.warn("[trade-pro data window] readout sync error:", err);
+    }
+  }, [ws]);
+
+  useEffect(() => {
+    if (!ws) return;
+    const unsubs: Array<() => void> = [];
+
+    const bindChart = () => {
+      unsubs.forEach((u) => u());
+      unsubs.length = 0;
+
+      const chart = getSafeActiveChart(ws);
+      if (!chart) return;
+
+      // Subscribe to all Vela 0.9.0 refresh events
+      for (const ev of REFRESH_EVENTS) {
+        try {
+          const off = chart.on?.(ev, updateFromRenderer);
+          if (typeof off === "function") unsubs.push(off);
+        } catch {}
+      }
+
+      // Subscribe to active crosshair cursor movement
+      try {
+        if (typeof chart.renderer?.onCrosshairMove === "function") {
+          const offCross = chart.renderer.onCrosshairMove(updateFromRenderer);
+          if (typeof offCross === "function") unsubs.push(offCross);
+        }
+      } catch {}
+
+      updateFromRenderer();
+    };
+
+    bindChart();
+
+    // Rebind when active cell changes
+    try {
+      const offCell = ws.on?.("cell:active", bindChart);
+      if (typeof offCell === "function") unsubs.push(offCell);
     } catch {}
 
-    const interval = window.setInterval(updateFromRenderer, 400);
+    const interval = window.setInterval(updateFromRenderer, 300);
 
     return () => {
-      unsub?.();
+      unsubs.forEach((u) => u());
       window.clearInterval(interval);
     };
-  }, [ws]);
+  }, [ws, updateFromRenderer]);
 
   const formatPrice = (val: number | null | undefined) => {
     if (val == null || isNaN(val)) return "—";
@@ -115,7 +194,7 @@ export function DataWindow({ ws, coin = "BTC", currentPrice = 0, isFloating = fa
     return val.toFixed(6);
   };
 
-  const isUp = (readout?.change ?? 0) >= 0;
+  const isUp = readout?.up ?? ((readout?.change ?? 0) >= 0);
 
   return (
     <div

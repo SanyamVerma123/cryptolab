@@ -1,7 +1,13 @@
 // One-off: extract Vela's real drawing-tool icon SVGs into a TS module.
 const fs = require("fs");
-const path = "node_modules/@luxalgo/vela/dist/chunk-BFA32GOU.js";
-const s = fs.readFileSync(path, "utf8");
+const p = require("path");
+const dir = "node_modules/@luxalgo/vela/dist";
+let s = "";
+for (const file of fs.readdirSync(dir)) {
+  if (file.endsWith(".js") && !file.includes(".min.")) {
+    s += "\n" + fs.readFileSync(p.join(dir, file), "utf8");
+  }
+}
 
 // icon consts (tolerant of newlines/extra spaces inside svg24(...))
 const iconRe = /var ([A-Z0-9_]+_ICON) = svg24\(\s*'([\s\S]*?)'\s*\)/g;

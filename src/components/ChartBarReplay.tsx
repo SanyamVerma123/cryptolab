@@ -55,6 +55,8 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
   const positionRef = useRef<DockPosition | null>(null);
   const lastCursorRef = useRef<number | null>(null);
   const scrubbingRef = useRef(false);
+  const cutStartRef = useRef<number | null>(null);
+  const [cutStartTime, setCutStartTime] = useState<number | null>(null);
   const [cutMode, setCutMode] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -109,10 +111,11 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
   const replay = ws?.replay;
   const bounds = replay?.bounds ?? null;
   const state = replay?.state;
+  const sessionStart = cutStartTime ?? bounds?.first ?? null;
   const range = useMemo(() => {
-    if (!bounds || bounds.last <= bounds.first) return null;
-    return bounds.last - bounds.first;
-  }, [bounds?.first, bounds?.last]);
+    if (!bounds || sessionStart == null || bounds.last <= sessionStart) return null;
+    return bounds.last - sessionStart;
+  }, [bounds?.last, sessionStart]);
 
   const sync = useCallback(() => {
     const s = replay?.state;
@@ -137,10 +140,14 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
         if (curPnl > curPos.mfe) curPos.mfe = curPnl;
       }
     }
-    if (!scrubbingRef.current && s.cursorTime != null && bounds && range) {
-      setScrubValue(Math.max(0, Math.min(1000, ((s.cursorTime - bounds.first) / range) * 1000)));
+    if (!scrubbingRef.current && s.cursorTime != null && bounds) {
+      const start = cutStartRef.current ?? bounds.first;
+      const r = bounds.last - start;
+      if (r > 0) {
+        setScrubValue(Math.max(0, Math.min(1000, ((s.cursorTime - start) / r) * 1000)));
+      }
     }
-  }, [replay, bounds, range]);
+  }, [replay, bounds]);
 
   useEffect(() => {
     if (!active) return;
@@ -207,7 +214,7 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
 
   useEffect(() => () => dragCleanupRef.current?.(), []);
 
-  const startAt = useCallback(async (from: number) => {
+  const startAt = useCallback(async (from: number, isNewCut: boolean = true) => {
     if (!replay || !Number.isFinite(from)) return false;
     const min = replay.bounds?.first;
     const max = replay.bounds?.last;
@@ -215,7 +222,12 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
     const wasPlaying = replay.state.playing;
     try {
       replay.pause();
-      await replay.start({ from: Math.max(min, Math.min(max, from)) });
+      const clamped = Math.max(min, Math.min(max, from));
+      if (isNewCut) {
+        cutStartRef.current = clamped;
+        setCutStartTime(clamped);
+      }
+      await replay.start({ from: clamped });
       setCutMode(false);
       sync();
       if (wasPlaying) replay.play(Math.max(50, Math.round(1000 / speed)));
@@ -338,6 +350,8 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
     setPlaying(false);
     setCutMode(false);
     setCursorTime(null);
+    cutStartRef.current = null;
+    setCutStartTime(null);
     onClose();
   }, [replay, onClose, sessionTrades.length, showSummary]);
 
@@ -436,9 +450,10 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
   const steppingBackRef = useRef(false);
   const stepBack = useCallback(() => {
     if (steppingBackRef.current) return;
-    if (cursorTime == null || !bounds || cursorTime <= bounds.first) return;
+    const start = cutStartRef.current ?? bounds?.first;
+    if (cursorTime == null || !bounds || (start != null && cursorTime <= start)) return;
     steppingBackRef.current = true;
-    void startAt(cursorTime - 1).finally(() => {
+    void startAt(cursorTime - 1, false).finally(() => {
       setTimeout(() => { steppingBackRef.current = false; }, 80);
     });
   }, [bounds, cursorTime, startAt]);
@@ -454,10 +469,13 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
 
   const commitScrub = (value = scrubValue) => {
     scrubbingRef.current = false;
-    if (!bounds || !range) return;
+    if (!bounds) return;
+    const start = cutStartRef.current ?? bounds.first;
+    const r = bounds.last - start;
+    if (r <= 0) return;
     const next = Math.max(0, Math.min(1000, value));
     setScrubValue(next);
-    void startAt(bounds.first + (next / 1000) * range);
+    void startAt(start + (next / 1000) * r, false);
   };
 
   useEffect(() => {
@@ -648,12 +666,15 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
           <img src="/replay-icons/start-point.svg" alt="" />
         </button>
         {!isMobile && (
-          <div className="replay-progress-control" title={`${formatTime(cursorTime)} · ${remaining.toLocaleString()} bars remaining`}>
+          <div
+            className="replay-progress-control"
+            title={`Replay Cut: ${formatTime(cutStartRef.current ?? bounds?.first ?? null)} → Live: ${formatTime(bounds?.last ?? null)} | Cursor: ${formatTime(cursorTime)} (${remaining.toLocaleString()} bars left)`}
+          >
             <img src="/replay-icons/progress-track.svg" alt="" />
             <span className="progress-fill" style={{ width: `${5 + (scrubValue / 1000) * 76}px` }} />
             <span className="progress-thumb" style={{ left: `${(scrubValue / 1000) * 76}px` }} />
             <input aria-label="Replay progress" type="range" min="0" max="1000" value={scrubValue}
-              disabled={!bounds || !range} onChange={(event) => setScrubValue(Number(event.target.value))}
+              disabled={!bounds || (bounds.last <= (cutStartRef.current ?? bounds.first))} onChange={(event) => setScrubValue(Number(event.target.value))}
               onPointerDown={beginScrub}
               onPointerUp={(event) => commitScrub(Number(event.currentTarget.value))}
               onPointerCancel={(event) => commitScrub(Number(event.currentTarget.value))}

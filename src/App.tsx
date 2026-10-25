@@ -33,6 +33,8 @@ import { getSafeActiveChart, getSafeActiveCell } from "./lib/workspaceSafe";
 import "./styles/app.css";
 import "./styles/journal.css";
 import { JournalPanel } from "./components/JournalPanel";
+import { ChartTabsBar } from "./components/ChartTabsBar";
+import { PaperAccountWidget } from "./components/PaperAccountWidget";
 
 const VelaChart = lazy(() => import("./components/VelaChart").then((module) => ({ default: module.VelaChart })));
 const PineEditor = lazy(() => import("./components/PineEditor").then((module) => ({ default: module.PineEditor })));
@@ -335,7 +337,21 @@ export default function App() {
     <div className="app">
       <main className={"chart-area" + (panelOpen ? "" : " panel-closed")}>
         <div className="chart-main-column">
+          {/* Top Multi-Chart Tabs Bar matching Image 1 */}
+          <ChartTabsBar
+            ws={ws}
+            activeCoin={coin}
+            activeTimeframe={tf}
+            onSelect={(newCoin, newTf) => {
+              setCoin(newCoin);
+              setTf(newTf);
+            }}
+          />
+
           <div className="chart-host">
+            {/* In-Chart Floating Paper Account Execution Widget matching Image 1 */}
+            <PaperAccountWidget ws={ws} coin={coin} />
+
             {accountOpen && <div className="workspace-account-overlay">
               <UserMenu externalOpen onOpenAuth={() => { setAuthOpen(true); setAccountOpen(false); }} />
             </div>}
@@ -427,35 +443,35 @@ export default function App() {
                   title="Place Limit, Market, or Stop-Limit orders"
                   onClick={() => setPanelMode("order")}
                 >
-                  Order
+                  ⇄ Trade
                 </button>
                 <button
                   className={"mp-tab" + (panelMode === "data" ? " on" : "")}
                   title="Market data, order book, and trades"
                   onClick={() => setPanelMode("data")}
                 >
-                  Data
+                  📊 Data
                 </button>
                 <button
                   className={"mp-tab" + (panelMode === "data_window" ? " on" : "")}
                   title="Inspect cursor bar values and indicator plots"
                   onClick={() => setPanelMode("data_window")}
                 >
-                  Window
+                  🪟 Win
                 </button>
                 <button
                   className={"mp-tab" + (panelMode === "object_tree" ? " on" : "")}
                   title="Manage chart drawings and indicators"
                   onClick={() => setPanelMode("object_tree")}
                 >
-                  Tree
+                  🌲 Tree
                 </button>
                 <button
                   className={"mp-tab" + (panelMode === "technical" ? " on" : "")}
                   title="Technical indicator meter and sentiment analysis"
                   onClick={() => setPanelMode("technical")}
                 >
-                  Gauge
+                  🧭 Gauge
                 </button>
                 <button
                   className={"mp-tab" + (panelMode === "ai" ? " on" : "")}
@@ -469,7 +485,7 @@ export default function App() {
                   title="Trading Journal & Analytics"
                   onClick={() => setPanelMode("journal")}
                 >
-                  📓 Journal
+                  📓 Jrnl
                 </button>
               </div>
               <button

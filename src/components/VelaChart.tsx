@@ -168,23 +168,11 @@ try {
 // Register native Replay topbar action into Vela's left cluster
 try {
   registerWidgetAction({
-    id: "tradepro-trading",
-    target: "topbar",
-    align: "left",
-    order: 9,
-    icon: "tradepro-trading",
-    label: "Trading",
-    iconOnly: false,
+    id: "tradepro-trading", target: "topbar", align: "left", order: 9, icon: "tradepro-trading", label: "Trading", iconOnly: true,
     run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-trading")),
   });
   registerWidgetAction({
-    id: "tradepro-journal",
-    target: "topbar",
-    align: "left",
-    order: 10,
-    icon: "tradepro-journal",
-    label: "Journal",
-    iconOnly: false,
+    id: "tradepro-journal", target: "topbar", align: "left", order: 10, icon: "tradepro-journal", label: "Journal", iconOnly: true,
     run: () => window.dispatchEvent(new CustomEvent("tradepro:toggle-journal")),
   });
   registerWidgetAction({
@@ -472,7 +460,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
       },
       drawings: true, // the full 84-tool surface with the shared toolbar
       drawingToolbar: true, // shared toolbar for the workspace
-      maxWebglCells: 8, // budget policy
+      maxWebglCells: 16, // budget policy
       alertCap: 50, // aggregate alerts in topbar bell
       sync: {
         crosshair: true,
@@ -498,9 +486,9 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
     const origSetLayout = ws.setLayout.bind(ws);
     ws.setLayout = (layout: unknown) => {
       let def = typeof layout === "string" ? ensureLayout(layout) : layout as { cells?: unknown[] };
-      if (def && def.cells && def.cells.length > 8) {
-        console.warn("[trade-pro] layout exceeds max 8 charts, capping at 8");
-        return origSetLayout("8");
+      if (def && def.cells && def.cells.length > 16) {
+        console.warn("[trade-pro] layout exceeds max 16 charts, capping at 16");
+        return origSetLayout("16");
       }
       return origSetLayout(layout as any);
     };

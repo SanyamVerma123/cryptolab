@@ -16,7 +16,12 @@
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
-import { VELA_TOOLS, VELA_TOOL_MAP } from "../lib/velaToolIcons";
+import {
+  VELA_TOOLS,
+  VELA_TOOL_MAP,
+  VELA_TOOL_NORMALIZED_MAP,
+  type VelaTool,
+} from "../lib/velaToolIcons";
 import {
   listPresets,
   savePreset,
@@ -30,13 +35,8 @@ interface Props {
   ws: VelaWorkspace | null;
 }
 
-/** Default starred tools matching TradingView popular defaults */
-const DEFAULT_FAVS = [
-  "trendline", "hline", "ray", "extendedline",
-  "box", "circle", "arrow", "parallelchannel",
-  "fibretracement", "fibextension", "pitchfork",
-  "text", "note", "callout", "freehand", "anchoredvwap",
-];
+/** Default starred tools matching essential TradingView popular defaults */
+const DEFAULT_FAVS = ["trendline", "hline", "ray", "box", "fibretracement", "text"];
 
 const POS_KEY = "trade-pro:favs-pos";
 const ORIENTATION_KEY = "trade-pro:favs-orientation";
@@ -70,13 +70,79 @@ function velaIcon(inner: string): string {
   );
 }
 
+/**
+ * Resilient tool resolver: checks exact key, normalized key, and synonyms.
+ */
+function resolveTool(t: string): VelaTool | undefined {
+  if (VELA_TOOL_MAP[t]) return VELA_TOOL_MAP[t];
+  const norm = t.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (VELA_TOOL_NORMALIZED_MAP[norm]) return VELA_TOOL_NORMALIZED_MAP[norm];
+  const alias: Record<string, string> = {
+    line: "trendline",
+    trend: "trendline",
+    horizontal: "hline",
+    horizontalline: "hline",
+    vertical: "vline",
+    verticalline: "vline",
+    rectangle: "box",
+    rect: "box",
+    fib: "fibretracement",
+    fibonacci: "fibretracement",
+    brush: "freehand",
+    pencil: "freehand",
+    fvg: "fairvaluegap",
+    ob: "orderblock",
+    liq: "liquidity",
+    elliott: "elliottimpulse",
+    channel: "parallelchannel",
+    vwap: "anchoredvwap",
+    longposition: "position",
+    shortposition: "position",
+  };
+  if (alias[norm] && VELA_TOOL_MAP[alias[norm]]) return VELA_TOOL_MAP[alias[norm]];
+  return undefined;
+}
+
+/**
+ * Clean geometric fallback icon for any dynamically introduced drawing tool.
+ * Never display generic or missing symbols!
+ */
+function fallbackToolIcon(t: string): string {
+  const norm = t.toLowerCase();
+  if (norm.includes("line") || norm.includes("ray") || norm.includes("segment")) {
+    return velaIcon('<line x1="4" y1="19" x2="20" y2="5" stroke-width="2"/>');
+  }
+  if (norm.includes("fib") || norm.includes("gann") || norm.includes("level")) {
+    return velaIcon('<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>');
+  }
+  if (norm.includes("box") || norm.includes("rect") || norm.includes("zone") || norm.includes("gap") || norm.includes("block")) {
+    return velaIcon('<rect x="4" y="6" width="16" height="12" rx="1" stroke-width="1.8"/>');
+  }
+  if (norm.includes("text") || norm.includes("note") || norm.includes("label") || norm.includes("callout") || norm.includes("sign")) {
+    return velaIcon('<path d="M5 6h14M12 6v13" stroke-width="2"/>');
+  }
+  if (norm.includes("arrow")) {
+    return velaIcon('<path d="M7 7h10v10M7 17 17 7" stroke-width="2"/>');
+  }
+  if (norm.includes("circle") || norm.includes("ellipse") || norm.includes("arc")) {
+    return velaIcon('<circle cx="12" cy="12" r="8" stroke-width="1.8"/>');
+  }
+  if (norm.includes("pattern") || norm.includes("wave") || norm.includes("harmonic")) {
+    return velaIcon('<path d="M3 18 7 8 11 14 15 6 20 16" stroke-width="1.8"/>');
+  }
+  return velaIcon('<path d="M14.5 4.5l5 5L7.5 21.5 2 22l.5-5.5L14.5 4.5z" stroke-width="1.6"/>');
+}
+
 /** Group order, mirroring Vela's toolbar sections */
 const GROUP_ORDER = [
-  "lines", "shapes", "channels", "fib", "gann", "pitchfork",
-  "annotations", "marks", "freehand", "measure", "patterns",
+  "lines", "shapes", "channels", "priceaction", "fibonacci", "pitchforks",
+  "patterns", "measure", "annotations", "stamps", "geometry",
 ];
 
 function groupLabel(g: string): string {
+  if (g === "priceaction") return "Price Action & ICT";
+  if (g === "fibonacci") return "Fibonacci & Gann";
+  if (g === "pitchforks") return "Pitchforks";
   return g.charAt(0).toUpperCase() + g.slice(1);
 }
 
@@ -331,7 +397,7 @@ export function FavoritesBar({ ws }: Props) {
     const c = getSafeActiveChart(ws);
     if (!c) return;
 
-    const SEED = "trade-pro:favs-seeded";
+    const SEED = "trade-pro:favs-compact-v1";
     const read = () => {
       let list: string[];
       try {
@@ -339,7 +405,7 @@ export function FavoritesBar({ ws }: Props) {
       } catch {
         return;
       }
-      if (!list.length && !localStorage.getItem(SEED)) {
+      if (!localStorage.getItem(SEED) || !list.length) {
         c.drawings.setFavorites(DEFAULT_FAVS as unknown as never[]);
         localStorage.setItem(SEED, "1");
         setFavs(DEFAULT_FAVS);
@@ -489,7 +555,7 @@ export function FavoritesBar({ ws }: Props) {
     window.dispatchEvent(new CustomEvent("tradepro:toggle-favorites"));
   };
 
-  const tool = (t: string) => VELA_TOOL_MAP[t];
+  const tool = (t: string) => resolveTool(t);
 
   // Theme observer
   const [isLight, setIsLight] = useState(false);
@@ -559,7 +625,8 @@ export function FavoritesBar({ ws }: Props) {
         <div className="favs-tools">
           {favs.map((t) => {
             const meta = tool(t);
-            const title = getToolTitle(t, meta?.label);
+            const label = meta?.label || t.charAt(0).toUpperCase() + t.slice(1);
+            const title = getToolTitle(t, label);
             return (
               <button
                 key={t}
@@ -568,11 +635,9 @@ export function FavoritesBar({ ws }: Props) {
                 aria-label={title}
                 aria-pressed={armed === t}
                 onClick={() => arm(t)}
-                dangerouslySetInnerHTML={
-                  meta
-                    ? { __html: velaIcon(meta.svg) }
-                    : { __html: "<span>✦</span>" }
-                }
+                dangerouslySetInnerHTML={{
+                  __html: meta?.svg ? velaIcon(meta.svg) : fallbackToolIcon(t),
+                }}
               />
             );
           })}

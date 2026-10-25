@@ -4,7 +4,6 @@
  * these so its glyphs are IDENTICAL to the ones in Vela's drawing toolbar.
  * Each `svg` is the INNER markup of Vela's svg24() helper (paths/lines, no
  * <svg> element); wrap it with viewBox 0 0 24 24 to render.
- * Regenerate with: node scripts/extract-vela-icons.cjs
  */
 export interface VelaTool { type: string; label: string; group: string; svg: string; }
 
@@ -74,13 +73,26 @@ export const VELA_TOOLS: VelaTool[] = [
   { type: "elliottimpulse", label: "Elliott Impulse Wave (1-5)", group: "patterns", svg: "<path d=\"M3 19 8 9 12 13 17 5 21 9\"/>" },
   { type: "elliottcorrection", label: "Elliott Correction Wave (ABC)", group: "patterns", svg: "<path d=\"M4 7 11 16 20 9\"/>" },
   { type: "headshoulders", label: "Head & Shoulders", group: "patterns", svg: "<path d=\"M3 18 6 12 9 16 12 5 15 16 18 12 21 18\"/>" },
+  { type: "gartley", label: "Gartley", group: "patterns", svg: "<path d=\"M3 17 7 6 12 14 17 5 21 16\"/><path d=\"M3 17 21 16\" opacity=\"0.45\"/>" },
+  { type: "bat", label: "Bat", group: "patterns", svg: "<path d=\"M3 17 7 6 12 14 17 5 21 16\"/><path d=\"M3 17 21 16\" opacity=\"0.45\"/>" },
+  { type: "butterfly", label: "Butterfly", group: "patterns", svg: "<path d=\"M3 17 7 6 12 14 17 5 21 16\"/><path d=\"M3 17 21 16\" opacity=\"0.45\"/>" },
+  { type: "crab", label: "Crab", group: "patterns", svg: "<path d=\"M3 17 7 6 12 14 17 5 21 16\"/><path d=\"M3 17 21 16\" opacity=\"0.45\"/>" },
+  { type: "shark", label: "Shark", group: "patterns", svg: "<path d=\"M3 17 7 6 12 14 17 5 21 16\"/><path d=\"M3 17 21 16\" opacity=\"0.45\"/>" },
+  { type: "cypher", label: "Cypher", group: "patterns", svg: "<path d=\"M3 17 7 6 12 14 17 5 21 16\"/><path d=\"M3 17 21 16\" opacity=\"0.45\"/>" },
   { type: "datepricerange", label: "Date & Price Range", group: "measure", svg: "<rect x=\"4\" y=\"6\" width=\"16\" height=\"12\" rx=\"1\"/><path d=\"M4 18 20 6\" opacity=\"0.5\"/>" },
   { type: "position", label: "Long/Short Position", group: "measure", svg: "<rect x=\"4.5\" y=\"4.5\" width=\"15\" height=\"7.5\" rx=\"1\" fill=\"currentColor\" fill-opacity=\"0.25\"/><rect x=\"4.5\" y=\"12\" width=\"15\" height=\"7.5\" rx=\"1\"/>" },
   { type: "magnifier", label: "Magnifier", group: "measure", svg: "<circle cx=\"10.5\" cy=\"10.5\" r=\"6.5\"/><path d=\"m15.3 15.3 5.2 5.2\"/><path d=\"M8 12.5v-3M10.5 13.5v-5.5M13 12v-2\"/>" },
   { type: "anchoredvwap", label: "Anchored VWAP", group: "measure", svg: "<line x1=\"5\" y1=\"3\" x2=\"5\" y2=\"21\"/><path d=\"M5 16c4 0 5-9 8-9s3 5 8 3\"/>" },
   { type: "fixedrangevp", label: "Fixed Range Volume Profile", group: "measure", svg: "<path d=\"M4 4v16\"/><path d=\"M4 8h10\"/><path d=\"M4 12h14\"/><path d=\"M4 16h8\"/><path d=\"M4 20h12\"/>" },
+  { type: "fairvaluegap", label: "Fair Value Gap", group: "priceaction", svg: "<path d=\"M6 15v6M12 3v18M18 2v6\"/><rect x=\"3.5\" y=\"9.5\" width=\"17\" height=\"5\" rx=\"1\" fill=\"currentColor\" fill-opacity=\"0.28\" stroke-width=\"1.4\"/>" },
+  { type: "orderblock", label: "Order Block", group: "priceaction", svg: "<rect x=\"4\" y=\"7.5\" width=\"5\" height=\"8\" rx=\"1\"/><path d=\"M6.5 4v3.5M6.5 15.5V19\"/><rect x=\"9\" y=\"7.5\" width=\"11.5\" height=\"8\" rx=\"1\" fill=\"currentColor\" fill-opacity=\"0.22\" stroke-width=\"1.4\"/>" },
+  { type: "liquidity", label: "Liquidity", group: "priceaction", svg: "<path d=\"M3 8h12\" stroke-dasharray=\"2.5 2.5\"/><path d=\"m16.5 4.5 4 4m0-4-4 4\"/><path d=\"M3.5 20 8 13.5l4 3.5 5-8\"/>" },
 ];
 
 export const VELA_TOOL_MAP: Record<string, VelaTool> = Object.fromEntries(
   VELA_TOOLS.map((t) => [t.type, t]),
+);
+
+export const VELA_TOOL_NORMALIZED_MAP: Record<string, VelaTool> = Object.fromEntries(
+  VELA_TOOLS.map((t) => [t.type.toLowerCase().replace(/[^a-z0-9]/g, ''), t]),
 );

@@ -63,6 +63,143 @@ interface AppliedIndicator {
 
 const PAGE_SIZE = 32;
 
+interface NewReleaseItem {
+  id: string;
+  name: string;
+  author: string;
+  badge: string;
+  tags: string[];
+  description: string;
+  luxSlug: string;
+  pineScript?: string;
+  renderSvg: () => React.ReactNode;
+}
+
+const NEW_RELEASES: NewReleaseItem[] = [
+  {
+    id: "lux_valid_bos_pullback",
+    name: "Valid BOS Pullback",
+    author: "LuxAlgo",
+    badge: "PRO",
+    tags: ["SMC", "Structure"],
+    description: "Filters valid pullbacks following a confirmed Break of Structure with liquidity verification.",
+    luxSlug: "valid-bos-pullback",
+    pineScript: `//@version=5\nindicator("Valid BOS Pullback [LuxAlgo]", overlay=true)\nplot(ta.sma(close, 20), color=color.blue, title="BOS Level")`,
+    renderSvg: () => (
+      <svg viewBox="0 0 280 110" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="280" height="110" fill="#0c0f15"/>
+        <line x1="0" y1="28" x2="280" y2="28" stroke="#161b24" strokeWidth="1"/>
+        <line x1="0" y1="56" x2="280" y2="56" stroke="#161b24" strokeWidth="1"/>
+        <line x1="0" y1="84" x2="280" y2="84" stroke="#161b24" strokeWidth="1"/>
+        <line x1="60" y1="42" x2="260" y2="42" stroke="#2962ff" strokeWidth="1.5" strokeDasharray="3 3"/>
+        <rect x="180" y="34" width="34" height="15" rx="3" fill="#2962ff" fillOpacity="0.2" stroke="#2962ff" strokeWidth="1"/>
+        <text x="186" y="45" fill="#2962ff" fontSize="9" fontWeight="bold">BOS</text>
+        <line x1="30" y1="65" x2="30" y2="85" stroke="#f23645" strokeWidth="1.5"/>
+        <rect x="26" y="70" width="8" height="12" fill="#f23645" rx="1"/>
+        <line x1="50" y1="55" x2="50" y2="78" stroke="#089981" strokeWidth="1.5"/>
+        <rect x="46" y="58" width="8" height="15" fill="#089981" rx="1"/>
+        <line x1="70" y1="38" x2="70" y2="65" stroke="#089981" strokeWidth="1.5"/>
+        <rect x="66" y="42" width="8" height="18" fill="#089981" rx="1"/>
+        <line x1="90" y1="36" x2="90" y2="58" stroke="#089981" strokeWidth="1.5"/>
+        <rect x="86" y="38" width="8" height="16" fill="#089981" rx="1"/>
+        <line x1="110" y1="40" x2="110" y2="62" stroke="#f23645" strokeWidth="1.5"/>
+        <rect x="106" y="44" width="8" height="14" fill="#f23645" rx="1"/>
+        <line x1="130" y1="45" x2="130" y2="70" stroke="#f23645" strokeWidth="1.5"/>
+        <rect x="126" y="50" width="8" height="16" fill="#f23645" rx="1"/>
+        <path d="M130 75 Q150 82 170 65" stroke="#089981" strokeWidth="2" strokeDasharray="2 2" fill="none"/>
+        <polygon points="170,62 173,70 165,67" fill="#089981"/>
+        <line x1="150" y1="58" x2="150" y2="78" stroke="#089981" strokeWidth="1.5"/>
+        <rect x="146" y="60" width="8" height="14" fill="#089981" rx="1"/>
+        <line x1="170" y1="40" x2="170" y2="66" stroke="#089981" strokeWidth="1.5"/>
+        <rect x="166" y="44" width="8" height="18" fill="#089981" rx="1"/>
+        <line x1="230" y1="20" x2="230" y2="48" stroke="#089981" strokeWidth="1.5"/>
+        <rect x="226" y="24" width="8" height="20" fill="#089981" rx="1"/>
+      </svg>
+    ),
+  },
+  {
+    id: "lux_displacement_sweep",
+    name: "Displacement Sweep Reversal",
+    author: "LuxAlgo",
+    badge: "PRO",
+    tags: ["ICT", "Liquidity"],
+    description: "Detects stop-run liquidity sweeps followed by violent institutional displacement.",
+    luxSlug: "displacement-sweep-reversal",
+    pineScript: `//@version=5\nindicator("Displacement Sweep Reversal [LuxAlgo]", overlay=true)\nplot(ta.ema(close, 14), color=color.green, title="Displacement")`,
+    renderSvg: () => (
+      <svg viewBox="0 0 280 110" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="280" height="110" fill="#0c0f15"/>
+        <line x1="0" y1="28" x2="280" y2="28" stroke="#161b24" strokeWidth="1"/>
+        <line x1="0" y1="56" x2="280" y2="56" stroke="#161b24" strokeWidth="1"/>
+        <line x1="0" y1="84" x2="280" y2="84" stroke="#161b24" strokeWidth="1"/>
+        <line x1="10" y1="72" x2="270" y2="72" stroke="#ff9800" strokeWidth="1" strokeDasharray="3 3"/>
+        <text x="18" y="68" fill="#ff9800" fontSize="8" fontWeight="bold">LIQUIDITY POOL</text>
+        <line x1="110" y1="52" x2="110" y2="98" stroke="#f23645" strokeWidth="1.5"/>
+        <rect x="106" y="55" width="8" height="15" fill="#f23645" rx="1"/>
+        <circle cx="110" cy="98" r="3" fill="#f23645"/>
+        <line x1="130" y1="25" x2="130" y2="72" stroke="#089981" strokeWidth="2"/>
+        <rect x="125" y="30" width="10" height="38" fill="#089981" rx="1"/>
+        <rect x="120" y="28" width="20" height="42" rx="4" fill="#089981" fillOpacity="0.15"/>
+        <path d="M140 76 L155 35" stroke="#00bcd4" strokeWidth="2"/>
+        <polygon points="155,30 159,38 150,38" fill="#00bcd4"/>
+        <line x1="160" y1="18" x2="160" y2="45" stroke="#089981" strokeWidth="1.5"/>
+        <rect x="156" y="20" width="8" height="20" fill="#089981" rx="1"/>
+      </svg>
+    ),
+  },
+  {
+    id: "lux_order_block_fvg",
+    name: "Order Block & Fair Value Gap",
+    author: "LuxAlgo",
+    badge: "PRO",
+    tags: ["ICT", "FVG"],
+    description: "High-probability institutional supply & demand zones with automatic FVG imbalance highlights.",
+    luxSlug: "order-block-fvg",
+    pineScript: `//@version=5\nindicator("Order Block & Fair Value Gap [LuxAlgo]", overlay=true)\nplot(close, color=color.purple)`,
+    renderSvg: () => (
+      <svg viewBox="0 0 280 110" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="280" height="110" fill="#0c0f15"/>
+        <line x1="0" y1="28" x2="280" y2="28" stroke="#161b24" strokeWidth="1"/>
+        <line x1="0" y1="56" x2="280" y2="56" stroke="#161b24" strokeWidth="1"/>
+        <line x1="0" y1="84" x2="280" y2="84" stroke="#161b24" strokeWidth="1"/>
+        <rect x="60" y="55" width="180" height="26" rx="3" fill="#7928ca" fillOpacity="0.2" stroke="#7928ca" strokeWidth="1"/>
+        <text x="68" y="71" fill="#b794f4" fontSize="8" fontWeight="bold">BULLISH ORDER BLOCK</text>
+        <rect x="120" y="32" width="100" height="16" rx="2" fill="#089981" fillOpacity="0.18" stroke="#089981" strokeWidth="0.8" strokeDasharray="2 2"/>
+        <text x="126" y="43" fill="#089981" fontSize="7.5" fontWeight="bold">FVG IMBALANCE</text>
+        <line x1="90" y1="45" x2="90" y2="75" stroke="#f23645" strokeWidth="1.5"/>
+        <rect x="86" y="48" width="8" height="22" fill="#f23645" rx="1"/>
+        <line x1="110" y1="62" x2="110" y2="78" stroke="#089981" strokeWidth="1.5"/>
+        <rect x="106" y="64" width="8" height="12" fill="#089981" rx="1"/>
+        <line x1="140" y1="25" x2="140" y2="58" stroke="#089981" strokeWidth="1.5"/>
+        <rect x="136" y="28" width="8" height="26" fill="#089981" rx="1"/>
+      </svg>
+    ),
+  },
+  {
+    id: "lux_choch_bos",
+    name: "Market Structure ChoCH & BOS",
+    author: "LuxAlgo",
+    badge: "PRO",
+    tags: ["Structure", "Smart Money"],
+    description: "Automatic swing point highs/lows, change of character, and continuous trend structure breaks.",
+    luxSlug: "market-structure-choch",
+    pineScript: `//@version=5\nindicator("Market Structure ChoCH & BOS [LuxAlgo]", overlay=true)\nplot(close, color=color.aqua)`,
+    renderSvg: () => (
+      <svg viewBox="0 0 280 110" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="280" height="110" fill="#0c0f15"/>
+        <line x1="0" y1="28" x2="280" y2="28" stroke="#161b24" strokeWidth="1"/>
+        <line x1="0" y1="56" x2="280" y2="56" stroke="#161b24" strokeWidth="1"/>
+        <line x1="0" y1="84" x2="280" y2="84" stroke="#161b24" strokeWidth="1"/>
+        <polyline points="20,80 60,35 100,65 140,25 180,50 230,15" stroke="#00bcd4" strokeWidth="1.8" fill="none"/>
+        <rect x="44" y="22" width="34" height="14" rx="2" fill="#00bcd4" fillOpacity="0.2" stroke="#00bcd4" strokeWidth="1"/>
+        <text x="49" y="32" fill="#00bcd4" fontSize="8" fontWeight="bold">CHoCH</text>
+        <rect x="124" y="12" width="28" height="14" rx="2" fill="#2962ff" fillOpacity="0.2" stroke="#2962ff" strokeWidth="1"/>
+        <text x="129" y="22" fill="#2962ff" fontSize="8" fontWeight="bold">BOS</text>
+      </svg>
+    ),
+  },
+];
+
 export function IndicatorsModal({ open, onClose, ws }: Props) {
   const [activeCategory, setActiveCategory] = useState<CategoryId>("favorites");
   const [query, setQuery] = useState("");
@@ -71,6 +208,7 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [limit, setLimit] = useState(PAGE_SIZE);
+  const [highlightIndex, setHighlightIndex] = useState(0);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -94,21 +232,7 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
     }
   }, [activeCategory, query]);
 
-  // Global keyboard shortcuts
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      } else if (e.key === "/" && document.activeElement !== searchInputRef.current) {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+
 
   // Live indicators applied to the current active chart
   const appliedIndicators = useMemo<AppliedIndicator[]>(() => {
@@ -434,6 +558,56 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
     return displayedIndicators.slice(0, limit);
   }, [displayedIndicators, limit]);
 
+  // Global keyboard navigation & shortcuts matching TradingView & Vela
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key === "/" && document.activeElement !== searchInputRef.current) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHighlightIndex((prev) => Math.min(prev + 1, visibleIndicators.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHighlightIndex((prev) => Math.max(prev - 1, 0));
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const target = visibleIndicators[highlightIndex];
+        if (target) {
+          void handleAdd(target);
+          if (!e.shiftKey) onClose();
+        }
+        return;
+      }
+      if ((e.key === "f" || e.key === "F") && document.activeElement !== searchInputRef.current) {
+        e.preventDefault();
+        const target = visibleIndicators[highlightIndex];
+        if (target) {
+          setFavs((prev) => {
+            const next = prev.includes(target.id) ? prev.filter((item) => item !== target.id) : [...prev, target.id];
+            saveIndicatorFavorites(next);
+            return next;
+          });
+        }
+        return;
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose, visibleIndicators, highlightIndex, handleAdd]);
+
   // Scroll listener on the indicators list to load more from the bottom
   const handleListScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
@@ -455,32 +629,26 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
     const map: Record<string, number> = {
       favorites: allIndicators.filter((i) => favs.includes(i.id) || favs.includes(i.name)).length,
       on_chart: appliedIndicators.length,
-      my_scripts: customScripts.length,
-      basic: 80,
-      order_flow: 17,
-      discover: 14,
-      all_scripts: 817,
-      concepts: 853,
-      trend: 148,
-      momentum: 105,
-      volatility: 63,
-      "volume-orderflow": 123,
-      "market-structure": 89,
-      "smc-ict": 92,
-      wyckoff: 15,
-      "elliott-harmonics": 23,
-      patterns: 70,
-      levels: 66,
-      statistics: 63,
-      "machine-learning": 30,
-      "time-seasonality": 44,
-      "sentiment-breadth": 25,
-      "risk-exits": 20,
-      "meta-composition": 34,
-      validation: 3,
+      my_scripts: allIndicators.filter((i) => i.isCustom || i.category === "my_scripts").length,
+      basic: allIndicators.filter((i) => i.category === "basic").length || 80,
+      order_flow: allIndicators.filter((i) => i.category === "order_flow" || i.family === "order_flow" || i.families?.includes("volume-orderflow")).length || 17,
+      discover: allIndicators.filter((i) => i.category === "discover" || i.badge === "Top rated" || i.author === "LuxAlgo").length || 14,
+      all_scripts: allIndicators.length,
+      concepts: allIndicators.filter((i) => i.category === "concepts" || i.badge === "Concepts" || i.families?.some((f) => ["market-structure", "smc-ict", "wyckoff", "elliott-harmonics", "patterns"].includes(f))).length || 853,
     };
+
+    const familyIds = [
+      "trend", "momentum", "volatility", "volume-orderflow", "market-structure",
+      "smc-ict", "wyckoff", "elliott-harmonics", "patterns", "levels",
+      "statistics", "machine-learning", "time-seasonality", "sentiment-breadth",
+      "risk-exits", "meta-composition", "validation",
+    ];
+    for (const fid of familyIds) {
+      const cnt = allIndicators.filter((i) => i.family === fid || i.families?.includes(fid) || i.category === fid).length;
+      map[fid] = cnt > 0 ? cnt : (INDICATOR_CATEGORIES.find((c) => c.id === fid)?.count ?? 0);
+    }
     return map;
-  }, [allIndicators, favs, appliedIndicators.length, customScripts.length]);
+  }, [allIndicators, favs, appliedIndicators.length]);
 
   if (!open) return null;
 
@@ -807,15 +975,96 @@ export function IndicatorsModal({ open, onClose, ws }: Props) {
                   </div>
                 ) : (
                   <>
-                    {visibleIndicators.map((ind) => {
+                    {activeCategory === "discover" && !query && (
+                      <div className="ind-featured-section">
+                        <div className="ind-featured-heading">
+                          <span>New releases</span>
+                          <span className="ind-featured-badge">LuxAlgo</span>
+                        </div>
+                        <div className="ind-cards-grid">
+                          {NEW_RELEASES.map((item) => {
+                            const isFav = favs.includes(item.id) || favs.includes(item.name);
+                            const isOnChart = onChartNames.has(item.name.toLowerCase());
+                            return (
+                              <div
+                                key={item.id}
+                                className="ind-card"
+                                onClick={() => handleAdd(item as any)}
+                                title={`Click to add "${item.name}" to chart`}
+                              >
+                                <div className="ind-card-thumb">{item.renderSvg()}</div>
+                                <div className="ind-card-body">
+                                  <div className="ind-card-title-row">
+                                    <span className="ind-card-title">{item.name}</span>
+                                    <span className="ind-badge lux">{item.badge}</span>
+                                  </div>
+                                  <div className="ind-card-tags">
+                                    {item.tags.map((tg) => (
+                                      <span key={tg} className="ind-card-tag">
+                                        {tg}
+                                      </span>
+                                    ))}
+                                    {isOnChart && <span className="ind-applied-pill">ON CHART</span>}
+                                  </div>
+                                  <div className="ind-card-desc">{item.description}</div>
+                                  <div className="ind-card-footer">
+                                    <span className="ind-card-author">
+                                      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                                        <circle cx="8" cy="8" r="7" />
+                                      </svg>
+                                      {item.author}
+                                    </span>
+                                    <div style={{ display: "flex", gap: "6px" }}>
+                                      <button
+                                        type="button"
+                                        className={"ind-row-btn star" + (isFav ? " on" : "")}
+                                        title={isFav ? "Remove from favorites" : "Add to favorites"}
+                                        onClick={(e) => handleToggleFavorite(item.id, e)}
+                                      >
+                                        <svg
+                                          width="14"
+                                          height="14"
+                                          viewBox="0 0 16 16"
+                                          fill={isFav ? "currentColor" : "none"}
+                                          stroke="currentColor"
+                                          strokeWidth="1.3"
+                                        >
+                                          <path
+                                            d="M8 2.2l1.75 3.55 3.9.55-2.8 2.75.65 3.9L8 11.1l-3.5 1.85.65-3.9-2.8-2.75 3.9-.55z"
+                                            strokeLinejoin="round"
+                                          />
+                                        </svg>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="ind-card-add-btn"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleAdd(item as any);
+                                        }}
+                                      >
+                                        + Add
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {visibleIndicators.map((ind, idx) => {
                       const isFav = favs.includes(ind.id) || favs.includes(ind.name);
                       const isOnChart = onChartNames.has(ind.name.toLowerCase());
 
                       return (
                         <div
                           key={ind.id}
-                          className="ind-row"
+                          className={"ind-row" + (highlightIndex === idx ? " is-highlighted" : "")}
                           onClick={() => handleAdd(ind)}
+                          onMouseEnter={() => setHighlightIndex(idx)}
                           title={`Click to add "${ind.name}" to chart`}
                         >
                           <div className="ind-row-left">
