@@ -25,9 +25,6 @@ import { UserMenu } from "./components/UserMenu";
 import { initCloudSync } from "./lib/cloudSync";
 import { HyperliquidSocket } from "./lib/hyperliquid";
 import { useLiveData } from "./lib/useLiveData";
-import { DataWindow } from "./components/DataWindow";
-import { ObjectTree } from "./components/ObjectTree";
-import { TechnicalReading } from "./components/TechnicalReading";
 import { downloadChartSnapshot } from "./lib/chartSnapshot";
 import { getSafeActiveChart, getSafeActiveCell } from "./lib/workspaceSafe";
 import "./styles/app.css";
@@ -75,7 +72,7 @@ export default function App() {
 
   const [ws, setWs] = useState<VelaWorkspace | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [panelMode, setPanelMode] = useState<"data" | "order" | "ai" | "data_window" | "object_tree" | "technical" | "journal">("order");
+  const [panelMode, setPanelMode] = useState<"data" | "order" | "ai" | "journal">("order");
   const [bottomOrdersOpen, setBottomOrdersOpen] = useState(false);
   const [ordersFocusTab, setOrdersFocusTab] = useState<"positions" | "orders" | "strategy_tester">("positions");
   const [ordersFocusRequest, setOrdersFocusRequest] = useState(0);
@@ -206,20 +203,6 @@ export default function App() {
         },
       ],
       ["tradepro:open-pine-editor", () => setPineOpen(true)],
-      [
-        "tradepro:open-data-window",
-        () => {
-          setPanelOpen(true);
-          setPanelMode("data_window");
-        },
-      ],
-      [
-        "tradepro:open-object-tree",
-        () => {
-          setPanelOpen(true);
-          setPanelMode("object_tree");
-        },
-      ],
       [
         "tradepro:snapshot",
         () => {
@@ -508,30 +491,6 @@ export default function App() {
                   📊
                 </button>
                 <button
-                  className={"mp-tab" + (panelMode === "data_window" ? " on" : "")}
-                  title="Data Window (Cursor Values & Plots)"
-                  aria-label="Data Window"
-                  onClick={() => setPanelMode("data_window")}
-                >
-                  🪟
-                </button>
-                <button
-                  className={"mp-tab" + (panelMode === "object_tree" ? " on" : "")}
-                  title="Object Tree (Drawings & Indicators)"
-                  aria-label="Object Tree"
-                  onClick={() => setPanelMode("object_tree")}
-                >
-                  🌲
-                </button>
-                <button
-                  className={"mp-tab" + (panelMode === "technical" ? " on" : "")}
-                  title="Technical Readings & Gauge"
-                  aria-label="Technical Gauge"
-                  onClick={() => setPanelMode("technical")}
-                >
-                  🧭
-                </button>
-                <button
                   className={"mp-tab" + (panelMode === "ai" ? " on" : "")}
                   title="AI Trading Assistant"
                   aria-label="AI Assistant"
@@ -562,27 +521,6 @@ export default function App() {
               </div>
             ) : panelMode === "data" ? (
               <MarketPanel coin={coin} data={live} />
-            ) : panelMode === "data_window" ? (
-              <div className="mp-body">
-                <DataWindow
-                  ws={ws}
-                  coin={coin}
-                  currentPrice={live.livePrice || live.trades?.[0]?.price || 0}
-                  onClose={() => setPanelOpen(false)}
-                />
-              </div>
-            ) : panelMode === "object_tree" ? (
-              <div className="mp-body">
-                <ObjectTree ws={ws} onClose={() => setPanelOpen(false)} />
-              </div>
-            ) : panelMode === "technical" ? (
-              <div className="mp-body">
-                <TechnicalReading
-                  ws={ws}
-                  coin={coin}
-                  currentPrice={live.livePrice || live.trades?.[0]?.price || 0}
-                />
-              </div>
             ) : panelMode === "ai" ? (
               <div className="mp-body mp-ai-body">
                 <AiPanel ws={ws} inline onPineOpen={() => setPineOpen(true)} />
