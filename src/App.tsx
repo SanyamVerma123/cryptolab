@@ -34,7 +34,7 @@ import "./styles/app.css";
 import "./styles/journal.css";
 import { JournalPanel } from "./components/JournalPanel";
 import { JournalDashboard } from "./components/JournalDashboard";
-import { ChartTabsBar, formatTf } from "./components/ChartTabsBar";
+import { ChartTabsBar, formatTf, toVelaTf } from "./components/ChartTabsBar";
 
 const VelaChart = lazy(() => import("./components/VelaChart").then((module) => ({ default: module.VelaChart })));
 const PineEditor = lazy(() => import("./components/PineEditor").then((module) => ({ default: module.PineEditor })));
@@ -43,8 +43,36 @@ const SettingsModal = lazy(() => import("./components/SettingsModal").then((modu
 const AuthModal = lazy(() => import("./components/AuthModal").then((module) => ({ default: module.AuthModal })));
 
 export default function App() {
-  const [coin, setCoin] = useState("BTC");
-  const [tf, setTf] = useState("60");
+  const [coin, setCoin] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem("tradepro_active_coin");
+      if (saved && saved.trim()) return saved.trim().toUpperCase();
+      const savedTabs = localStorage.getItem("tradepro_chart_tabs_v2");
+      const activeTabId = localStorage.getItem("tradepro_active_tab_id_v2");
+      if (savedTabs && activeTabId) {
+        const tabs = JSON.parse(savedTabs);
+        const active = tabs.find((t: any) => t.id === activeTabId);
+        if (active?.coin) return active.coin.toUpperCase();
+      }
+    } catch {}
+    return "BTC";
+  });
+
+  const [tf, setTf] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem("tradepro_active_timeframe");
+      if (saved && saved.trim()) return toVelaTf(saved.trim());
+      const savedTabs = localStorage.getItem("tradepro_chart_tabs_v2");
+      const activeTabId = localStorage.getItem("tradepro_active_tab_id_v2");
+      if (savedTabs && activeTabId) {
+        const tabs = JSON.parse(savedTabs);
+        const active = tabs.find((t: any) => t.id === activeTabId);
+        if (active?.timeframe) return toVelaTf(active.timeframe);
+      }
+    } catch {}
+    return "60";
+  });
+
   const [ws, setWs] = useState<VelaWorkspace | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [panelMode, setPanelMode] = useState<"data" | "order" | "ai" | "data_window" | "object_tree" | "technical" | "journal">("order");
@@ -62,6 +90,22 @@ export default function App() {
     const cleanup = initCloudSync();
     return () => cleanup();
   }, []);
+
+  useEffect(() => {
+    if (coin) {
+      try {
+        localStorage.setItem("tradepro_active_coin", coin);
+      } catch {}
+    }
+  }, [coin]);
+
+  useEffect(() => {
+    if (tf) {
+      try {
+        localStorage.setItem("tradepro_active_timeframe", tf);
+      } catch {}
+    }
+  }, [tf]);
 
   // Chart-owned toolbar actions open these host React panels. Keeping the
   // controls in Vela's chart chrome makes them feel like chart tools rather
@@ -267,7 +311,7 @@ export default function App() {
     const onTfChange = (e: any) => {
       const nextTf = e?.detail?.timeframe;
       if (nextTf) {
-        setTf(formatTf(nextTf));
+        setTf(toVelaTf(nextTf));
       }
     };
     window.addEventListener("tradepro:change-timeframe", onTfChange);
@@ -289,7 +333,7 @@ export default function App() {
         const sym = bareSymbol(fullSym)?.replace(/USDT$/i, "");
         if (sym) setCoin(sym);
         const tfVal = activeChart.market?.timeframe;
-        if (tfVal) setTf(formatTf(tfVal));
+        if (tfVal) setTf(toVelaTf(tfVal));
       } catch {
         /* workspace torn down — ignore */
       }
@@ -345,8 +389,10 @@ export default function App() {
             activeCoin={coin}
             activeTimeframe={tf}
             onSelect={(newCoin, newTf) => {
-              setCoin(newCoin);
-              setTf(newTf);
+              const canonicalCoin = newCoin.toUpperCase().replace(/USDT$/i, "");
+              const canonicalTf = toVelaTf(newTf);
+              setCoin(canonicalCoin);
+              setTf(canonicalTf);
             }}
           />
 
@@ -447,52 +493,59 @@ export default function App() {
               <div className="mp-tabs">
                 <button
                   className={"mp-tab" + (panelMode === "order" ? " on" : "")}
-                  title="Place Limit, Market, or Stop-Limit orders"
+                  title="Order Placement & Trading"
+                  aria-label="Order Placement"
                   onClick={() => setPanelMode("order")}
                 >
-                  ⇄ Trade
+                  ⇄
                 </button>
                 <button
                   className={"mp-tab" + (panelMode === "data" ? " on" : "")}
-                  title="Market data, order book, and trades"
+                  title="Market Data & Order Book"
+                  aria-label="Market Data"
                   onClick={() => setPanelMode("data")}
                 >
-                  📊 Data
+                  📊
                 </button>
                 <button
                   className={"mp-tab" + (panelMode === "data_window" ? " on" : "")}
-                  title="Inspect cursor bar values and indicator plots"
+                  title="Data Window (Cursor Values & Plots)"
+                  aria-label="Data Window"
                   onClick={() => setPanelMode("data_window")}
                 >
-                  🪟 Win
+                  🪟
                 </button>
                 <button
                   className={"mp-tab" + (panelMode === "object_tree" ? " on" : "")}
-                  title="Manage chart drawings and indicators"
+                  title="Object Tree (Drawings & Indicators)"
+                  aria-label="Object Tree"
                   onClick={() => setPanelMode("object_tree")}
                 >
-                  🌲 Tree
+                  🌲
                 </button>
                 <button
                   className={"mp-tab" + (panelMode === "technical" ? " on" : "")}
-                  title="Technical indicator meter and sentiment analysis"
+                  title="Technical Readings & Gauge"
+                  aria-label="Technical Gauge"
                   onClick={() => setPanelMode("technical")}
                 >
-                  🧭 Gauge
+                  🧭
                 </button>
                 <button
                   className={"mp-tab" + (panelMode === "ai" ? " on" : "")}
                   title="AI Trading Assistant"
+                  aria-label="AI Assistant"
                   onClick={() => setPanelMode("ai")}
                 >
-                  ✦ AI
+                  ✦
                 </button>
                 <button
                   className={"mp-tab" + (panelMode === "journal" ? " on" : "")}
                   title="Trading Journal & Analytics"
+                  aria-label="Trading Journal"
                   onClick={() => setPanelMode("journal")}
                 >
-                  📓 Jrnl
+                  📓
                 </button>
               </div>
               <button

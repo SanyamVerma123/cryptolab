@@ -1,42 +1,12 @@
 /**
- * perSymbolDrawings — keep each coin's chart drawings separate.
+ * perSymbolDrawings — keep each coin's chart drawings strictly separate.
  *
- * The user's request: drawings made on BTC must NOT appear on ETH (or any
- * other coin), but the *tool style* choices (box colour, line width…) should
- * still carry across coins.
- *
- * Why this module exists: Vela's `persist: true` stores the whole workspace —
- * drawings included — under ONE `vela-workspace` localStorage key with NO
- * per-symbol scoping. On reload it re-applies that single drawing set onto
- * whatever market it restores. So with Vela alone:
- *   - draw on BTC, switch to LTC → BTC's boxes are still there;
- *   - draw a lot on LTC, refresh → whatever Vela restored wins, and the two
- *     coin's drawings were merged into one list anyway.
- *
- * Design (and why it looks the way it does):
- *
- *   - OUR store is the source of truth for drawings. On every create / edit /
- *     remove we snapshot the chart's drawings under the CURRENT coin. On every
- *     coin switch we save the coin we're leaving and load the coin we're
- *     joining (clearing the chart first, because Vela's restore + our own
- *     previous load both leave drawings on it).
- *
- *   - On mount we LOAD, we do not seed. The previous version seeded the chart
- *     into the store on mount, which raced with Vela's own restore and with
- *     our own debounced saves: a seed taken a beat too early wrote `[]` over a
- *     just-saved set, so every refresh silently dropped the newest drawings
- *     ("I added a lot of drawings and after refresh everything was gone").
- *     If the store has no entry for this coin we leave the chart untouched —
- *     the first visit trusts whatever Vela brought back, and our very first
- *     drawing edit will record the coin properly.
- *
- *   - We deliberately do NOT touch tool STYLES — those are `toolDefaults.ts`,
- *     keyed by tool TYPE so a red box on BTC is still a red box on ETH.
- *
- * Vela APIs used: `drawings.toJSON()` (sanitised, version-stamped document),
- * `drawings.fromJSON(doc)` (validates each entry — untrusted-safe),
- * `drawings.all()` / `drawings.removeMany([ids])` for the clear, and the
- * `drawing:created|edited|removed` + `market:changed` events.
+ * Requirements:
+ * 1. Drawings made on BTC must STAY on BTC and NEVER appear on ETH or any other coin.
+ * 2. When shifting tabs (e.g. BTC tab -> ETH tab), drawings from the prior coin are
+ *    atomically saved, the chart is cleared, and the destination coin's drawings are loaded.
+ * 3. If a coin has no saved drawings, the chart is clean and empty.
+ * 4. Tool styles (colors, line widths, etc.) remain persistent across tools.
  */
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
 import { getSafeActiveChart } from "./workspaceSafe";
@@ -63,17 +33,30 @@ function save(store: Store): void {
   }
 }
 
-/** Strip the `provider:` prefix Vela adds (e.g. "hyperliquid:BTC" → "BTC"). */
-function bareSymbol(sym: string | undefined): string | undefined {
+/**
+ * Strip provider prefixes ("hyperliquid:BTC" -> "BTC") and trading pair suffixes
+ * ("BTCUSDT", "BTC/USD", "BTC-PERP" -> "BTC") to get the canonical coin identifier.
+ */
+export function bareSymbol(sym: string | undefined): string | undefined {
   if (!sym) return undefined;
   const i = sym.indexOf(":");
-  return i === -1 ? sym : sym.slice(i + 1);
+  const raw = i === -1 ? sym : sym.slice(i + 1);
+  return raw
+    .toUpperCase()
+    .replace(/\/(USD|USDT)$/i, "")
+    .replace(/(USDT|USD|PERP)$/i, "")
+    .trim();
 }
 
 /**
+ * Set while a load/clear is in flight so that drawing:removed events do not
+ * overwrite the coin's saved drawings with an empty set.
+ */
+let suppressSave = false;
+
+/**
  * Snapshot the current chart's drawings under `symbol`, overwriting whatever
- * we had for that coin. Called after every drawing change so the store can
- * never go stale.
+ * was previously saved for that coin.
  */
 export function saveDrawings(
   ws: VelaWorkspace,
@@ -83,23 +66,12 @@ export function saveDrawings(
   const coin = bareSymbol(sym);
   if (!coin) return;
   const c = chart || getSafeActiveChart(ws);
-  if (!c) return;
-  // Skip while a load/clear is in flight — the chart is transiently empty and
-  // snapshotting it here would overwrite this coin's saved set with `[]`.
-  // (See loadDrawings for the feedback loop this guards against.)
+  if (!c?.drawings) return;
   if (suppressSave) return;
   try {
-    // `toJSON()` is the whole drawing document ({ version, drawings[] }) —
-    // untrusted-safe and version-stamped, so `fromJSON` can restore it later.
     const doc = c.drawings.toJSON();
     const store = load();
-    if (doc && doc.drawings?.length) {
-      store[coin] = doc.drawings;
-    } else {
-      // Nothing on the chart — remember the emptiness too, so a later switch
-      // to this coin clears instead of leaving the previous coin's boxes up.
-      store[coin] = [];
-    }
+    store[coin] = doc?.drawings || [];
     save(store);
   } catch {
     /* chart not ready */
@@ -107,79 +79,85 @@ export function saveDrawings(
 }
 
 /**
- * Restore `symbol`'s saved drawings onto the chart.
- *
- * IMPORTANT: this must NOT clear the chart when this coin has NO saved entry —
- * Vela's own `persist: true` may have just restored drawings from the
- * workspace document, and wiping them would break persistence entirely
- * (that was the "drawings vanish on refresh" bug). We only touch the chart
- * when we have something of our own to put there.
+ * Restore `symbol`'s saved drawings onto the chart, actively clearing the chart
+ * first so drawings from another coin NEVER bleed through.
  */
 export function loadDrawings(
   ws: VelaWorkspace,
   sym: string | undefined,
   chart?: any,
+  isInitialMount?: boolean,
 ): void {
   const coin = bareSymbol(sym);
   if (!coin) return;
   const c = chart || getSafeActiveChart(ws);
-  if (!c) return;
+  if (!c?.drawings) return;
+
   try {
     const store = load();
     const saved = store[coin];
-    // Three cases, and they must NOT be collapsed together:
-    //   1. No entry for this coin (`undefined`) — we have never recorded it.
-    //      Leave Vela's own `persist: true` restore alone; wiping it would
-    //      break persistence on the very first load (the original "drawings
-    //      vanish on refresh" bug).
-    //   2. An entry holding drawings — swap them in.
-    //   3. An EMPTY entry — we HAVE recorded this coin and it had no
-    //      drawings. This must actively CLEAR the chart, because Vela's
-    //      workspace persistence is not per-symbol: it re-applies the
-    //      previous coin's boxes onto the new chart (the "LTC shows BTC's
-    //      drawings" bug). `saveDrawings` records emptiness as `[]` for
-    //      exactly this.
-    if (saved === undefined) return;
 
-    // CRITICAL: guard the clear. `removeMany` fires `drawing:removed`, which
-    // our own persist handler listens to — without this flag it would snapshot
-    // the momentarily-empty chart and write `store[coin] = []`, destroying this
-    // coin's real drawings AND letting Vela persist the wipe to
-    // vela-workspace. That silent feedback loop is what emptied the chart on
-    // reload. `suppressSave` is checked in saveDrawings.
+    // If on the very first mount of the app we have no store record,
+    // adopt the chart's current drawings (e.g. from Vela's initial restore)
+    // as the initial coin's drawings.
+    if (saved === undefined && isInitialMount) {
+      const curDoc = c.drawings.toJSON();
+      store[coin] = curDoc?.drawings || [];
+      save(store);
+      return;
+    }
+
+    // When shifting coins or tabs:
+    // ALWAYS remove all drawings from the chart first!
     suppressSave = true;
     try {
-      const cur = chart.drawings.all();
-      if (cur.length) chart.drawings.removeMany(cur.map((d: any) => d.id));
-      if (saved.length) {
-        // fromJSON is untrusted-safe (it validates + sanitises each entry).
-        chart.drawings.fromJSON({ version: 1, drawings: saved } as never);
+      const cur = c.drawings.all();
+      if (cur && cur.length) {
+        c.drawings.removeMany(cur.map((d: any) => d.id));
+      }
+
+      if (saved && Array.isArray(saved) && saved.length > 0) {
+        // fromJSON validates and sanitizes each drawing entry
+        c.drawings.fromJSON({ version: 1, drawings: saved } as never);
+      } else {
+        // If unrecorded or empty, record as empty so it stays isolated
+        if (saved === undefined) {
+          store[coin] = [];
+          save(store);
+        }
       }
     } finally {
-      // Re-arm on the next macrotask, so any sync `drawing:removed` burst from
-      // the clear has already passed by the time saves are allowed again.
       setTimeout(() => {
         suppressSave = false;
       }, 0);
     }
-  } catch {
-    /* chart not ready */
+  } catch (err) {
+    console.warn("[drawings] loadDrawings failed:", err);
   }
 }
 
 /**
- * Set while a `loadDrawings` clear/restore is in flight. `saveDrawings` must
- * not run during that window — the chart is transiently empty and snapshotting
- * it would record `[]` as the coin's saved set (see loadDrawings).
+ * Explicitly switch drawings from one coin to another (e.g. when shifting tabs).
  */
-let suppressSave = false;
+export function switchSymbolDrawings(
+  ws: VelaWorkspace,
+  fromSym: string | undefined,
+  toSym: string | undefined,
+): void {
+  const fromCoin = bareSymbol(fromSym);
+  const toCoin = bareSymbol(toSym);
+  if (!toCoin || fromCoin === toCoin) return;
+  const chart = getSafeActiveChart(ws);
+  if (!chart?.drawings) return;
+
+  if (fromCoin) {
+    saveDrawings(ws, fromCoin, chart);
+  }
+  loadDrawings(ws, toCoin, chart, false);
+}
 
 /**
- * Install the per-symbol swap on a workspace. Returns a disposer.
- *
- * Persistence model: the store is written on EVERY drawing change (created /
- * edited / removed) and read on every coin switch. On MOUNT we only load —
- * never seed (see the module note about the seed race that lost drawings).
+ * Install the per-symbol drawings manager on a workspace. Returns a disposer.
  */
 export function installPerSymbolDrawings(ws: VelaWorkspace): () => void {
   if (!ws || (ws as any).destroyed) return () => {};
@@ -187,49 +165,41 @@ export function installPerSymbolDrawings(ws: VelaWorkspace): () => void {
   const chart = getSafeActiveChart(ws);
   if (!chart) return () => {};
 
-  // The coin we're currently showing. Tracked here because `market:changed`
-  // arrives AFTER the switch, so the chart already reports the NEW symbol.
-  let lastSymbol: string | undefined;
+  let lastSymbol = bareSymbol(chart.market?.symbol);
   try {
-    lastSymbol = bareSymbol(chart.market?.symbol);
-    // LOAD, don't seed. If we have a saved entry for this coin, our store is
-    // authoritative (and Vela may have just re-applied another coin's
-    // drawings onto this chart). If we have NO entry this is the first visit
-    // — trust the chart as it stands; our first drawing edit will record it.
-    loadDrawings(ws, lastSymbol, chart);
+    loadDrawings(ws, lastSymbol, chart, true);
   } catch {
-    /* chart not ready (Strict Mode destroyed instance) */
+    /* chart not ready */
   }
 
-  // Keep the store in lockstep with every edit. Debounced lightly — a drag
-  // fires `edited` many times a second and a full toJSON each time is wasteful.
   let timer: ReturnType<typeof setTimeout> | undefined;
   const persist = () => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
-      saveDrawings(ws, lastSymbol, chart);
-    }, 400);
+      const currentCoin = bareSymbol(chart.market?.symbol) || lastSymbol;
+      saveDrawings(ws, currentCoin, chart);
+    }, 300);
   };
+
   const flush = () => {
-    if (!timer) return;
-    clearTimeout(timer);
-    timer = undefined;
-    saveDrawings(ws, lastSymbol, chart);
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+    const currentCoin = bareSymbol(chart.market?.symbol) || lastSymbol;
+    saveDrawings(ws, currentCoin, chart);
   };
 
   const onMarketChanged = (e: { symbol?: string }) => {
     try {
       const next = bareSymbol(e.symbol);
       if (!next || next === lastSymbol) return;
-      // Flush any pending edit for the coin we're leaving.
-      if (timer) {
-        clearTimeout(timer);
-        timer = undefined;
-        saveDrawings(ws, lastSymbol, chart);
-      }
+      flush();
+      const prev = lastSymbol;
       lastSymbol = next;
-      loadDrawings(ws, next, chart);
+      // Switch from prev to next
+      switchSymbolDrawings(ws, prev, next);
     } catch {
       /* chart torn down */
     }
@@ -243,6 +213,7 @@ export function installPerSymbolDrawings(ws: VelaWorkspace): () => void {
   } catch {
     /* chart not ready */
   }
+
   if (typeof window !== "undefined") window.addEventListener("pagehide", flush);
 
   return () => {
@@ -251,9 +222,7 @@ export function installPerSymbolDrawings(ws: VelaWorkspace): () => void {
     for (const off of offs) {
       try {
         off();
-      } catch {
-        /* already off */
-      }
+      } catch {}
     }
   };
 }

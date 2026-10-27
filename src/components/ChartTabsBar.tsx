@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
 import { getSafeActiveChart, getSafeActiveCell } from "../lib/workspaceSafe";
+import { switchSymbolDrawings } from "../lib/perSymbolDrawings";
 import { PaperAccountWidget } from "./PaperAccountWidget";
 
 export interface ChartTabItem {
@@ -21,11 +22,42 @@ const TABS_STORAGE_KEY = "tradepro_chart_tabs_v2";
 const ACTIVE_TAB_KEY = "tradepro_active_tab_id_v2";
 
 /**
- * Format any raw timeframe interval string into standard TradingView label.
- * E.g.: "240" -> "4h", "60" -> "1h", "1" -> "1m", "D" -> "1D"
+ * Convert any timeframe format ("1h", "60", "15m", "1D", "4h") to Vela's canonical native ID
+ * ("1", "5", "15", "30", "45", "60", "120", "240", "360", "480", "720", "D", "W", "M").
+ */
+export function toVelaTf(tf: string | number | undefined): string {
+  if (!tf) return "60";
+  const raw = String(tf).trim();
+  const lower = raw.toLowerCase();
+
+  if (lower === "d" || lower === "1d") return "D";
+  if (lower === "w" || lower === "1w") return "W";
+  if (raw === "M" || lower === "1month") return "M";
+
+  if (lower.endsWith("h")) {
+    const hours = parseInt(lower, 10);
+    return Number.isFinite(hours) && hours > 0 ? String(hours * 60) : "60";
+  }
+
+  if (lower.endsWith("m") && lower !== "m") {
+    const mins = parseInt(lower, 10);
+    return Number.isFinite(mins) && mins > 0 ? String(mins) : "1";
+  }
+
+  const num = parseInt(raw, 10);
+  if (Number.isFinite(num) && num > 0) {
+    return String(num);
+  }
+
+  return "60";
+}
+
+/**
+ * Format any raw timeframe interval string into human TradingView label.
+ * E.g.: "60" -> "1h", "240" -> "4h", "1" -> "1m", "D" -> "1D"
  */
 export function formatTf(tf: string | number | undefined): string {
-  if (!tf) return "1m";
+  if (!tf) return "1h";
   const s = String(tf).trim();
   if (s === "1") return "1m";
   if (s === "3") return "3m";
@@ -46,26 +78,33 @@ export function formatTf(tf: string | number | undefined): string {
   return s;
 }
 
-function barsForTf(tf: string): number {
-  const norm = tf.toLowerCase();
-  if (norm === "1" || norm === "1m") return 5000;
-  if (norm === "3" || norm === "3m" || norm === "5" || norm === "5m") return 4000;
-  if (norm === "15" || norm === "15m" || norm === "30" || norm === "30m") return 3000;
+export function barsForTf(tf: string): number {
+  const v = toVelaTf(tf);
+  const n = parseInt(v, 10);
+  if (Number.isFinite(n)) {
+    if (n <= 5) return 4000;
+    if (n <= 30) return 3000;
+    if (n <= 240) return 2500;
+    return 2000;
+  }
+  if (v === "D") return 2000;
+  if (v === "W") return 1000;
+  if (v === "M") return 500;
   return 2500;
 }
 
 const DEFAULT_TABS: ChartTabItem[] = [
-  { id: "tab_btc", coin: "BTC", symbol: "BTCUSDT", timeframe: "1m" },
-  { id: "tab_eth", coin: "ETH", symbol: "ETHUSDT", timeframe: "15m" },
+  { id: "tab_btc", coin: "BTC", symbol: "BTCUSDT", timeframe: "60" },
+  { id: "tab_eth", coin: "ETH", symbol: "ETHUSDT", timeframe: "15" },
 ];
 
 function getCoinGlyph(coin: string): string {
   const c = coin.toUpperCase().replace(/USDT$/i, "");
   if (c === "BTC") return "₿";
-  if (c === "ETH") return "⟠";
+  if (c === "ETH") return "Ξ";
   if (c === "SOL") return "◎";
   if (c === "DOGE") return "Ð";
-  if (c === "BNB") return "⬡";
+  if (c === "BNB") return "🟡";
   if (c === "XRP") return "✕";
   if (c === "AVAX") return "▲";
   if (c === "SUI") return "💧";
@@ -75,8 +114,8 @@ function getCoinGlyph(coin: string): string {
   if (c === "ARB") return "🔵";
   if (c === "APT") return "▲";
   if (c === "OP") return "🔴";
-  if (c === "INJ") return "⚡";
-  if (c === "TIA") return "✨";
+  if (c === "INJ") return "🥷";
+  if (c === "TIA") return "🟣";
   return "●";
 }
 
@@ -115,7 +154,7 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
   }, [activeTabId]);
 
   const cleanCoin = (activeCoin || "BTC").toUpperCase().replace(/USDT$/i, "");
-  const cleanActiveTf = formatTf(activeTimeframe);
+  const cleanActiveTf = toVelaTf(activeTimeframe);
 
   // When user changes the coin or timeframe on the chart, update the CURRENT active tab!
   useEffect(() => {
@@ -124,7 +163,7 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
       const idx = prev.findIndex((t) => t.id === activeTabId);
       if (idx === -1) return prev;
       const cur = prev[idx];
-      if (cur.coin === cleanCoin && cur.timeframe === cleanActiveTf) return prev;
+      if (cur.coin === cleanCoin && toVelaTf(cur.timeframe) === cleanActiveTf) return prev;
       const updated = [...prev];
       updated[idx] = {
         ...cur,
@@ -138,7 +177,13 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
 
   const handleSelectTab = (tab: ChartTabItem) => {
     setActiveTabId(tab.id);
-    const targetTf = formatTf(tab.timeframe);
+    const targetTf = toVelaTf(tab.timeframe);
+
+    // Atomically swap drawings from current coin to destination coin
+    if (ws) {
+      switchSymbolDrawings(ws, activeCoin, tab.coin);
+    }
+
     onSelect(tab.coin, targetTf);
     try {
       const cell = getSafeActiveCell(ws) as any;
@@ -160,12 +205,11 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
   };
 
   /**
-   * "When i click the new tab it will open the btc then i can change the coin by myself"
    * Immediately opens a new tab with BTC and switches chart to BTC.
    */
   const handleAddNewTab = () => {
     const newId = `tab_${Date.now()}`;
-    const targetTf = cleanActiveTf || "1m";
+    const targetTf = cleanActiveTf || "60";
     const newTab: ChartTabItem = {
       id: newId,
       coin: "BTC",
@@ -175,6 +219,10 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
 
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newId);
+
+    if (ws) {
+      switchSymbolDrawings(ws, activeCoin, "BTC");
+    }
 
     // Switch chart to BTC
     onSelect("BTC", targetTf);
@@ -220,13 +268,13 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
               key={tab.id}
               role="tab"
               aria-selected={isActive}
-              className={`chart-tab-item${isActive ? " is-active" : ""}`}
+              className={`chart-tab ${isActive ? "active" : ""}`}
               onClick={() => handleSelectTab(tab)}
-              title={`${tab.symbol} · ${displayTf} (Click to switch chart)`}
+              title={`${tab.coin} (${displayTf})`}
             >
               <span className="chart-tab-glyph">{getCoinGlyph(tab.coin)}</span>
-              <span className="chart-tab-name">
-                {tab.coin}USDT <span className="chart-tab-tf">· {displayTf}</span>
+              <span className="chart-tab-label">
+                {tab.coin} <span className="chart-tab-tf">{displayTf}</span>
               </span>
               {tabs.length > 1 && (
                 <button
@@ -234,7 +282,7 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
                   className="chart-tab-close"
                   onClick={(e) => handleCloseTab(tab.id, e)}
                   title="Close tab"
-                  aria-label="Close tab"
+                  aria-label={`Close ${tab.coin} tab`}
                 >
                   ✕
                 </button>
@@ -243,22 +291,19 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
           );
         })}
 
-        {/* Plus / Add New Tab Button (Opens BTC immediately) */}
-        <div className="chart-tab-add-wrap">
-          <button
-            type="button"
-            className="chart-tab-add-btn"
-            onClick={handleAddNewTab}
-            title="Open new tab (BTC)"
-            aria-label="Open new tab"
-          >
-            +
-          </button>
-        </div>
+        <button
+          type="button"
+          className="chart-tab-add"
+          onClick={handleAddNewTab}
+          title="Open new BTC chart tab"
+          aria-label="Add new chart tab"
+        >
+          +
+        </button>
       </div>
 
-      {/* Docked In-Bar Paper Account Component Matching TradingView Dock */}
       <div className="chart-tabs-right">
+        {/** Dock Paper Account pill inside tab header right margin */}
         <PaperAccountWidget ws={ws} coin={activeCoin} />
       </div>
     </div>

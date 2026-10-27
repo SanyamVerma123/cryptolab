@@ -45,6 +45,7 @@ import { FavoritesBar } from "./FavoritesBar";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { getSafeActiveChart, getSafeActiveCell, getSafeAllCharts } from "../lib/workspaceSafe";
 import { seedTimelineMarks } from "../lib/timelineMarks";
+import { toVelaTf } from "./ChartTabsBar";
 
 // Register Vela's built-in presets ('1', '2h', '2v', '4', '8')
 try {
@@ -208,7 +209,8 @@ const HYPERLIQUID_HISTORY_LIMIT = 30_000;
 const HYPERLIQUID_PREFETCH_VIEWPORTS = 6;
 
 function barsForTf(tf: string): number {
-  return TF_BARS[tf] ?? 2500;
+  const norm = toVelaTf(tf);
+  return TF_BARS[norm] ?? 2500;
 }
 
 function canonicalSymbol(symbol: string | undefined): string {
@@ -384,21 +386,24 @@ function installTimeframeInteractionFix(ws: VelaWorkspace, container: HTMLElemen
     const menuItem = target.closest(".vela-menu-item") as HTMLElement | null;
     if (menuItem && !target.closest(".vela-menu-star") && !target.closest(".vela-fav")) {
       const rawVal = menuItem.dataset.value || menuItem.dataset.veiId || menuItem.id?.split("/")?.pop();
-      if (rawVal && VALID_TIMEFRAMES.has(rawVal)) {
-        try {
-          const activeCell = getSafeActiveCell(ws);
-          if (activeCell) {
-            activeCell.setTimeframe?.(rawVal);
-          } else {
-            getSafeActiveChart(ws)?.setMarket?.({ timeframe: rawVal, bars: barsForTf(rawVal) });
-          }
-          window.dispatchEvent(new CustomEvent("tradepro:change-timeframe", { detail: { timeframe: rawVal } }));
-        } catch {
+      if (rawVal) {
+        const canonical = toVelaTf(rawVal);
+        if (VALID_TIMEFRAMES.has(canonical)) {
           try {
-            getSafeActiveChart(ws)?.setMarket?.({ timeframe: rawVal, bars: barsForTf(rawVal) });
-          } catch {}
+            const activeCell = getSafeActiveCell(ws);
+            if (activeCell) {
+              activeCell.setTimeframe?.(canonical);
+            } else {
+              getSafeActiveChart(ws)?.setMarket?.({ timeframe: canonical, bars: barsForTf(canonical) });
+            }
+            window.dispatchEvent(new CustomEvent("tradepro:change-timeframe", { detail: { timeframe: canonical } }));
+          } catch {
+            try {
+              getSafeActiveChart(ws)?.setMarket?.({ timeframe: canonical, bars: barsForTf(canonical) });
+            } catch {}
+          }
+          return;
         }
-        return;
       }
     }
 
@@ -407,8 +412,11 @@ function installTimeframeInteractionFix(ws: VelaWorkspace, container: HTMLElemen
     if (btn && container.contains(btn)) {
       const txt = btn.textContent?.trim() || "";
       const val = btn.dataset.value || btn.dataset.tf || txt;
-      if (val && VALID_TIMEFRAMES.has(val)) {
-        window.dispatchEvent(new CustomEvent("tradepro:change-timeframe", { detail: { timeframe: val } }));
+      if (val) {
+        const canonical = toVelaTf(val);
+        if (VALID_TIMEFRAMES.has(canonical)) {
+          window.dispatchEvent(new CustomEvent("tradepro:change-timeframe", { detail: { timeframe: canonical } }));
+        }
       }
     }
   };
@@ -561,6 +569,11 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
               console.warn("[trade-pro] tool defaults install failed:", e);
             }
             try {
+              installPerSymbolDrawings(ws);
+            } catch (e) {
+              console.warn("[trade-pro] per-symbol drawings install failed:", e);
+            }
+            try {
               installDrawingIsolation(ws);
             } catch (e) {
               console.warn("[trade-pro] drawing isolation install failed:", e);
@@ -585,7 +598,7 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
               chart.on?.("market:changed", () => {
                 const tf = chart.market?.timeframe || activeCell?.state?.timeframe;
                 if (tf) {
-                  window.dispatchEvent(new CustomEvent("tradepro:change-timeframe", { detail: { timeframe: tf } }));
+                  window.dispatchEvent(new CustomEvent("tradepro:change-timeframe", { detail: { timeframe: toVelaTf(tf) } }));
                 }
               });
 
@@ -720,15 +733,16 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
         const chart = getSafeActiveChart(ws);
         if (chart) {
           const market = chart.market;
+          const canonicalTf = toVelaTf(timeframe);
           const sameIdentity = canonicalSymbol(market?.symbol) === canonicalSymbol(coin)
-            && market?.timeframe === timeframe;
+            && toVelaTf(market?.timeframe) === canonicalTf;
           if (!sameIdentity) {
-            switchPromise = chart.setMarket({ symbol: coin, timeframe, bars: barsForTf(timeframe) });
-          } else if (!ws.replay.state.active && market?.bars !== barsForTf(timeframe)) {
+            switchPromise = chart.setMarket({ symbol: coin, timeframe: canonicalTf, bars: barsForTf(canonicalTf) });
+          } else if (!ws.replay.state.active && market?.bars !== barsForTf(canonicalTf)) {
             // The native topbar already applied this timeframe. A depth-only
             // setMarket during replay ends the cell's replay but emits no
             // market:changed event for WorkspaceReplay to rejoin on.
-            switchPromise = chart.setMarket({ bars: barsForTf(timeframe) });
+            switchPromise = chart.setMarket({ bars: barsForTf(canonicalTf) });
           }
         }
       } catch (e) {
@@ -747,18 +761,12 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
         void restoreIndicators();
       }
 
-      stopMarket = mountMarket(ws, { symbol: coin, timeframe });
+      stopMarket = mountMarket(ws, { symbol: coin, timeframe: toVelaTf(timeframe) });
 
       try {
         stopDefaults = installToolDefaults(ws);
       } catch (e) {
         console.warn("[trade-pro] tool defaults re-install failed:", e);
-      }
-
-      try {
-        stopSymbols = installPerSymbolDrawings(ws);
-      } catch (e) {
-        console.warn("[trade-pro] per-symbol drawings failed:", e);
       }
 
       try {

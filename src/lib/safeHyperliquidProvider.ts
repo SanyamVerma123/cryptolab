@@ -20,22 +20,23 @@ export class SafeHyperliquidProvider extends HyperliquidProvider {
   }>();
 
   override async getBars(ticker: string, timeframe: string, range: BarRange): Promise<OHLCV[]> {
+    const canonicalTf = normalizeVelaTf(timeframe);
     // A `from` range is Vela's incremental refresh for already loaded bars.
     // Preserve that direct lookup. Initial loads and larger `limit` requests
     // are paged backward because candleSnapshot only returns a bounded window.
     if (range.from != null || range.limit == null || range.limit <= HISTORY_PAGE_SIZE) {
       return withTimeout(
-        super.getBars(ticker, timeframe, range),
+        super.getBars(ticker, canonicalTf, range),
         [],
-        `history ${ticker} ${timeframe}`,
+        `history ${ticker} ${canonicalTf}`,
       );
     }
 
     const limit = Math.min(Math.floor(range.limit), MAX_HISTORY_BARS);
-    const intervalMs = timeframeMilliseconds(timeframe);
+    const intervalMs = timeframeMilliseconds(canonicalTf);
     const requestedEnd = range.to ?? Date.now();
     const historyStart = Math.max(0, requestedEnd - (limit + 2) * intervalMs);
-    const cacheKey = `${ticker.toUpperCase()}|${timeframe.toUpperCase()}`;
+    const cacheKey = `${ticker.toUpperCase()}|${canonicalTf.toUpperCase()}`;
     let cached = this.historyCache.get(cacheKey);
     if (!cached) {
       cached = { bars: new Map<number, OHLCV>(), oldest: Number.POSITIVE_INFINITY };
@@ -58,9 +59,9 @@ export class SafeHyperliquidProvider extends HyperliquidProvider {
     ) {
       const pageStart = Math.max(historyStart, pageEnd - (HISTORY_PAGE_SIZE - 1) * intervalMs);
       const page = await withTimeout(
-        super.getBars(ticker, timeframe, { from: pageStart, to: pageEnd, limit: HISTORY_PAGE_SIZE }),
+        super.getBars(ticker, canonicalTf, { from: pageStart, to: pageEnd, limit: HISTORY_PAGE_SIZE }),
         [],
-        `history page ${ticker} ${timeframe}`,
+        `history page ${ticker} ${canonicalTf}`,
       );
       pages += 1;
       if (!page.length) break;
@@ -96,8 +97,37 @@ function timeframeMilliseconds(timeframe: string): number {
   if (normalized === "D" || normalized === "1D") return 24 * 60 * 60 * 1000;
   if (normalized === "W" || normalized === "1W") return 7 * 24 * 60 * 60 * 1000;
   if (normalized === "M" || normalized === "1M") return 30 * 24 * 60 * 60 * 1000;
+
+  if (normalized.endsWith("H")) {
+    const hours = Number.parseInt(normalized, 10);
+    if (Number.isFinite(hours) && hours > 0) return hours * 60 * 60 * 1000;
+  }
+  if (normalized.endsWith("M") && normalized !== "M") {
+    const mins = Number.parseInt(normalized, 10);
+    if (Number.isFinite(mins) && mins > 0) return mins * 60 * 1000;
+  }
+
   const minutes = Number.parseInt(normalized, 10);
   return Number.isFinite(minutes) && minutes > 0 ? minutes * 60 * 1000 : 60 * 60 * 1000;
+}
+
+export function normalizeVelaTf(tf: string): string {
+  const s = tf.trim().toUpperCase();
+  if (s === "1H" || s === "60M") return "60";
+  if (s === "2H" || s === "120M") return "120";
+  if (s === "3H" || s === "180M") return "180";
+  if (s === "4H" || s === "240M") return "240";
+  if (s === "6H" || s === "360M") return "360";
+  if (s === "8H" || s === "480M") return "480";
+  if (s === "12H" || s === "720M") return "720";
+  if (s === "1D" || s === "D") return "D";
+  if (s === "1W" || s === "W") return "W";
+  if (s === "1M" || s === "M") return "M";
+  if (s.endsWith("M")) {
+    const n = parseInt(s, 10);
+    if (Number.isFinite(n) && n > 0) return String(n);
+  }
+  return tf;
 }
 
 function withTimeout<T>(request: Promise<T>, fallback: T, label: string): Promise<T> {

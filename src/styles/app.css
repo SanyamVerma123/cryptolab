@@ -8111,23 +8111,40 @@ body.resizing-col .market-panel {
 }
 
 
-/* Compact Market Panel Tabs */
+/* Compact Market Panel Tabs (Symbols Only) */
 .mp-tabs {
   display: flex !important;
   align-items: center !important;
   gap: 3px !important;
   overflow-x: auto !important;
   scrollbar-width: none !important;
-  padding: 4px 6px !important;
+  padding: 3px 6px !important;
 }
 .mp-tabs::-webkit-scrollbar { display: none; }
 .mp-tab {
-  padding: 4px 7px !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  white-space: nowrap !important;
-  border-radius: 4px !important;
-  letter-spacing: 0.2px !important;
+  width: 30px !important;
+  min-width: 30px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 14px !important;
+  border-radius: 5px !important;
+  color: #8b94a3 !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  cursor: pointer !important;
+  transition: all 0.12s ease !important;
+}
+.mp-tab:hover {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+.mp-tab.on {
+  color: #2962ff !important;
+  background: rgba(41, 98, 255, 0.14) !important;
+  border-color: rgba(41, 98, 255, 0.35) !important;
 }
 
 /* ======================================================================
