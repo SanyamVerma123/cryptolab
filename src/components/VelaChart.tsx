@@ -443,6 +443,9 @@ export function VelaChart({ coin, timeframe, onReady }: Props) {
 
   const closeReplay = useCallback(() => {
     replayActiveRef.current = false;
+    try {
+      wsRef.current?.replay.stop();
+    } catch {}
     setReplayActive(false);
   }, []);
 

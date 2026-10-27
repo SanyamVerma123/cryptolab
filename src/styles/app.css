@@ -6591,7 +6591,25 @@ body.resizing-col .market-panel {
 .replay-interval-menu button { display: block; width: 100%; padding: 6px; border: 0; border-radius: 3px; color: #f0f0f1; background: transparent; text-align: left; font: 700 12px Arial, sans-serif; cursor: pointer; }
 .replay-interval-menu button:hover, .replay-interval-menu button[aria-checked="true"] { background: #35434d; }
 .replay-icon.next { left: 287px; top: 12px; width: 12px; height: 14px; }
-.replay-icon.toggle { left: 313px; top: 9px; width: 37px; height: 20px; }
+.replay-icon.replay-close-btn,
+.replay-icon.toggle {
+  left: 320px;
+  top: 7px;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: #8c909c;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.replay-icon.replay-close-btn:hover {
+  color: #f23645;
+  background: rgba(242, 54, 69, 0.18);
+  filter: none;
+}
 .replay-icon.toggle > img { position: absolute; inset: 0; width: 37px; height: 20px; }
 .replay-icon.toggle .enabled-toggle { position: absolute; z-index: 1; inset: 0; padding: 2px; border-radius: 12px; background: #409cff; }
 .replay-icon.toggle .enabled-toggle span { display: block; width: 16px; height: 16px; margin-left: auto; border-radius: 50%; background: #202527; }

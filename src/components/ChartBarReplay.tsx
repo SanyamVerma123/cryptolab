@@ -342,18 +342,21 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
     if (practicePosRef.current) {
       closePracticeTrade();
     }
-    if (sessionTrades.length > 0 && !showSummary) {
-      setShowSummary(true);
-      return;
+    try {
+      replay?.stop();
+    } catch (e) {
+      console.warn("[trade-pro replay] stop failed:", e);
     }
-    try { replay?.stop(); } catch (e) { console.warn("[trade-pro replay] stop failed:", e); }
+    try {
+      ws?.replay?.stop();
+    } catch {}
     setPlaying(false);
     setCutMode(false);
     setCursorTime(null);
     cutStartRef.current = null;
     setCutStartTime(null);
     onClose();
-  }, [replay, onClose, sessionTrades.length, showSummary]);
+  }, [replay, ws, onClose]);
 
   const enterCutMode = () => {
     if (!replay?.bounds) return;
@@ -497,11 +500,7 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
 
       if (event.key === "Escape") {
         if (speedMenuOpen) { setSpeedMenuOpen(false); return; }
-        if (cutMode) { setCutMode(false); return; }
-        try { replay?.stop(); } catch {}
-        setPlaying(false);
-        setCursorTime(null);
-        onClose();
+        exitReplay();
         return;
       }
 
@@ -560,11 +559,6 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
               </div>
             </div>
           )}
-          <div className="replay-cut-hint">
-            <span style={{ color: "#f23645", fontWeight: 700, fontSize: "14px" }}>✂</span>
-            <span>{isMobile ? "Tap candle to start replay from that point" : "Click any candle on the chart to start bar replay from that point"}</span>
-            <button onClick={() => setCutMode(false)} aria-label="Cancel start-bar selection">Cancel</button>
-          </div>
         </div>
       )}
       {!cutMode && state?.active && (
@@ -658,7 +652,23 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
             )}
           </div>
         )}
-        <button className="replay-icon start-point" onClick={() => cutMode ? setCutMode(false) : enterCutMode()} title={cutMode ? "Cancel start point" : "Select replay starting point"} aria-label={cutMode ? "Cancel start point" : "Select replay starting point"}>
+        <button
+          type="button"
+          className={`replay-icon start-point${cutMode ? " on" : ""}`}
+          onClick={() => {
+            if (cutMode) {
+              if (state?.active) {
+                setCutMode(false);
+              } else {
+                exitReplay();
+              }
+            } else {
+              enterCutMode();
+            }
+          }}
+          title={cutMode ? "Cancel cut mode" : "Select replay starting point"}
+          aria-label={cutMode ? "Cancel cut mode" : "Select replay starting point"}
+        >
           <img src="/replay-icons/start-point.svg" alt="" />
         </button>
         <div
@@ -708,9 +718,17 @@ export function ChartBarReplay({ ws, coin, timeframe, active, onClose }: Props) 
         <button className="replay-icon next" onClick={() => { if (replay?.step()) sync(); }} disabled={!state?.active || remaining === 0} title="Next bar" aria-label="Next bar">
           <img src="/replay-icons/next-bar.svg" alt="" />
         </button>
-        <button className="replay-icon toggle" role="switch" aria-checked={active} aria-label="Enable replay" title={active ? "Exit replay" : "Enable replay"} onClick={exitReplay}>
-          <img src="/replay-icons/toggle.svg" alt="" />
-          {active && <span className="enabled-toggle"><span /></span>}
+        <button
+          type="button"
+          className="replay-icon replay-close-btn"
+          aria-label="Exit replay"
+          title="Exit replay (Esc)"
+          onClick={exitReplay}
+        >
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <line x1="2" y1="2" x2="12" y2="12" />
+            <line x1="12" y1="2" x2="2" y2="12" />
+          </svg>
         </button>
       </div>
     {/* Replay Performance Summary Modal */}
