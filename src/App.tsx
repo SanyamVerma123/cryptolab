@@ -15,6 +15,7 @@
  */
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { ArrowLeftRight, BarChart2, Sparkles, BookOpen, X } from "lucide-react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MarketPanel } from "./components/MarketPanel";
 import { AiPanel } from "./components/AiPanel";
@@ -473,46 +474,62 @@ export default function App() {
             }}
           >
             <div className="mp-head">
-              <div className="mp-tabs">
+              <div className="mp-tabs" role="tablist" aria-label="Side panel tabs">
                 <button
+                  type="button"
+                  role="tab"
                   className={"mp-tab" + (panelMode === "order" ? " on" : "")}
-                  title="Order Placement & Trading"
+                  title="Trade & Order Placement"
                   aria-label="Order Placement"
                   onClick={() => setPanelMode("order")}
                 >
-                  ⇄
+                  <ArrowLeftRight size={15} strokeWidth={2} />
                 </button>
                 <button
+                  type="button"
+                  role="tab"
                   className={"mp-tab" + (panelMode === "data" ? " on" : "")}
                   title="Market Data & Order Book"
                   aria-label="Market Data"
                   onClick={() => setPanelMode("data")}
                 >
-                  📊
+                  <BarChart2 size={15} strokeWidth={2} />
                 </button>
                 <button
+                  type="button"
+                  role="tab"
                   className={"mp-tab" + (panelMode === "ai" ? " on" : "")}
                   title="AI Trading Assistant"
                   aria-label="AI Assistant"
                   onClick={() => setPanelMode("ai")}
                 >
-                  ✦
+                  <Sparkles size={15} strokeWidth={2} />
                 </button>
                 <button
+                  type="button"
+                  role="tab"
                   className={"mp-tab" + (panelMode === "journal" ? " on" : "")}
                   title="Trading Journal & Analytics"
                   aria-label="Trading Journal"
                   onClick={() => setPanelMode("journal")}
                 >
-                  📓
+                  <BookOpen size={15} strokeWidth={2} />
                 </button>
               </div>
+              <div className="mp-head-title">
+                {panelMode === "order" && "Order Entry"}
+                {panelMode === "data" && "Market Data"}
+                {panelMode === "ai" && "AI Assistant"}
+                {panelMode === "journal" && "Trading Journal"}
+              </div>
               <button
+                type="button"
                 className="mp-close"
                 title="Close panel"
+                aria-label="Close panel"
                 onClick={() => setPanelOpen(false)}
               >
-                ✕
+                <X size={15} strokeWidth={2} />
               </button>
             </div>
             {panelMode === "journal" ? (

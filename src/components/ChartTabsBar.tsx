@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import type { VelaWorkspace } from "@luxalgo/vela/workspace";
+import { Plus, X } from "lucide-react";
 import { getSafeActiveChart, getSafeActiveCell } from "../lib/workspaceSafe";
 import { switchSymbolDrawings } from "../lib/perSymbolDrawings";
 import { PaperAccountWidget } from "./PaperAccountWidget";
@@ -104,18 +105,18 @@ function getCoinGlyph(coin: string): string {
   if (c === "ETH") return "Ξ";
   if (c === "SOL") return "◎";
   if (c === "DOGE") return "Ð";
-  if (c === "BNB") return "🟡";
+  if (c === "BNB") return "B";
   if (c === "XRP") return "✕";
   if (c === "AVAX") return "▲";
-  if (c === "SUI") return "💧";
+  if (c === "SUI") return "◈";
   if (c === "NEAR") return "Ⓝ";
   if (c === "LINK") return "⬡";
-  if (c === "PEPE") return "🐸";
-  if (c === "ARB") return "🔵";
+  if (c === "PEPE") return "⚡";
+  if (c === "ARB") return "A";
   if (c === "APT") return "▲";
-  if (c === "OP") return "🔴";
-  if (c === "INJ") return "🥷";
-  if (c === "TIA") return "🟣";
+  if (c === "OP") return "O";
+  if (c === "INJ") return "I";
+  if (c === "TIA") return "T";
   return "●";
 }
 
@@ -268,13 +269,14 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
               key={tab.id}
               role="tab"
               aria-selected={isActive}
-              className={`chart-tab ${isActive ? "active" : ""}`}
+              className={`chart-tab-item chart-tab ${isActive ? "is-active active" : ""}`}
               onClick={() => handleSelectTab(tab)}
               title={`${tab.coin} (${displayTf})`}
             >
               <span className="chart-tab-glyph">{getCoinGlyph(tab.coin)}</span>
-              <span className="chart-tab-label">
-                {tab.coin} <span className="chart-tab-tf">{displayTf}</span>
+              <span className="chart-tab-name chart-tab-label">
+                <span className="chart-tab-coin">{tab.coin}</span>
+                <span className="chart-tab-tf">{displayTf}</span>
               </span>
               {tabs.length > 1 && (
                 <button
@@ -284,7 +286,7 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
                   title="Close tab"
                   aria-label={`Close ${tab.coin} tab`}
                 >
-                  ✕
+                  <X size={11} strokeWidth={2.5} />
                 </button>
               )}
             </div>
@@ -293,12 +295,12 @@ export function ChartTabsBar({ ws, activeCoin, activeTimeframe, onSelect }: Prop
 
         <button
           type="button"
-          className="chart-tab-add"
+          className="chart-tab-add-btn chart-tab-add"
           onClick={handleAddNewTab}
           title="Open new BTC chart tab"
           aria-label="Add new chart tab"
         >
-          +
+          <Plus size={14} strokeWidth={2.5} />
         </button>
       </div>
 

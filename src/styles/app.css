@@ -8111,165 +8111,233 @@ body.resizing-col .market-panel {
 }
 
 
-/* Compact Market Panel Tabs (Symbols Only) */
-.mp-tabs {
+/* Compact Market Panel Header & Segmented Tabs */
+.mp-head {
   display: flex !important;
   align-items: center !important;
-  gap: 3px !important;
-  overflow-x: auto !important;
-  scrollbar-width: none !important;
-  padding: 3px 6px !important;
+  justify-content: space-between !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  padding: 0 10px !important;
+  background: #131722 !important;
+  border-bottom: 1px solid #232733 !important;
+  gap: 8px !important;
+}
+.mp-tabs {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+  background: #181b24 !important;
+  padding: 2px !important;
+  border-radius: 6px !important;
+  border: 1px solid #242936 !important;
 }
 .mp-tabs::-webkit-scrollbar { display: none; }
 .mp-tab {
   width: 30px !important;
   min-width: 30px !important;
-  height: 28px !important;
+  height: 26px !important;
   padding: 0 !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  font-size: 14px !important;
-  border-radius: 5px !important;
-  color: #8b94a3 !important;
+  border-radius: 4px !important;
+  color: #787b86 !important;
   background: transparent !important;
   border: 1px solid transparent !important;
   cursor: pointer !important;
-  transition: all 0.12s ease !important;
+  transition: all 0.15s ease !important;
 }
 .mp-tab:hover {
-  color: #fff !important;
-  background: rgba(255, 255, 255, 0.08) !important;
+  color: #d1d4dc !important;
+  background: rgba(255, 255, 255, 0.06) !important;
 }
 .mp-tab.on {
   color: #2962ff !important;
-  background: rgba(41, 98, 255, 0.14) !important;
-  border-color: rgba(41, 98, 255, 0.35) !important;
+  background: #242836 !important;
+  border-color: #383e4d !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+}
+.mp-tab svg {
+  display: block !important;
+  transition: transform 0.15s ease !important;
+}
+.mp-tab:hover svg {
+  transform: scale(1.08) !important;
+}
+.mp-tab.on svg {
+  color: #2962ff !important;
+}
+.mp-head-title {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: #8c909c !important;
+  letter-spacing: 0.3px !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+.mp-close {
+  width: 26px !important;
+  height: 26px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 4px !important;
+  color: #787b86 !important;
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  padding: 0 !important;
+}
+.mp-close:hover {
+  color: #f23645 !important;
+  background: rgba(242, 54, 69, 0.14) !important;
 }
 
 /* ======================================================================
-   Chart Tabs Bar — Multi-Chart Tabs Matching Image 1
+   Chart Tabs Bar — Multi-Chart Tabs Matching Vela / TradingView
    ====================================================================== */
 .chart-tabs-bar {
-  height: 32px;
-  min-height: 32px;
-  background: #131722;
-  border-bottom: 1px solid #2a2e39;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 8px;
-  z-index: 40;
-  user-select: none;
-  position: relative;
-  overflow: visible;
+  height: 34px !important;
+  min-height: 34px !important;
+  background: #131722 !important;
+  border-bottom: 1px solid #222631 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 0 10px !important;
+  z-index: 40 !important;
+  user-select: none !important;
+  position: relative !important;
+  overflow: visible !important;
 }
 
 .chart-tabs-list {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  flex: 1;
-  min-width: 0;
+  display: flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  overflow-x: auto !important;
+  scrollbar-width: none !important;
+  flex: 1 !important;
+  min-width: 0 !important;
 }
-.chart-tabs-list::-webkit-scrollbar { display: none; }
+.chart-tabs-list::-webkit-scrollbar { display: none !important; }
 
-.chart-tab-item {
-  height: 25px;
-  padding: 0 8px;
-  background: #1e222d;
-  border: 1px solid #2a2e39;
-  border-radius: 4px;
-  color: #8c909c;
-  font-size: 11.5px;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
-  white-space: nowrap;
-  flex: none;
-  transition: all 0.15s ease;
-}
-
-.chart-tab-item:hover {
-  background: #242836;
-  color: #d1d4dc;
+.chart-tab-item,
+.chart-tab {
+  height: 26px !important;
+  padding: 0 8px 0 10px !important;
+  background: #181b24 !important;
+  border: 1px solid #232733 !important;
+  border-radius: 5px !important;
+  color: #8c909c !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  flex: none !important;
+  transition: all 0.15s ease !important;
 }
 
-.chart-tab-item.is-active {
-  background: #2a2e39;
-  border-color: #3e4453;
-  color: #f0f3fa;
-  font-weight: 600;
+.chart-tab-item:hover,
+.chart-tab:hover {
+  background: #1f2330 !important;
+  border-color: #2e3342 !important;
+  color: #d1d4dc !important;
+}
+
+.chart-tab-item.is-active,
+.chart-tab.active {
+  background: #242836 !important;
+  border-color: #383e4d !important;
+  color: #f0f3fa !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
 }
 
 .chart-tab-glyph {
-  font-size: 12px;
-  color: #f7a600;
+  font-size: 12px !important;
+  color: #f7a600 !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
-.chart-tab-name {
-  display: flex;
-  align-items: center;
-  gap: 3px;
+.chart-tab-name,
+.chart-tab-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  line-height: 1 !important;
+}
+
+.chart-tab-coin {
+  font-weight: 600 !important;
+  color: inherit !important;
 }
 
 .chart-tab-tf {
-  color: #787b86;
-  font-weight: 400;
-  font-size: 11px;
+  color: #787b86 !important;
+  font-weight: 500 !important;
+  font-size: 10.5px !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  padding: 1px 4px !important;
+  border-radius: 3px !important;
 }
 
 .chart-tab-close {
-  background: transparent;
-  border: none;
-  color: #787b86;
-  font-size: 10px;
-  width: 14px;
-  height: 14px;
-  border-radius: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  margin-left: 2px;
-  transition: all 0.12s ease;
+  background: transparent !important;
+  border: none !important;
+  color: #787b86 !important;
+  font-size: 11px !important;
+  width: 16px !important;
+  height: 16px !important;
+  border-radius: 3px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  margin-left: 2px !important;
+  transition: all 0.12s ease !important;
 }
 
 .chart-tab-close:hover {
-  background: rgba(242, 54, 69, 0.2);
-  color: #f23645;
+  background: rgba(242, 54, 69, 0.2) !important;
+  color: #f23645 !important;
 }
 
-.chart-tab-add-wrap {
-  position: relative;
-  flex: none;
+.chart-tab-add-btn,
+.chart-tab-add {
+  width: 26px !important;
+  height: 26px !important;
+  background: #181b24 !important;
+  border: 1px solid #232733 !important;
+  border-radius: 5px !important;
+  color: #8c909c !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  flex: none !important;
+  padding: 0 !important;
 }
 
-.chart-tab-add-btn {
-  width: 25px;
-  height: 25px;
-  background: #1e222d;
-  border: 1px solid #2a2e39;
-  border-radius: 4px;
-  color: #8c909c;
-  font-size: 14px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.chart-tab-add-btn:hover {
-  background: #2962ff;
-  border-color: #2962ff;
-  color: #ffffff;
+.chart-tab-add-btn:hover,
+.chart-tab-add:hover {
+  background: #2962ff !important;
+  border-color: #2962ff !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 8px rgba(41, 98, 255, 0.35) !important;
 }
 
 .chart-tab-picker {
